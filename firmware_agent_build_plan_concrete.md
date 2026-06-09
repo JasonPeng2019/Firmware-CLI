@@ -1,0 +1,375 @@
+# Agentic Firmware Debug Tool — Concrete Build Plan (step-ordered)
+
+> **Scope of this document.** This is the *design + implementation plan* — what to build, in what
+> order, and the design decision behind each step. It deliberately stops short of writing the code
+> itself: where a design choice is straightforward, the "how" is stated plainly; where it isn't, the
+> decision is specified and the coding is left to build time. Trying to settle both the plan and the
+> code at once is where errors creep in, so this stays at the plan level.
+>
+> **Hardware — TWO co-primary boards (build and prove the loop on both):**
+> - **Nordic nRF52840-DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
+>   USB. Radio-relevant (BLE/802.15.4). *Wrinkle to plan around:* J-Link's native protocol isn't
+>   pyOCD's native CMSIS-DAP, and nRF52 **APPROTECT** can lock the chip (needs a `recover`/unlock).
+> - **STM32 Nucleo-L476RG** — onboard **ST-Link/V2-1**; UART on **USART2 @115200 8N1**; SWD + UART on
+>   one USB. Cleanest open-stack path (pyOCD/OpenOCD support ST-Link out of the box).
+>
+> Supporting two probe families (J-Link **and** ST-Link) from the start is deliberate: it forces the
+> probe abstraction to be real on day one instead of being retrofitted — which is exactly the
+> isolation the later vendor-backend work depends on.
+>
+> **Stack:** Python; `mcp` SDK + bundled FastMCP; pyOCD for SWD; pyserial for UART.
+> **Verify at build time:** MCP is mid-transition — confirm SDK calls, transport, state/auth against
+> the live spec when you actually write each piece.
+
+---
+
+## STAGE 0 — Foundations (do before anything else), on BOTH boards
+
+**Goal:** two known-good boards + toolchains, so later failures are *your* bugs, not setup bugs.
+**Do every step for the nRF52840-DK AND the L476RG.**
+
+1. **Confirm each board's pyOCD target name** (`pyocd list`, `pyocd list --targets`; install the
+   CMSIS-Pack if prompted). Expect roughly `nrf52840` and an `stm32l476`-family target. *Why first:*
+   the generic `cortex_m` type debugs but **cannot program flash** — the "connects but won't flash" trap.
+2. **Probe-specific setup:**
+   - **nRF52840-DK (J-Link):** install SEGGER J-Link software (drivers). Decide pyOCD's route to the
+     J-Link (CMSIS-DAP mode vs. SEGGER path) and **test a flash + a recover/unlock cycle** — confirm
+     you can recover the chip if APPROTECT locks it. This is the nRF's one real setup risk; clear it now.
+   - **L476RG (ST-Link):** install ST-Link drivers. pyOCD should see it out of the box.
+3. **Confirm one USB cable yields BOTH** a debug probe and a virtual COM port, on each board.
+4. **Get a known-good reference firmware per board** that prints over UART (a vendor sample; for the
+   Nucleo target **USART2** specifically). You need a *correct* binary on each to prove the adapters
+   and to derive injected-bug tests later.
+
+**Exit criteria (per board):** plugged in, probe + COM port visible, reference firmware flashes and
+prints by hand — and on the nRF, you've proven you can recover a locked chip. No Python yet.
+
+> ### Drivers vs. libraries, and what ships to customers (read before designing the install)
+>
+> **A driver and a library are different layers — don't conflate them.** Your code never "paths to"
+> a driver. The stack is layered:
+>
+> ```
+> your code → pyOCD (library you import) → OS → USB driver (OS-level) → probe → chip
+> ```
+>
+> - **A USB driver** is OS-level: it lets the operating system *see* the plugged-in probe. Your code
+>   doesn't import it; it just has to be **present on the machine**.
+> - **pyOCD** is the library your code imports (`pip install`, then `import`). It speaks CMSIS-DAP /
+>   J-Link / ST-Link to a probe the OS can already see. This is the only one your code references.
+>
+> **What each probe path requires *on the machine* (this drives the shipping story):**
+> - **CMSIS-DAP** — lightest; effectively *driverless*. Uses a generic USB class the OS already has.
+>   Typically just a **udev rule** on Linux (a permission file, not a driver) or a generic WinUSB
+>   association on Windows (sometimes via Zadig). No proprietary install.
+> - **SEGGER J-Link software** — a full *proprietary suite* (driver + runtime). Required on the machine
+>   ONLY if your code uses the **native J-Link** path. Carries SEGGER's license.
+> - **ST-Link drivers** — ST's drivers; lighter than SEGGER's suite, often enumerates with generic
+>   drivers on modern systems.
+>
+> **Key point:** what the machine needs depends on **which path your code uses to reach the probe**,
+> not on anything you embed in your code. Standardize the shipped product on **pyOCD-over-CMSIS-DAP**
+> and the heavy proprietary packages (SEGGER especially) are not needed at runtime.
+>
+> **What ships to customers — declare + guide, do NOT bundle drivers:**
+> - **You DON'T redistribute vendor drivers inside your CLI.** Legally, SEGGER's/ST's software is
+>   theirs to distribute, not yours to repackage. Technically, OS-level drivers don't live inside a
+>   Python CLI anyway (admin rights, OS-specific installers).
+> - **You DO declare Python deps** — pyOCD + target device packs travel with your package normally
+>   (`pip install your-tool` pulls them). Clean.
+> - **For OS-level drivers: detect-and-instruct.** Your CLI checks whether a working probe is visible
+>   and, if not, points the customer to the vendor's installer. (This is how existing embedded tools
+>   do it — they tell you to install the J-Link/ST-Link software; they don't ship it for you.)
+> - **Automate only the light, non-proprietary setup** — a udev rule (Linux) or WinUSB association
+>   (Windows) your installer *can* help with, because those aren't vendor software.
+>
+> **Why this reinforces the CMSIS-DAP-for-the-product decision:** standardizing on CMSIS-DAP shrinks
+> the customer's required OS-level setup to the lightest case (often just a udev rule / WinUSB assoc),
+> which your installer can automate. The native-J-Link path (Stage 7) reintroduces a
+> "customer must install SEGGER's proprietary software" requirement — a real deployment cost, and
+> another reason it's an opt-in upgrade, not the default.
+>
+> **Dev bench vs. shipped product:**
+> - *You, in Stage 0:* install everything (SEGGER software, ST drivers) — safest way to get both
+>   boards working and to have vendor fallback tools. A dev convenience, not a shipping commitment.
+> - *Shipped product:* pyOCD + device packs as Python deps; standardize on CMSIS-DAP; automate the
+>   light USB setup; detect-and-instruct for anything proprietary; never redistribute vendor drivers.
+>
+> **Verify empirically in Stage 0 (platform/board-specific, don't trust the general picture):** whether
+> a given CMSIS-DAP probe needs Zadig on Windows, what udev rules pyOCD needs on Linux, and especially
+> **whether the DK's onboard J-Link presents cleanly as CMSIS-DAP without any SEGGER component present**
+> (onboard probes can behave differently from standalone CMSIS-DAP probes).
+
+---
+
+## STAGE 1 — Adapters, hand-tested in isolation (the first mile), on BOTH boards
+
+**Goal:** drive both boards from plain Python before any MCP/agent layer.
+**Design rule:** each adapter is a small class with a stable method interface; test from a REPL until
+boringly reliable. The probe differences (J-Link vs ST-Link) must hide *behind* the SWD interface.
+
+### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
+- **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both
+  boards — UART is the same; only the COM port differs.
+- **Decision baked in now:** `reopen()` from the start — the Nucleo VCP can drop on reset/reflash, and
+  reconnect-after-flash is good hygiene on both boards.
+- **Exit:** see each board's reference firmware output in your own Python script.
+
+### Step 1.2 — SWD adapter as an interface + pyOCD backend (this is where two probes pays off)
+- **Design — the central decision of this stage:** one *abstract SWD interface*
+  (`connect / flash / reset_and_halt / halt / resume / read_register / read_memory / resolve_symbol`),
+  with the pyOCD calls inside a backend. Because you're running **both** a J-Link board and an ST-Link
+  board, the interface has to genuinely abstract the probe from day one — you can't accidentally bake
+  in ST-Link assumptions. That real-from-the-start abstraction is what makes later vendor GDB backends
+  (Stage 7) a clean drop-in.
+- **nRF-specific behavior to handle in the backend:** APPROTECT/locked-chip detection + a `recover`
+  path, so a locked nRF doesn't look like a generic failure.
+- **Build order within the step:** connect → read a register → flash → halt → read PC, on each board.
+- **Exit:** on **both** boards, flash the reference firmware, halt, read the PC.
+
+### Step 1.3 — Symbol resolution (thin; board-agnostic)
+- **Design:** pyOCD's ELF symbol provider resolves a named variable → address/value. Firmware must be
+  built with debug symbols (`-g`/DWARF).
+- **Decision:** no separate GDB server for the MVP — pyOCD's direct API + symbol provider covers it.
+  GDB/MI is a documented future option (Stage 7), not now.
+- **Exit:** resolve a known global on both boards.
+
+**Stage 1 exit criteria:** on BOTH boards — flash + read serial + halt + read register + resolve a
+symbol, all by hand, all through the same adapter interface. *Nothing past here matters until this works.*
+
+---
+
+## STAGE 2 — Wrap adapters as a local MCP server (no agent yet)
+
+**Goal:** expose the working adapters as MCP tools over **stdio**, validated in isolation.
+**Board note:** the server is board-agnostic above the adapter — it takes a board/target + port as
+config and uses the same tools for either. Prove the server against both boards.
+
+### Step 2.1 — FastMCP server, stdio transport
+- **Design:** `@mcp.tool()` / resource decorators wrapping Stage-1 adapter methods. stdio only (local,
+  no auth, lowest latency; the natural fit since the server must sit next to the board).
+- **Decision — primitive split:** actions = **tools** (`flash_firmware`, `reset_and_halt`, `halt`,
+  `resume`, `apply_patch`); read-only data = **resources** (`read_serial`, `read_register`,
+  `read_memory`, `resolve_symbol`).
+- **Decision — return types:** return typed text/content blocks (strings), **not raw dicts** (raw
+  dicts can truncate silently in the client though they look fine in the Inspector).
+- **Decision — board selection:** target + port are server config/params, so one server binary serves
+  either board. (At scale, one server instance per board — see Stage 6.)
+
+### Step 2.2 — Validate every tool with the MCP Inspector, against both boards
+- **Why before a real client:** schema errors fail *silently* in a real client; the Inspector surfaces
+  them. Exercise each tool by hand here, on each board.
+
+### Step 2.3 — `apply_patch` design decision
+- **Decision:** v1 = full-file rewrite (simpler, reliable). Diffs later (auditable, finer, harder to apply).
+
+### Step 2.4 — Long-running operations: BLOCKING for v1
+- **Decision (settled):** v1 uses **blocking** tool calls, not the async/ticket pattern — the debug
+  loop is inherently sequential on a single board, so there's no independent work to parallelize.
+- **But:** hardware work runs in a **background worker** so the server stays responsive (honors cancel,
+  no freeze, no transport timeout). Blocking ≠ frozen server.
+- **Forward-compat hook (cheap, do now):** isolate "run a slow op" behind one internal interface, so a
+  later move to the ticket pattern / MCP Tasks extension reimplements *one* module. Don't build the
+  ticket pattern yet.
+
+**Stage 2 exit criteria:** a local stdio MCP server whose every tool/resource works in the Inspector,
+verified on both boards.
+
+---
+
+## STAGE 3 — Deterministic guardrails IN THE SERVER
+
+**Goal:** durable guarantees *below the brain* so they bind every client (yours or a user's Claude
+Code). **Design rule:** guardrails are deterministic code, not model judgment.
+
+### Step 3.1 — Pre-flash safety gate (first guardrail)
+- **Design:** inside `flash_firmware`, before hardware is touched — validate image, refuse
+  fuse/option-byte writes, require a known-good recovery image. Unsafe → refuse via the protocol.
+- **Board note:** include the nRF APPROTECT/lock case — the gate (and recovery image) is what makes a
+  locked nRF recoverable rather than a dead end. *Why first:* it prevents the most expensive failure.
+
+### Step 3.2 — Session state, externalized and session-keyed
+- **Decision (settled):** store the watcher's per-session history in an **external store (Redis) keyed
+  by session ID from day one**, even on one local instance. In-process memory can't be cloned for
+  scaling; externalizing now makes scaling a config change, not a rewrite. The one "do-it-early" item.
+
+### Step 3.3 — Behavioral convergence watcher
+- **Design (deterministic backbone):** server sees every tool call in a session; hash each flashed
+  image/patch; detect (a) exact repetition, (b) non-shrinking failure signature, (c) oscillation. On
+  "stuck": **refuse further action tool calls** + return a non-convergence notice.
+- **Decision — honest scope:** detects clear-cut thrashing fully; can't do the fuzzy "exploring vs.
+  circling" judgment for an opaque external brain. A watcher-*model* may add a fuzzy advisory layer;
+  deterministic signals stay the hard stops.
+
+### Step 3.4 — Structured logging / audit
+- **Design:** log every tool call structured. One mechanism, three payoffs: feeds the watcher, becomes
+  the engineer-feedback feature, pre-conforms to the coming MCP audit spec.
+
+**Stage 3 exit criteria:** flash gate blocks a bad image (both boards); watcher halts a
+deliberately-unfixable loop; every tool call logged; watcher memory in the external store keyed by session.
+
+---
+
+## STAGE 4 — Prove BYO-agent mode end to end (no frontend of your own), on BOTH boards
+
+**Goal:** a real external agent drives your server safely — the headless product, working.
+
+1. **Register the server with your own Claude Code** as a local stdio server
+   (`claude mcp add --transport stdio <name> -- <command>`; config in `~/.claude.json`; verify with
+   `claude mcp list`). *Confirm exact syntax against current docs at build time.*
+2. **Run the injected-bug suite through Claude Code, on each board:** break the reference firmware in
+   known ways (wrong register value, off-by-one, peripheral init order) and confirm diagnose + fix.
+3. **Run safety/convergence tests live** under a real agent (both boards).
+4. **Run the wiring-fault test:** disconnect/misconfigure and confirm the agent reports a *physical*
+   fault instead of rewriting code forever — your original core insight. (Do this on both; the
+   J-Link/ST-Link difference makes it a stronger test of the fault-vs-code distinction.)
+
+**Exit criteria:** your headless server + stock Claude Code = a working debug loop with safety and
+anti-thrash, on both boards, zero UI written. *This is a shippable BYO-agent product.*
+
+---
+
+## STAGE 5 — The turnkey brain + CLI (the only part with a frontend)
+
+**Goal:** the premium product — your own loop, your skills, your frontend.
+
+1. **Build the brain as a second MCP client** of the same server (reuses Stages 1–3 wholesale).
+2. **Add skills injection** — structured per-chip/peripheral knowledge as data files. *The validated
+   moat.* **Two boards = two chip families of skills from the start**, which is the right shape for a
+   product meant to span many chips (don't over-fit skills to one MCU).
+3. **Add loop-aware convergence logic** in the brain (the richer judgment the server can't do for
+   external brains — the brain sees its own reasoning arc).
+4. **Build the CLI frontend** (board/target, port, ELF, task, max-iters). Embedded engineers live in
+   the terminal; GUI later. **This is the only frontend you build, and it belongs to the brain.**
+5. **Keys:** BYOK by default (preserves the moat); optionally your keys for a managed offering.
+6. **Closed-source:** keep the brain's valuable logic (skills, orchestration) server-side if real
+   secrecy matters — local Python decompiles easily. Commodity (adapters) is hard to hide; moat
+   (skills) is what you keep server-side.
+
+**Exit criteria:** `your-cli --board <nrf|nucleo> --task ...` runs the full loop turnkey on either
+board, with skills + loop-aware convergence the BYO tier lacks.
+
+---
+
+## STAGE 6 — Scale & remote (only when needed)
+
+- **Multiple boards = multiple agent+server pairs, NOT multithreading.** One simple sequential agent
+  per board beats one agent juggling many; isolation (separate processes/sessions) gives for free what
+  shared-memory concurrency makes you fight for. The Stage-3 session-keyed state already supports this.
+  (Having designed for two boards from day one, multi-board scaling is mostly "run more pairs.")
+- **Thin coordination only for genuinely shared resources:** if boards must talk to *each other* (the
+  mesh-protocol case — and the nRF's radio makes this a natural future direction) or share one
+  instrument, add a small coordination layer for *that piece only*; keep agents otherwise isolated.
+- **Remote/hosted:** add **Streamable HTTP transport + OAuth 2.1** (SSE is legacy — use HTTP). Build
+  OAuth in from the start of the HTTP work. The hardware-touching server still runs locally on the
+  bench; only non-hardware pieces (e.g. a hosted brain) live remote.
+
+---
+
+## STAGE 7 — Vendor GDB backends (only when a board needs it)
+
+- **Trigger, not a schedule:** add a vendor backend when the open stack concretely falls short on a
+  board (e.g. "pyOCD won't give me RTT/SWO trace on the nRF" — the likeliest first case, given the
+  nRF's J-Link).
+- **SEGGER J-Link GDB server backend** (nRF — likely first need; SEGGER's RTT/SWO/reliability on its
+  own probe) / **ST-Link GDB server backend** (STM32). Each implements the *same* SWD interface from
+  Step 1.2 but internally launches the vendor GDB server and drives it via GDB/MI. **Nothing above the
+  adapter changes** — the entire payoff of the day-one two-probe abstraction.
+- **Weigh:** both vendor servers are proprietary, free-to-use with terms, vendor-locked. Optional
+  backends; not load-bearing in the core.
+
+---
+
+## STAGE 8 — The capability ladder (post-MVP ambition, climbed empirically)
+
+**The ambition:** push the agent from "fix a bug" toward "write board init from scratch" and even
+"build a multithreaded OS by itself" using only the standard STM libraries (HAL/LL/CMSIS).
+
+**The crucial good news — the tool suite barely changes.** Whether the agent fixes a one-line
+register bug or writes a scheduler from scratch, it needs the *same* hardware interface: flash, halt,
+read registers/memory, read serial, breakpoints, resolve symbols. Higher ambition does NOT mean new
+hardware adapters — it means the **brain + skills layer** does more with the tools you already built.
+So this is not a tooling expansion; it's a brain/skills expansion on the existing Stage 1–3 foundation.
+
+**Treat it as a ladder, not a binary goal. Climb it empirically.** Each rung uses the same tools with
+a harder *diagnosis* problem and richer *skills* required:
+
+```
+fix-a-bug (MVP)
+  → modify-a-driver
+    → write-a-driver-from-scratch
+      → board-init-from-scratch (clocks, peripherals, interrupt vectors)
+        → simple scheduler (cooperative, then preemptive)
+          → multithreaded OS
+```
+
+**Two distinct claims live inside "the AI does this autonomously" — keep them separate:**
+
+1. **"The AI writes the code" — plausible, mostly a code-generation problem.** Board bring-up and
+   basic schedulers are heavily-documented, patterned domains frontier models handle well, *especially*
+   with skills injection feeding the chip's reference-manual details and standard-library conventions.
+   "AI produces plausible from-scratch init/scheduler code" is realistic.
+2. **"By itself / autonomously, verified, no human" — research frontier, and NOT a code problem.** The
+   difficulty explodes on *diagnosis*, not authorship:
+   - **The bugs become the hardest in the field:** race conditions, deadlocks, priority inversion,
+     stack overflow on context switch, memory corruption that manifests far from its cause. Hard for
+     expert humans with full tooling.
+   - **Nondeterminism breaks the ground-truth loop.** Concurrency bugs often appear ~1 run in 50, so
+     the agent can't reliably tell "my fix worked" from "I got lucky." This is the convergence problem
+     at its worst.
+   - **Bring-up undermines your own observability.** The loop leans on serial + registers. But if the
+     agent is writing clock/UART init from scratch and gets it wrong, UART doesn't work — the agent is
+     blind exactly when it most needs to see. Early bring-up must lean on the **SWD/debug-probe**
+     channel (register reads work before the chip is initialized) rather than serial — so the brain has
+     to reason about *which observability channel is even available at each bring-up stage*. (Usefully,
+     your tool suite already has the SWD channel; the challenge is orchestration, not a missing tool.)
+
+**Why climbing empirically is the point:** find the rung where the autonomous loop stops converging
+reliably. *That boundary is your actual product frontier and your most valuable piece of knowledge* —
+it's also where real differentiation from competitors (climbing the same ladder) is found. You learn
+it by building the lower rungs and watching where it breaks; no amount of planning substitutes for it.
+
+**Honest positioning at the high rungs:**
+- "AI writes your OS bring-up and you review it" → real, valuable, achievable.
+- "AI autonomously produces a *verified* multithreaded OS, no human in the loop" → research-frontier;
+  be skeptical of this claim from anyone (you, BootLoop, anyone) on concurrency bugs specifically. The
+  observability + nondeterminism problems are genuinely hard, not merely effort-away.
+
+**Skills are the lever here, not models.** You can't win on having a better model. You can win on
+skills depth (per-chip reference-manual knowledge, standard-library idioms, known-good init sequences)
+and on the diagnosis/observability orchestration that makes the loop converge on hard bugs. Both are
+the moat work already identified — Stage 8 just raises the stakes on them.
+
+---
+
+## The dependency spine (what blocks what)
+
+```
+Stage 0  (BOTH boards: toolchain known-good; nRF recover proven)
+   └─▶ Stage 1  (BOTH boards: adapters work by hand, behind one probe-agnostic interface)  ◀── EVERYTHING depends on this
+          └─▶ Stage 2  (adapters as MCP server, Inspector-validated, both boards)
+                 └─▶ Stage 3  (server-side guardrails + externalized state)
+                        └─▶ Stage 4  (BYO-agent proven end to end, both boards)  ← shippable product #1
+                               └─▶ Stage 5  (turnkey brain + CLI, two chip families of skills)  ← shippable product #2
+                                      ├─▶ Stage 6  (scale: multi-agent; remote: HTTP+OAuth)
+                                      ├─▶ Stage 7  (vendor GDB backends, on demand)
+                                      └─▶ Stage 8  (capability ladder: driver → bring-up → OS;
+                                                    same tools, harder diagnosis, deeper skills;
+                                                    climb empirically to find the convergence frontier)
+```
+
+**Two rules that govern the whole plan:**
+1. **Don't build a stage before its predecessor's exit criteria are met** — on *both* boards where the
+   stage says both. The temptation is to jump to the MCP/agent layers; resist it until the adapters
+   work by hand (Stage 1).
+2. **Don't build the hard version before you need it** — blocking before async, stdio before HTTP, open
+   backend before vendor backends, one agent before many. Each upgrade is a swap, not a rewrite,
+   *because* of an isolation decision made early (the probe-agnostic SWD interface, externalized state,
+   the isolated slow-op module).
+
+**Why two co-primary boards is worth the extra Stage 0–1 cost:** it forces the probe abstraction to be
+real immediately (J-Link + ST-Link), gives you two chip families of skills from the start, and means
+your "supports many boards" claim is proven, not aspirational — at the price of a heavier early setup
+(notably the nRF APPROTECT/recover wrinkle). If early effort gets tight, the honest fallback is to lead
+the *very first* hand-test on the L476RG (smoothest open-stack path) and bring the nRF up immediately
+after — without dropping it to secondary.
