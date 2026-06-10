@@ -51,8 +51,7 @@ Selection: 3.11
 lockfile** (`pyproject.toml` + lock, or `requirements.txt`) so the mixed team stays in sync, then pin
 "what worked" once it works and revisit later. The lockfile matters *more* with a team than it would
 solo, because it keeps two OSes' environments matched so a bug isn't an environment mismatch in disguise.
-
-
+ho
 
 **Per-OS bootstrap docs — authored incrementally, not planned upfront.** The first teammate to set up
 each OS writes a short "on macOS do X / on Windows do Y" onboarding note as they go, so the next person
