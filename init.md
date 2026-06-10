@@ -46,7 +46,10 @@ From the project root:
 
 Powershell:
 Remove-Item .python-version
+pip install uv
 uv python pin 3.12
+uv sync
+
 
 ```bash
 # Pin the interpreter the environment is built from (one-time; commit this file).
