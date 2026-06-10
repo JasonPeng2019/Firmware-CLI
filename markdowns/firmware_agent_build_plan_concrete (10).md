@@ -92,12 +92,6 @@ Stage 4+ and are recorded here only so it's clear their omission is intentional,
 **Exit criteria (per board):** plugged in, probe + COM port visible, reference firmware flashes and
 prints by hand — and on the nRF, you've proven you can recover a locked chip. No Python yet.
 
-**Automation note (after the manual truth is known):** codify host readiness in a **generic
-`host_bootstrap.py`** that runs **before** `stage0_check.py`. Its job is host-only: verify/install
-Python deps, check that `pyocd` can enumerate probes, check that serial devices enumerate, and
-check/install target packs referenced by selected board configs. It does **not** replace Stage 0's
-manual truth; it just tells you whether the machine is ready for board-level validation.
-
 > ### Drivers vs. libraries, and what ships to customers (read before designing the install)
 >
 > **A driver and a library are different layers — don't conflate them.** Your code never "paths to"
@@ -161,6 +155,13 @@ manual truth; it just tells you whether the machine is ready for board-level val
 **Goal:** drive both boards from plain Python before any MCP/agent layer.
 **Design rule:** each adapter is a small class with a stable method interface; test from a REPL until
 boringly reliable. The probe differences (J-Link vs ST-Link) must hide *behind* the SWD interface.
+
+> **On reference repos:** the useful *ideas* from surveyed open repos are already captured as plan
+> decisions in **Appendix R.1** (serial-sequence batching, tools/adapter/skills split, tool taxonomy +
+> typed errors, simulation mode, chip-knowledge tool shape) — so you generally **build from this plan,
+> not from repos.** At most, Claude Code may glance at two repos for one narrow thing each (Appendix R.2:
+> `xds110` folder shape, `embedded-debugger-mcp` tool-list checklist), kept in a scratch/gitignored
+> `reference/` area, never the shipped tree. Where a repo contradicts this plan, the plan wins.
 
 ### Step 1.0 — Define the canonical repo & artifact layout FIRST (do before any adapter code)
 **Why first:** `flash_firmware`, `apply_patch`, bug injection, recovery-image logic, logging, and the
@@ -615,3 +616,71 @@ your "supports many boards" claim is proven, not aspirational — at the price o
 (notably the nRF APPROTECT/recover wrinkle). If early effort gets tight, the honest fallback is to lead
 the *very first* hand-test on the L476RG (smoothest open-stack path) and bring the nRF up immediately
 after — without dropping it to secondary.
+
+---
+
+## Appendix R — Borrowed ideas (captured inline) + the short list of repos worth a look
+
+**This plan is the source of truth.** The valuable *ideas* from the surveyed open repos are captured
+below as plan decisions, so you have them WITHOUT pointing Claude Code at repos whose architectures
+(OpenOCD-subprocess, single-board, no guardrails, or Rust) *contradict* this plan and would pull a
+build off-course. **Where any repo's pattern conflicts with this plan, the plan wins.**
+
+### R.1 — Ideas worth keeping (now part of the plan; no repo visit needed)
+- **Serial-sequence batching** *(from stm32-mcp)*: let `read_serial`/UART tooling accept a **batched
+  send→delay→expect sequence in one tool call** (real in-process timing, expect-assertions, filtered
+  responses) rather than many round-trips. Reduces tool-call overhead and fits the convergence-watching
+  design. Build this into the UART tool surface (Stage 1.1 / Stage 2).
+- **Tools/adapter/knowledge folder split** *(from xds110_mcp_server)*: the package shape this plan
+  already uses (`tools/` + probe-backend adapter + `skills/`) is the right separation — keep tool
+  definitions, the pyOCD backend, and skills in distinct layers (Step 1.0 layout already reflects this).
+- **Complete tool taxonomy + typed errors** *(from embedded-debugger-mcp)*: aim for a *complete* debug
+  tool surface (flash, erase, verify, reset/halt/run/step, HW/SW breakpoints, memory r/w, RTT
+  attach/read/write, session mgmt) and return **typed errors** (a `DebugError`-style hierarchy mapped to
+  MCP error codes), not bare strings. Use as a completeness checklist for Step 2.1's tool list.
+- **Simulation/loopback mode** *(from UnitApi / mcp2serial)*: support a **hardware-free simulation mode**
+  for the adapters so logic can be tested without a board attached — useful for the mixed-OS team and CI.
+  Add when convenient (cheap to design in early at the adapter interface).
+- **Chip-knowledge tool surface** *(from sheetsdata-mcp)*: when building skills (Stage 5), a good shape
+  is `read_datasheet` / `check_design_fit → PASS/FAIL/WARNING` style tools. **Self-host the equivalent
+  for nRF52/STM32L4 — do not depend on any paid external datasheet API.**
+
+### R.2 — The only repos worth opening NOW (and only for the one noted thing)
+Keep these OUT of the shipped tree (scratch/gitignored `reference/` only). For most work, building from
+this plan beats referencing them.
+- **xds110_mcp_server** (MIT) — glance at its **folder structure** if a concrete example of the
+  tools/adapter/knowledge split helps. Structure only; its code is TI/OpenOCD-specific.
+- **embedded-debugger-mcp** (MIT, Rust) — a **one-time skim of its tool list** as a completeness check
+  against R.1's taxonomy. Nothing else (it's Rust; not portable).
+
+### R.3 — NOT YET: revisit ONLY when you reach the matching stage (don't open now)
+These are genuinely useful, just not for current work. Their *core ideas* are already in R.1; open the
+repo itself only if you want a concrete example when you actually build that stage.
+- **saleae-logic2-mcp** (Apache-2.0) — **revisit at Stage (a)**, logic-analyzer adapter. Reference for a
+  stdio MCP instrument server + Saleae capture/decode integration.
+- **scope-mcp** (confirm license in-repo) — **revisit at Stage (a)**, oscilloscope adapter. Compact
+  FastMCP + SCPI/PyVISA instrument-control example.
+- **sheetsdata-mcp** (MIT; client to a *paid* API) — **revisit at Stage 5**, skills design. Its tool
+  *shape* is already captured in R.1; self-host the equivalent, don't depend on the paid API.
+- **UnitApi/mcp** (Apache-2.0) — **revisit at Stage 5 / guardrails**. Its simulation-mode and
+  permission/auditing patterns are already captured in R.1; open only if you want a fuller example.
+
+### R.4 — SKIP entirely (ideas extracted; opening them is worse than building from this plan)
+**stm32-mcp, mcp2serial, mcp2tcp, tinymcp** — their useful ideas are already in R.1, and their
+architectures *contradict* this plan (OpenOCD-subprocess, single-board, cloud-mediated) or are
+simpler/less specific than what you're building. Don't point Claude at these at any stage.
+
+### R.5 — Tools you install, never clone
+- **pyOCD** — your SWD backend; a dependency in `pyproject.toml`, not a repo to reference.
+- **probe-rs** — a Rust *alternative* to pyOCD. **Don't clone, don't switch languages.** Only if pyOCD
+  proves unreliable on a board in real testing (watch nRF52 quirks: pyOCD issues #1455 SWO, #1540 reset)
+  add it as a **`ProbeRsBackend` behind the Stage-1 SWD interface**, via **subprocess to the probe-rs
+  CLI** — nothing above the adapter changes. Research verdict: likely unneeded for these two boards.
+
+### The principle
+**Borrow techniques, not codebases — and once a technique is captured here, the repo has served its
+purpose.** None of these repos contains your moat (safety gate, convergence watcher, session state,
+skills); that's yours to build in Python. A repo that's functionally close but architecturally divergent
+(e.g. stm32-mcp) is *more* hazardous as a live reference than an irrelevant one, because a build can
+absorb its contradicting patterns — which is exactly why its one good idea is lifted into R.1 and the
+repo itself is off the list.
