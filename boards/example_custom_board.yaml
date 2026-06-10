@@ -14,8 +14,7 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (example host-side serial-port
   - myboard
   - usb serial
   - uart
-reference_firmware_path: ../firmware/my_custom_board/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (example repo-owned Stage 0 baseline artifact path; not a user's project path)
 reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (example expected UART validation text)
   - "hello"
-# Do not add user project paths, build commands, or output artifact paths here.
-# Those are runtime/session inputs, not board metadata.
+# Do not add firmware paths, user project paths, build commands, or output artifact paths here.
+# Those are runtime/session inputs supplied by the host, not board metadata.

@@ -70,7 +70,6 @@ class BoardConfig:
     uart_note: str = ""
     requires_recover_validation: bool = False
     recover_command: str | None = None
-    reference_firmware_path: Path | None = None
     expected_uart_substring: str | None = None
     source_path: Path | None = None
 
@@ -257,6 +256,7 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         "artifact_path",
         "output_artifact_path",
         "user_output_artifact",
+        "reference_firmware_path",
     }
     present_forbidden = sorted(field for field in forbidden_session_fields if field in raw)
     if present_forbidden:
@@ -310,11 +310,6 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
     serial_terms.update(PROBE_FAMILY_HINTS.get(probe_family, set()))
     serial_terms.add("virtual com")
 
-    firmware_path = raw.get("reference_firmware_path")
-    resolved_firmware_path = None
-    if firmware_path:
-        resolved_firmware_path = resolve_firmware_path(str(firmware_path), source_path.parent if source_path else None)
-
     expected_uart_substring = None
     if raw.get("expected_uart_substring"):
         expected_uart_substring = str(raw["expected_uart_substring"]).strip()
@@ -338,7 +333,6 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         uart_note=uart_note,
         requires_recover_validation=requires_recover_validation,
         recover_command=recover_command,
-        reference_firmware_path=resolved_firmware_path,
         expected_uart_substring=expected_uart_substring,
         source_path=source_path,
     )
@@ -987,7 +981,7 @@ def main():
         probe = probes.get(board.board_id)
         target_available = target_ok.get(board.board_id, False)
         port = serial_ports.get(board.board_id)
-        reference_firmware_path = reference_firmware_overrides.get(board.board_id, board.reference_firmware_path)
+        reference_firmware_path = reference_firmware_overrides.get(board.board_id)
         expected_text = expect_overrides.get(board.board_id, board.expected_uart_substring)
         baudrate = baudrate_overrides.get(board.board_id, board.default_baudrate)
 
@@ -1032,7 +1026,7 @@ def main():
                 SummaryItem(
                     f"{board.display_name}: flash known-good reference firmware",
                     SUMMARY_MANUAL,
-                    f"provide --reference-firmware {board_cli_label(board)}=PATH or set reference_firmware_path in the board config",
+                    f"provide --reference-firmware {board_cli_label(board)}=PATH from the host filesystem",
                 )
             )
             manual_items.append(

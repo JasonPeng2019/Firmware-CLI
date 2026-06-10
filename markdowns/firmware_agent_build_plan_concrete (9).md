@@ -92,6 +92,12 @@ Stage 4+ and are recorded here only so it's clear their omission is intentional,
 **Exit criteria (per board):** plugged in, probe + COM port visible, reference firmware flashes and
 prints by hand — and on the nRF, you've proven you can recover a locked chip. No Python yet.
 
+**Automation note (after the manual truth is known):** codify host readiness in a **generic
+`host_bootstrap.py`** that runs **before** `stage0_check.py`. Its job is host-only: verify/install
+Python deps, check that `pyocd` can enumerate probes, check that serial devices enumerate, and
+check/install target packs referenced by selected board configs. It does **not** replace Stage 0's
+manual truth; it just tells you whether the machine is ready for board-level validation.
+
 > ### Drivers vs. libraries, and what ships to customers (read before designing the install)
 >
 > **A driver and a library are different layers — don't conflate them.** Your code never "paths to"
