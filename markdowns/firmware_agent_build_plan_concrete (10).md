@@ -171,9 +171,9 @@ all later tooling at it. (Not in Stage 0 — Stage 0 is hand-testing with no cod
 
 **Canonical directory layout:**
 ```
-firmware-agent/
+pyocd-debug-mcp/
 ├── pyproject.toml + lockfile        # deps + pinned versions (team sync, see Scope Assumptions)
-├── src/firmware_agent/              # all product code
+├── src/pyocd_debug_mcp/             # all product code
 │   ├── adapters/                    # uart.py, swd_interface.py, swd_pyocd.py
 │   ├── tools/                       # MCP tool/resource definitions + dispatch
 │   ├── guardrails/                  # flash gate, unlock gate, convergence watcher, logging
@@ -281,6 +281,47 @@ source of truth — not each component parsing the YAML its own way.
 **Exit:** the minimal schema + one loader committed; both boards have a valid `boards/<board>.yaml`; the
 "data-not-branches, grows-per-stage" rule documented in the repo README.
 
+### Step 1.0c — Environment, container & boilerplate (uv-managed; do alongside 1.0)
+**Why here:** Stage 1 is the first line of code, so the team needs one reproducible Python environment
+and one set of per-developer config files *before* adapters are written — otherwise "works on my
+machine" creeps in exactly where the Scope Assumptions warned (mixed macOS + Windows). This is the
+Scope Assumptions' "pick a Python version / commit a lockfile" made operational.
+
+**"The container" = a uv-managed virtualenv, not Docker.** *Initializing the container* means creating
+the project's isolated Python environment with [uv](https://docs.astral.sh/uv/):
+- **Pin the interpreter once:** `.python-version` = `3.12` (committed). uv installs that interpreter
+  automatically — no system-Python assumption. (3.10 is the hard floor from the MCP SDK; 3.12 is the
+  team standard chosen per Scope Assumptions.)
+- **Sync = create + reproduce the env:** `uv sync` creates a gitignored `.venv/`, installs runtime +
+  dev deps, and writes/honors the committed `uv.lock`. A teammate runs the *same* `uv sync` to get a
+  byte-identical environment — this is the "lockfile keeps two OSes matched" rule, enforced. Runtime-only
+  install (no dev tools): `uv sync --no-dev`.
+- **Commit:** `pyproject.toml`, `uv.lock`, `.python-version`. **Never commit:** `.venv/`.
+- **Run everything through `uv run …`** so each command uses the pinned env, never a stray global
+  Python (`uv run pytest`, `uv run ruff check .`, `uv run pyocd list`).
+
+**Boilerplate / local-override files — per-developer, never load-bearing for anyone else.** These are
+the machine-specific values the no-hardcoding rule (§1) keeps out of code and out of shared config:
+- **`.env`** — copy from `.env.example`; sets `PYOCD_PROBE_UID` (your probe's unique id, from
+  `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52840`, `stm32l476`). These are the
+  per-machine defaults for `connect`/`flash`; **gitignored** (`.env` ignored, `.env.example` committed).
+  The `connect` path still accepts `unique_id`/`target` as runtime args that override these.
+- **`pyocd.yaml`** (committed) — shared, project-wide pyOCD options; **`pyocd.local.yaml`**
+  (gitignored) — per-developer tweaks. **Both are authored from scratch when first needed, not copied
+  from a template** — pyOCD *reads* this file (its keys are pyOCD's schema) but ships no example, and
+  the project may have no `pyocd.yaml` at all until a shared option actually exists. Don't treat a
+  missing `pyocd.yaml` as an error.
+- **Relationship to `boards/<board>.yaml` (Step 1.0b):** board YAML is the shared board *definition*
+  (data, committed, same on every machine); `.env` / `*.local.yaml` are per-*machine* (which probe is
+  plugged into *this* bench, which COM port). Different axes — don't fold one into the other.
+
+**Verify the env reaches hardware (bridges to Stage 0):** `uv run pyocd list` shows each board's probe
+and its unique id; copy that id into `.env`. If a probe doesn't appear, it's the OS-level driver/WinUSB
+setup from Stage 0, not the Python env.
+
+**Exit:** `.python-version` + `uv.lock` committed; `uv sync` reproduces the env on both macOS and
+Windows; `.env.example` + a committed `pyocd.yaml` exist; `uv run pyocd list` sees each board's probe.
+
 ### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
 - **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both
   boards — UART is the same; only the COM port differs.
@@ -329,10 +370,18 @@ config and uses the same tools for either. Prove the server against both boards.
   dicts can truncate silently in the client though they look fine in the Inspector).
 - **Decision — board selection:** target + port are server config/params, so one server binary serves
   either board. (At scale, one server instance per board — see Stage 6.)
+- **Decision — entry point & startup (how the server actually launches):** declare a console-script
+  entry point in `pyproject.toml` (`[project.scripts]`, e.g. `pyocd-debug-mcp = "pyocd_debug_mcp.server:main"`)
+  so the server starts as **`uv run pyocd-debug-mcp`** over the MCP **stdio** transport. This exact
+  command is what MCP clients are pointed at in Stage 4 — declaring it now avoids hardcoding a brittle
+  `python path/to/server.py` invocation and keeps startup inside the pinned uv env (Step 1.0c).
 
 ### Step 2.2 — Validate every tool with the MCP Inspector, against both boards
 - **Why before a real client:** schema errors fail *silently* in a real client; the Inspector surfaces
   them. Exercise each tool by hand here, on each board.
+- **How:** `uv run mcp dev src/pyocd_debug_mcp/server.py` launches the server under the MCP Inspector (the `mcp`
+  dev tooling comes from the `mcp[cli]` dependency). Run it through the pinned env so it matches what
+  ships.
 
 ### Step 2.3 — `apply_patch` design decision
 - **Decision:** v1 = full-file rewrite (simpler, reliable). Diffs later (auditable, finer, harder to apply).
@@ -458,7 +507,8 @@ external store keyed by session.
 **Goal:** a real external agent drives your server safely — the headless product, working.
 
 1. **Register the server with your own Claude Code** as a local stdio server
-   (`claude mcp add --transport stdio <name> -- <command>`; config in `~/.claude.json`; verify with
+   (`claude mcp add --transport stdio <name> -- uv run pyocd-debug-mcp` — i.e. `<command>` is the
+   Stage-2.1 entry point launched through the pinned uv env; config in `~/.claude.json`; verify with
    `claude mcp list`). *Confirm exact syntax against current docs at build time.*
 2. **Run the injected-bug suite through Claude Code, on each board:** break the reference firmware in
    known ways (wrong register value, off-by-one, peripheral init order) and confirm diagnose + fix.
