@@ -18,6 +18,5 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matchin
   - stm32
   - nucleo
   - virtual com
-reference_firmware_path: ../firmware/nucleo_l476rg/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (repo-owned Stage 0 baseline artifact path; not a user's project path)
-# Do not add user project paths, build commands, or output artifact paths here.
-# Those are runtime/session inputs, not board metadata.
+# Do not add firmware paths, user project paths, build commands, or output artifact paths here.
+# Those are runtime/session inputs supplied by the host, not board metadata.

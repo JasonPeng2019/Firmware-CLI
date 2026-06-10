@@ -2,8 +2,8 @@
 
 This note describes the shortest path to getting `stage0_check.py` working for any supported board.
 It assumes the canonical repo layout from the current plan and the board-config workflow in `boards/`.
-In this note, `reference_firmware_path` means the repo-owned Stage 0 baseline artifact used for your
-own validation. It does **not** mean a user's project firmware path.
+In this note, the reference firmware path is a **host-supplied runtime argument** used for Stage 0
+validation. It is **not** stored in board YAML, and it does **not** mean a user's project firmware path.
 
 ## 1. Install Python deps
 
@@ -53,7 +53,6 @@ probe_family: cmsisdap  # HW-FIXED, UNVERIFIED
 pyocd_target: rp2040  # VENDOR-FIXED, UNVERIFIED
 serial_baudrate: 115200  # PROJECT-DEFINED, UNVERIFIED
 test_read_address: 0x20000000  # HW-FIXED, UNVERIFIED
-reference_firmware_path: ../firmware/my_board/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED
 ```
 
 Useful optional fields:
@@ -70,18 +69,18 @@ Field ownership:
 
 - Board identity: `board_id`, `display_name`, `mcu_family`, `probe_family`, `pyocd_target`, `serial_baudrate`, `test_read_address`
 - Discovery / host matching: `pack_name`, `probe_hint_terms`, `serial_hint_terms`, `uart_note`
-- Project / validation data: `reference_firmware_path`, `reference_uart_patterns`, `expected_uart_substring`
+- Project / validation data: `reference_uart_patterns`, `expected_uart_substring`
 - Recovery policy: `requires_recover_validation`, `recover_command`
 
 Important distinction:
 
-- `reference_firmware_path` is for repo-owned reference/test firmware used in Stage 0 and your own
-  validation harness.
+- The Stage 0 reference firmware path is supplied by the host at runtime via
+  `--reference-firmware BOARD_ID=PATH`.
 - A user's actual project firmware lives in the user's repo/directory, outside this server repo, and
   should be provided later as a runtime/session input to the build/flash workflow, not stored in the
   board YAML.
 - `stage0_check.py` now rejects board YAML files that try to include project/session-scoped fields such
-  as `project_path`, `build_command`, or `artifact_path`.
+  as `reference_firmware_path`, `project_path`, `build_command`, or `artifact_path`.
 
 Examples:
 
