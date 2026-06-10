@@ -23,6 +23,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+SRC_DIR = Path(__file__).resolve().parent / "src"
+if SRC_DIR.is_dir():
+    sys.path.insert(0, str(SRC_DIR))
+
+from pyocd_debug_mcp.local_env import load_local_env
+
 PASS = "PASS"
 FAIL = "FAIL"
 WARN = "WARN"
@@ -30,6 +36,8 @@ INFO = "INFO"
 
 DEFAULT_BOARD_CONFIG_DIR = Path(__file__).resolve().parent / "boards"  # PROJECT-DEFINED (repo layout)
 BOARD_CONFIG_SUFFIXES = {".json", ".yaml", ".yml"}  # PROJECT-DEFINED (supported config formats)
+
+load_local_env()
 
 
 class ConfigError(Exception):
@@ -79,6 +87,12 @@ DEPENDENCIES = (
         import_name="yaml",
         required=False,
         reason="required to load YAML board configs",
+    ),
+    DependencySpec(
+        package_name="python-dotenv",
+        import_name="dotenv",
+        required=True,
+        reason="required to auto-load repo-local .env defaults",
     ),
 )
 

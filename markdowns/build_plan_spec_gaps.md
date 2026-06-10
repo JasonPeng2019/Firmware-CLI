@@ -64,12 +64,14 @@ What should be defined:
   - `serial_discovery_hints`
   - `serial_baudrate`
   - `flash_artifact_type`
-  - `reference_firmware_path`
   - `reference_uart_patterns`
-  - `recovery_image_path`
   - `recover_command`
   - `memory_protection_rules`
   - `register_aliases`
+
+Artifact locations should be frozen by repo layout and naming rules instead of
+tracked board-config fields in Phase A. That means canonical reference and
+recovery paths belong under `firmware/<board>/...`, not in board YAML.
 
 Why this matters:
 - if board knowledge is not formalized as data, later "multi-board" support will collapse back into code branches

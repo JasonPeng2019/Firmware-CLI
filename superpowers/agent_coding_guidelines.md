@@ -86,7 +86,7 @@ board_id:        nrf52840dk     # PROJECT-DEFINED (our canonical id)
 mcu_family:      nrf52840        # HW-FIXED (the silicon)
 pyocd_target:    nrf52840        # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --targets`)
 serial_baudrate: 115200          # PROJECT-DEFINED (our chosen default; matches reference firmware)
-recovery_image_path: firmware/nrf52840dk/recovery/   # PROJECT-DEFINED (path = our layout)
+probe_family: jlink              # HW-FIXED (the onboard debug probe family)
 ```
 
 **Why the three-way split (not just "fixed vs. ours"):** the tag tells the reader *which authority to

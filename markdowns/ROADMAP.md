@@ -512,7 +512,7 @@ This item defines the rules that every developer machine must follow.
 - a short developer protocol document
 - a pinned dependency file
 - a standard local environment bootstrap command sequence
-- a local config convention such as `.firmware-agent.local.yaml`
+- a local override convention such as `.env` plus optional `pyocd.local.yaml`
 
 ### Questions this item must answer
 
@@ -544,7 +544,7 @@ This item creates the initial project structure and makes the repo legible.
 
 ### Included work
 
-- create `src/firmware_agent/`
+- create `src/pyocd_debug_mcp/`
 - create `boards/`
 - create `firmware/`
 - create `runs/`
@@ -730,7 +730,7 @@ This item defines how the project represents board facts and how local machine a
 
 - board YAML files for both boards
 - one config loader module
-- one local override format and example
+- one local override convention and example files
 
 ### Questions this item must answer
 

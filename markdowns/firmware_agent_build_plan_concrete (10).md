@@ -255,9 +255,16 @@ mcu_family:          nrf52840            # HW-FIXED — the silicon; selects ski
 probe_family:        jlink               # HW-FIXED — onboard probe; selects SWD backend (Stage 7)
 pyocd_target:        nrf52840            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
 serial_baudrate:     115200             # PROJECT-DEFINED — chosen default; must match reference firmware
-reference_firmware_path: firmware/nrf52840dk/reference/build/firmware.elf   # PROJECT-DEFINED — our layout
-recovery_image_path:     firmware/nrf52840dk/recovery/        # PROJECT-DEFINED — path the safety+unlock gates check
 ```
+
+**Decision — keep artifact paths out of tracked board YAML in Phase A.** The
+canonical locations still exist and are fixed by the repo layout:
+- reference baseline artifacts live under `firmware/<board>/reference/`
+- the canonical symbol-bearing artifact is `firmware/<board>/reference/build/firmware.elf`
+- recovery assets live under `firmware/<board>/recovery/`
+
+Those are repo-layout and naming-rule decisions, not tracked board-config
+fields. Board YAML stays hardware-focused; user and session paths stay out.
 
 **Add later, when its stage arrives (listed so the omission is intentional, not forgotten):**
 - `reference_uart_patterns` — **Stage 4** (test harness). What "success/failure" looks like over serial;
@@ -305,7 +312,8 @@ the machine-specific values the no-hardcoding rule (§1) keeps out of code and o
 - **`.env`** — copy from `.env.example`; sets `PYOCD_PROBE_UID` (your probe's unique id, from
   `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52840`, `stm32l476`). These are the
   per-machine defaults for `connect`/`flash`; **gitignored** (`.env` ignored, `.env.example` committed).
-  The `connect` path still accepts `unique_id`/`target` as runtime args that override these.
+  The Phase A MCP server and host scripts auto-load `.env` when present. The `connect` path still
+  accepts `unique_id`/`target` as runtime args that override these.
 - **`pyocd.yaml`** (committed) — shared, project-wide pyOCD options; **`pyocd.local.yaml`**
   (gitignored) — per-developer tweaks. **Both are authored from scratch when first needed, not copied
   from a template** — pyOCD *reads* this file (its keys are pyOCD's schema) but ships no example, and
@@ -320,7 +328,9 @@ and its unique id; copy that id into `.env`. If a probe doesn't appear, it's the
 setup from Stage 0, not the Python env.
 
 **Exit:** `.python-version` + `uv.lock` committed; `uv sync` reproduces the env on both macOS and
-Windows; `.env.example` + a committed `pyocd.yaml` exist; `uv run pyocd list` sees each board's probe.
+Windows; `.env.example` exists; `pyocd.local.yaml` is the gitignored per-developer override file; a
+committed `pyocd.yaml` exists only if the team has real shared pyOCD options to standardize; `uv run
+pyocd list` sees each board's probe.
 
 ### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
 - **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both

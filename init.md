@@ -1,107 +1,104 @@
-# pyocd-debug-mcp
+# Environment Bootstrap
 
-An MCP server that exposes embedded debug, flash, and inspection control over an
-Arm Cortex-M target via [pyOCD](https://pyocd.io). It runs locally on a machine
-with a debug probe physically attached over USB.
+This document is the detailed setup guide for the Phase A repo standard.
 
-## Setup
+The root [README.md](./README.md) is the canonical layout and naming reference.
+This file goes deeper on environment bootstrap, local overrides, and the main
+developer command surface.
 
-### 1. Prerequisites
+## Prerequisites
 
-- **[uv](https://docs.astral.sh/uv/)** — manages the Python version, virtual
-  environment, and dependencies.
-- **Python 3.10+** — the floor required by the MCP SDK. The project pins a
-  concrete version via `.python-version` (3.12); uv installs it automatically.
-- **A debug probe** — CMSIS-DAP (DAPLink), ST-Link, J-Link, etc., connected via
-  USB, attached to a Cortex-M target.
+- **[uv](https://docs.astral.sh/uv/)** — the canonical environment manager for
+  this repo
+- **A debug probe** — CMSIS-DAP, ST-Link, J-Link, or equivalent, attached to a
+  supported Cortex-M target
+- **Platform USB support for the probe** — libusb, vendor drivers, or vendor
+  tooling as needed by the probe family
 
-### 2. Native dependency: libusb
+The team-standard interpreter is pinned in `.python-version` as `3.12`.
+`pyproject.toml` still declares the broader package floor, but development and
+validation should use the pinned Phase A environment.
 
-pyOCD talks to probes through libusb. A bundled copy ships with pyOCD's
-dependencies on most platforms, but if probe enumeration fails, install the
-system package:
+## Native Probe Dependencies
+
+If probe enumeration fails, install the missing host-level dependency first.
 
 - **macOS:** `brew install libusb`
 - **Debian / Ubuntu:** `sudo apt install libusb-1.0-0`
-- **Windows:** install the probe's WinUSB driver (e.g. via Zadig for generic
-  CMSIS-DAP probes); vendor probes like ST-Link ship their own driver.
+- **Windows:** install the probe’s required USB driver path or vendor tooling
 
-### 3. Linux only: udev rules
+Linux users may also need pyOCD’s udev rules from the upstream pyOCD repo.
 
-On Linux you must grant user-space access to the probe, or pyOCD will not see
-it. pyOCD ships udev rules in its
-[repository `udev/` directory](https://github.com/pyocd/pyOCD/tree/main/udev);
-copy the relevant `.rules` file into `/etc/udev/rules.d/`, then reload:
+## Canonical Bootstrap Flow
 
-```bash
-sudo udevadm control --reload
-sudo udevadm trigger
-```
+Run all commands from the repo root.
 
-Unplug and replug the probe afterward.
-
-### 4. Install and run
-
-Each block below is the full sequence — pin the interpreter, build the
-environment, verify the probe, and start the server. Run it from the project
-root.
-
-**macOS / Linux:**
+### macOS / Linux
 
 ```bash
-uv python pin 3.12         # pin the interpreter (one-time; commit .python-version)
-uv sync                    # create ./.venv, install deps, write uv.lock
-uv run pyocd list          # verify the probe is visible; copy its unique ID
-uv run pyocd-debug-mcp     # start the server
+uv sync
+uv run pyocd list
+uv run python host_bootstrap.py
+uv run pyocd-debug-mcp
 ```
 
-**Windows (PowerShell):**
+### Windows (PowerShell)
 
 ```powershell
-# If an earlier `echo > .python-version` left a UTF-16 file, remove it first.
-Remove-Item .python-version -ErrorAction SilentlyContinue
-uv python pin 3.12         # pin the interpreter (writes valid UTF-8)
-uv sync                    # create .\.venv, install deps, write uv.lock
-uv run pyocd list          # verify the probe is visible; copy its unique ID
-uv run pyocd-debug-mcp     # start the server
+uv sync
+uv run pyocd list
+uv run python host_bootstrap.py
+uv run pyocd-debug-mcp
 ```
 
-`uv python pin` writes a clean `.python-version` (avoiding PowerShell's UTF-16
-redirection trap). `uv sync` creates a gitignored `.venv/` and a committed
-`uv.lock`, so a teammate reproduces the exact environment with the same command;
-use `uv sync --no-dev` for a runtime-only install. The server speaks the MCP
-stdio transport — point your MCP client (Claude Desktop, the MCP Inspector,
-etc.) at the `uv run pyocd-debug-mcp` command. To test interactively instead:
+Notes:
+
+- `uv sync` creates `.venv/`, installs runtime and dev dependencies, and honors
+  the committed `uv.lock`.
+- Use `uv sync --no-dev` if you intentionally want a runtime-only install.
+- Use `uv run ...` for repo commands so they always run inside the pinned env.
+- The MCP Inspector entrypoint is:
 
 ```bash
 uv run mcp dev src/pyocd_debug_mcp/server.py
 ```
 
-## Local overrides
+## Local Override Policy
 
-Nothing on one machine should be load-bearing for anyone else. Per-developer
-settings live outside version control:
+Machine-local values must not be committed as tracked repo state.
 
-- **`.env`** — copy from `.env.example`. Set `PYOCD_PROBE_UID` (your probe's
-  unique ID) and `PYOCD_TARGET` (your chip, e.g. `stm32f407vg`). These become
-  the defaults for the `connect` tool. Gitignored.
-- **`pyocd.yaml`** (committed) for shared, project-wide pyOCD options; a
-  gitignored `pyocd.local.yaml` for per-developer tweaks.
+Use these override layers:
 
-The `connect` tool also accepts `unique_id` and `target` arguments directly,
-which override the environment defaults.
+- **`.env`** — optional, gitignored, auto-loaded by the MCP server and the
+  Phase A host scripts. Use it for:
+  - `PYOCD_PROBE_UID`
+  - `PYOCD_TARGET`
+- **`pyocd.local.yaml`** — optional, gitignored, for per-developer pyOCD
+  tweaks once needed
+- **`pyocd.yaml`** — optional and committed only when the team has a real
+  shared pyOCD option to standardize
 
-## Development
+Tracked board YAML remains hardware-focused and must not store user paths,
+build commands, or artifact output locations.
+
+The `connect` tool still accepts `unique_id` and `target` arguments directly,
+which override `.env` defaults at runtime.
+
+## Main Developer Commands
 
 ```bash
-uv run pytest        # tests
-uv run ruff check .  # lint
-uv run ruff format . # format
-uv run mypy src      # type check
+uv run python host_bootstrap.py
+uv run python stage0_check.py --board-id nucleo_l476rg
+uv run pyocd-debug-mcp
+uv run pytest
+uv run ruff check .
+uv run ruff format .
+uv run mypy src
 ```
 
-## Available tools
+## Related Docs
 
-`connect`, `disconnect`, `get_state`, `halt`, `resume`, `step`, `reset`,
-`read_core_register`, `write_core_register`, `read_memory`, `read_memory_block`,
-`write_memory`, `set_breakpoint`, `remove_breakpoint`.
+- Repo layout and naming: [README.md](./README.md)
+- Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
+- Stage 0 validation flow: [stage0_setup.md](./stage0_setup.md)
+- Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)

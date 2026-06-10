@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "MCP server exposing embedded debug, flash, and inspection control via pyOCD"
 requires-python = ">=3.10"          # hard floor set by the MCP Python SDK (pyOCD itself only needs 3.8+)
 license = { text = "Apache-2.0" }
-authors = [{ name = "Your Name", email = "you@example.com" }]
 
 dependencies = [
     "mcp[cli]>=1.2.0",              # official MCP Python SDK; [cli] pulls in the `mcp` dev/inspector tooling
     "pyocd>=0.44.0",               # Cortex-M debug/flash/inspection; current stable is 0.44.1
+    "pyserial>=3.5",               # serial-port discovery and UART smoke checks
+    "pyyaml>=6.0",                 # YAML board-config loading
+    "python-dotenv>=1.0",          # repo-local .env auto-loading for Phase A tools
 ]
 
 [project.scripts]

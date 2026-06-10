@@ -26,6 +26,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+SRC_DIR = Path(__file__).resolve().parent / "src"
+if SRC_DIR.is_dir():
+    sys.path.insert(0, str(SRC_DIR))
+
+from pyocd_debug_mcp.local_env import load_local_env
+
 PASS = "PASS"
 FAIL = "FAIL"
 WARN = "WARN"
@@ -48,6 +54,8 @@ PROBE_FAMILY_HINTS = {
     "stlink": {"st-link", "stlink"},
     "cmsisdap": {"cmsis-dap", "cmsisdap", "daplink"},
 }
+
+load_local_env()
 
 
 class ConfigError(Exception):
@@ -896,7 +904,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="BOARD_ID=PATH",
-        help="Override the repo-owned reference firmware path for a board.",
+        help="Reference firmware path for a board.",
     )
     parser.add_argument(
         "--expect",
