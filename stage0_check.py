@@ -249,6 +249,22 @@ def load_board_config_document(path: Path) -> dict:
 
 
 def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
+    forbidden_session_fields = {
+        "project_path",
+        "user_project_path",
+        "build_command",
+        "user_build_command",
+        "artifact_path",
+        "output_artifact_path",
+        "user_output_artifact",
+    }
+    present_forbidden = sorted(field for field in forbidden_session_fields if field in raw)
+    if present_forbidden:
+        raise ConfigError(
+            "Board config contains project/session-scoped fields that do not belong in boards/<board>.yaml: "
+            f"{', '.join(present_forbidden)}. Supply these later as runtime/session inputs instead."
+        )
+
     required_fields = ["board_id", "display_name", "mcu_family", "probe_family", "pyocd_target"]
     missing = [field for field in required_fields if not raw.get(field)]
     if missing:
@@ -686,14 +702,19 @@ def check_virtual_com_ports(
     return results
 
 
-def flash_firmware(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, firmware_path: Path | None) -> bool | None:
+def flash_reference_firmware(
+    board: BoardConfig,
+    probe: ProbeInfo | None,
+    target_ok: bool,
+    reference_firmware_path: Path | None,
+) -> bool | None:
     header(f"Reference firmware flash - {board.display_name}")
 
-    if firmware_path is None:
-        log(WARN, "No firmware path supplied - leaving flash validation as a manual step")
+    if reference_firmware_path is None:
+        log(WARN, "No reference firmware path supplied - leaving flash validation as a manual step")
         return None
-    if not firmware_path.exists():
-        check(False, f"Firmware file does not exist: {firmware_path}")
+    if not reference_firmware_path.exists():
+        check(False, f"Reference firmware file does not exist: {reference_firmware_path}")
         return False
     if probe is None:
         check(False, "Skipped - probe not detected")
@@ -703,16 +724,16 @@ def flash_firmware(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool,
         return False
 
     cmd = pyocd_base("load", board, probe)
-    cmd.append(str(firmware_path))
+    cmd.append(str(reference_firmware_path))
     print(f"  Attempting: {' '.join(cmd)}")
     rc, out, err = run(cmd)
     if rc == 0:
-        check(True, f"Flashed reference firmware: {firmware_path}")
+        check(True, f"Flashed reference firmware: {reference_firmware_path}")
         if out.strip():
             print(f"      {out.strip()[:300]}")
         return True
 
-    check(False, f"Flash failed for {firmware_path}")
+    check(False, f"Flash failed for {reference_firmware_path}")
     if err.strip():
         print(f"      stderr: {err.strip()[:300]}")
     return False
@@ -877,11 +898,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the detected virtual COM port for a board.",
     )
     parser.add_argument(
-        "--firmware",
+        "--reference-firmware",
         action="append",
         default=[],
         metavar="BOARD_ID=PATH",
-        help="Override the reference firmware path for a board.",
+        help="Override the repo-owned reference firmware path for a board.",
     )
     parser.add_argument(
         "--expect",
@@ -915,9 +936,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def collect_overrides(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str]]:
     port_overrides = parse_key_value(args.port, "--port")
-    firmware_overrides = {
+    reference_firmware_overrides = {
         board_id: resolve_firmware_path(path_text)
-        for board_id, path_text in parse_key_value(args.firmware, "--firmware").items()
+        for board_id, path_text in parse_key_value(args.reference_firmware, "--reference-firmware").items()
     }
     expect_overrides = parse_key_value(args.expect, "--expect")
     baudrate_overrides = {
@@ -926,7 +947,7 @@ def collect_overrides(args: argparse.Namespace) -> tuple[dict[str, str], dict[st
     }
     recover_tests = {board_id.strip().lower() for board_id in args.recover_test if board_id.strip()}
 
-    return port_overrides, firmware_overrides, expect_overrides, baudrate_overrides, recover_tests
+    return port_overrides, reference_firmware_overrides, expect_overrides, baudrate_overrides, recover_tests
 
 
 def main():
@@ -942,7 +963,7 @@ def main():
         boards_to_check = select_boards_by_id(boards_to_check, args.board_id)
         if not boards_to_check:
             raise ConfigError("No boards selected. Add board configs or pass --board-id for an existing board.")
-        port_overrides, firmware_overrides, expect_overrides, baudrate_overrides, recover_tests = collect_overrides(args)
+        port_overrides, reference_firmware_overrides, expect_overrides, baudrate_overrides, recover_tests = collect_overrides(args)
     except ConfigError as exc:
         parser.error(str(exc))
         return
@@ -966,14 +987,14 @@ def main():
         probe = probes.get(board.board_id)
         target_available = target_ok.get(board.board_id, False)
         port = serial_ports.get(board.board_id)
-        firmware_path = firmware_overrides.get(board.board_id, board.reference_firmware_path)
+        reference_firmware_path = reference_firmware_overrides.get(board.board_id, board.reference_firmware_path)
         expected_text = expect_overrides.get(board.board_id, board.expected_uart_substring)
         baudrate = baudrate_overrides.get(board.board_id, board.default_baudrate)
 
         conn_ok = check_connection(board, probe, target_available)
-        flash_ok = flash_firmware(board, probe, target_available, firmware_path)
+        flash_ok = flash_reference_firmware(board, probe, target_available, reference_firmware_path)
         uart_ok = None
-        if firmware_path is not None:
+        if reference_firmware_path is not None:
             uart_ok = read_uart_output(
                 board,
                 port,
@@ -1011,7 +1032,7 @@ def main():
                 SummaryItem(
                     f"{board.display_name}: flash known-good reference firmware",
                     SUMMARY_MANUAL,
-                    f"provide --firmware {board_cli_label(board)}=PATH or set reference_firmware_path in the board config",
+                    f"provide --reference-firmware {board_cli_label(board)}=PATH or set reference_firmware_path in the board config",
                 )
             )
             manual_items.append(
@@ -1025,7 +1046,7 @@ def main():
                 )
             )
 
-        if firmware_path is None:
+        if reference_firmware_path is None:
             summary_items.append(
                 SummaryItem(
                     f"{board.display_name}: UART output observed",

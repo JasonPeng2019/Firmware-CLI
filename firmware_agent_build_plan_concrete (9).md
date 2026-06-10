@@ -175,7 +175,7 @@ firmware-agent/
 ├── boards/                          # ONE config file per board (board definitions)
 │   ├── nrf52840dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
 │   └── nucleo_l476rg.yaml           #   (USART2, 115200, stm32l476 target, …)
-├── firmware/                        # all firmware ARTIFACTS + sources, per board
+├── firmware/                        # YOUR OWN test firmware ONLY — never the user's (see note below)
 │   ├── nrf52840dk/
 │   │   ├── reference/src/           #   reference firmware SOURCE tree (known-good, builds clean)
 │   │   ├── reference/build/         #   compiled known-good ARTIFACT (the baseline binary)
@@ -212,6 +212,16 @@ firmware-agent/
 gates check; `runs/` keying = the watcher's session key; board id = one string shared by configs,
 firmware, and skills. So this layout *implements* decisions already made (safety gate, session-keying,
 per-chip skills) rather than introducing new ones.
+
+**CRITICAL distinction — `firmware/` is YOUR test firmware only; the USER'S firmware is never in your
+repo.** Two different things that were easy to conflate:
+- **Your reference/test firmware** (the `firmware/` tree above): known-good baselines + injected-bug
+  variants *you* control, used for *your own* testing. Lives in your repo. Stays here.
+- **The user's custom firmware:** their code, in *their* directory/repo, on their disk. Your server
+  **never owns, contains, or copies it into your repo.** It is reached by a **runtime path argument**,
+  not a fixed location. See the firmware-ingestion tool (Step 2.5) for how this is wired. The server
+  holds *no* hardcoded user-firmware path — it's the most user-specific value there is, so it's runtime
+  input (no-hardcoding rule, §1 of the Coding Guidelines).
 
 **Exit:** the tree + naming committed; a short README in the repo root documents both so every later
 component references one convention.
@@ -305,8 +315,9 @@ config and uses the same tools for either. Prove the server against both boards.
 - **Design:** `@mcp.tool()` / resource decorators wrapping Stage-1 adapter methods. stdio only (local,
   no auth, lowest latency; the natural fit since the server must sit next to the board).
 - **Decision — primitive split:** actions = **tools** (`flash_firmware`, `reset_and_halt`, `halt`,
-  `resume`, `apply_patch`, `unlock_recover` [gated — destructive, see Step 3.1b]); read-only data =
-  **resources** (`read_serial`, `read_register`, `read_memory`, `resolve_symbol`).
+  `resume`, `apply_patch`, `unlock_recover` [gated — destructive, see Step 3.1b], `load_firmware_project`
+  [ingest external user firmware, see Step 2.5]); read-only data = **resources** (`read_serial`,
+  `read_register`, `read_memory`, `resolve_symbol`).
 - **Decision — return types:** return typed text/content blocks (strings), **not raw dicts** (raw
   dicts can truncate silently in the client though they look fine in the Inspector).
 - **Decision — board selection:** target + port are server config/params, so one server binary serves
@@ -328,8 +339,49 @@ config and uses the same tools for either. Prove the server against both boards.
   later move to the ticket pattern / MCP Tasks extension reimplements *one* module. Don't build the
   ticket pattern yet.
 
+### Step 2.5 — Firmware ingestion (the user's custom firmware lives OUTSIDE your repo)
+**The problem:** to flash a user's own firmware, the server needs it — but the user's firmware is *their*
+code in *their* directory (often the very folder Claude Code / Codex is working in), NOT something that
+goes in your repo. So the server is *pointed at* it, never *contains* it.
+
+**What makes this simple — the local-server constraint:** your hardware-touching server runs on the
+user's own bench machine (it must, to drive the USB board). So the user's firmware is *already on the
+same machine*. "Ingest it" = read a path on the local filesystem. No upload, no network transfer, no
+copying into your repo.
+
+**Design — path-in-as-argument, never a fixed location:**
+- A tool (e.g. `load_firmware_project`) takes the **external local path** to the user's project as a
+  runtime **argument**, plus how to produce a binary: either *"already built, here's the binary path"*
+  or *"build it with this command."* The server stores this as **session config** (keyed by session,
+  like all other state — Stage 3.2). The server holds NO hardcoded user-firmware path.
+- **Flow:** `load_firmware_project(path, build_cmd|binary)` → (if source) **invoke the user's own build
+  command in the user's directory** → **locate the resulting artifact** (the user tells you where it
+  lands; don't guess their build layout) → run that binary through the **pre-flash safety gate**
+  (Step 3.1) → flash via the existing SWD adapter.
+
+**Decision — drive the user's build, don't reproduce it (v1).** Firmware builds are brutally
+environment-specific (toolchain version, SDK, build system). v1 reuses the build that already works on
+the user's machine by invoking *their* command in *their* directory. Owning/standardizing the toolchain
+(containerized reproducible builds) is a real but **much heavier, later** option — explicitly NOT v1.
+(Per-board build flows genuinely differ — nRF `west`/nRF-Connect-SDK vs. ST Cube/Make — another reason
+to drive the user's command rather than encode per-board build logic.)
+
+**Safety/trust (not optional here):**
+- A user-supplied binary is *less* trusted than one the agent itself produced — so the **pre-flash gate
+  matters more, not less.** This feature is precisely why the gate exists; they are coupled.
+- Treat the external path as **untrusted input:** validate it exists / is a directory / contains what
+  the build expects; the produced binary still must pass the gate before touching the board.
+- You are running a **user-supplied build command** in a user directory. Benign on the user's own local
+  machine (they could run it themselves) — but flag it for the future hosted/remote tier, where "whose
+  machine, whose code" gets murkier.
+
+**Origin tags:** the user's project path and build command are `PROJECT-DEFINED` *by the user* at
+runtime (their choice, supplied to you); the chip target/regions the gate checks remain
+`HW-FIXED`/`VENDOR-FIXED`.
+
 **Stage 2 exit criteria:** a local stdio MCP server whose every tool/resource works in the Inspector,
-verified on both boards.
+verified on both boards; `load_firmware_project` can ingest an external project path, build via the
+user's command, locate the artifact, and (gated) flash it.
 
 ---
 
