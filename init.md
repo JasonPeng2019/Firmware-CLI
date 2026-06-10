@@ -44,6 +44,10 @@ Unplug and replug the probe afterward.
 
 From the project root:
 
+Powershell:
+Remove-Item .python-version
+uv python pin 3.12
+
 ```bash
 # Pin the interpreter the environment is built from (one-time; commit this file).
 echo "3.12" > .python-version
