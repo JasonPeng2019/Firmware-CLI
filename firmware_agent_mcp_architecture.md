@@ -12,6 +12,17 @@
 
 ---
 
+## Board requirement
+
+- **Board support must be data-driven.** The two reference boards prove the initial path, but they are
+  not allowed to become hardcoded special cases in Stage 0, adapters, or server wiring.
+- **Any supported board must onboard through `boards/<board>.yaml`.** Probe family, pyOCD target,
+  UART defaults, recovery behavior, and discovery hints belong in board definitions, not scattered code
+  branches.
+- **Stage 0 must consume external board definitions.** The validation script should run the same
+  probe/serial/flash/UART flow against built-in boards and newly added board files, so adding support
+  for another board is a config exercise first, not a code fork.
+
 ## 0. The shape of the whole product (one server, two clients)
 
 ```

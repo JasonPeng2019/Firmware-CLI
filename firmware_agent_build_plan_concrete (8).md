@@ -44,26 +44,21 @@ one more likely to need a driver-association step.)
   the tools, just avoiding places your *own* code accidentally assumes one OS.
 
 **Python version:** pick one modern version as the team standard (3.11 or 3.12 is a safe default; the
-`mcp` SDK and pyOCD both want a reasonably recent Python). 
-Selection: 3.11
+`mcp` SDK and pyOCD both want a reasonably recent Python). Not a deliberation — just pick and record it.
 
 **Dependency versions:** don't pin thoughtfully upfront — install current versions, **commit a
 lockfile** (`pyproject.toml` + lock, or `requirements.txt`) so the mixed team stays in sync, then pin
 "what worked" once it works and revisit later. The lockfile matters *more* with a team than it would
 solo, because it keeps two OSes' environments matched so a bug isn't an environment mismatch in disguise.
-ho
+
+**Redis (external state store, not needed until Stage 3):** a single local Redis is the obvious default
+when you reach Stage 3.2. Defer until then.
 
 **Per-OS bootstrap docs — authored incrementally, not planned upfront.** The first teammate to set up
 each OS writes a short "on macOS do X / on Windows do Y" onboarding note as they go, so the next person
 on that OS has a path. This is a Stage-0 byproduct of setting up your own machine, not a document to
 pre-write from guesses.
 
--------------------------------Do Not Implement Until Stage 3----------------------------------------
-**Redis (external state store, not needed until Stage 3):** a single local Redis is the obvious default
-when you reach Stage 3.2. Defer until then.
-----------------------------------------------------------------------------------------------
-
-Shiptime Notes:
 **Dev support vs. shipped-product support are intentionally different.** You develop on macOS+Windows
 because the team is on those; which OSes *customers* get supported is a separate, later decision
 (Stage 4+, driven by who buys). Building cross-platform for the team's sake means you'll naturally be
@@ -234,16 +229,17 @@ prevents. JSON: no comments, worse to edit. TOML: also fine, but YAML is the con
 **Schema rule: start minimal, extend per-stage. NEVER add a field before the component that reads it
 exists** — otherwise you formalize guesses your later stages will correct.
 
-**Required v1 core (needed by Stage 2; every field traces to a decision already made):**
+**Required v1 core (needed by Stage 2; every field traces to a decision already made).** Note each
+field carries an **origin tag** (see Coding Guidelines §1b) so a reader knows its authority/changeability:
 ```yaml
-board_id:            nrf52840dk          # the one canonical id (Step 1.0); keys all per-board paths
-display_name:        "Nordic nRF52840-DK"
-mcu_family:          nrf52840            # selects which skills/ dir applies (Stage 5)
-probe_family:        jlink               # jlink | stlink — selects SWD backend (Stage 7 vendor swap)
-pyocd_target:        nrf52840            # the Stage-0 confirmed target (the won't-flash trap)
-serial_baudrate:     115200
-reference_firmware_path: firmware/nrf52840dk/reference/build/firmware.elf
-recovery_image_path:     firmware/nrf52840dk/recovery/        # what the safety + unlock gates check
+board_id:            nrf52840dk          # PROJECT-DEFINED — canonical id (Step 1.0); keys all per-board paths
+display_name:        "Nordic nRF52840-DK" # PROJECT-DEFINED
+mcu_family:          nrf52840            # HW-FIXED — the silicon; selects skills/ dir (Stage 5)
+probe_family:        jlink               # HW-FIXED — onboard probe; selects SWD backend (Stage 7)
+pyocd_target:        nrf52840            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
+serial_baudrate:     115200             # PROJECT-DEFINED — chosen default; must match reference firmware
+reference_firmware_path: firmware/nrf52840dk/reference/build/firmware.elf   # PROJECT-DEFINED — our layout
+recovery_image_path:     firmware/nrf52840dk/recovery/        # PROJECT-DEFINED — path the safety+unlock gates check
 ```
 
 **Add later, when its stage arrives (listed so the omission is intentional, not forgotten):**
