@@ -40,46 +40,38 @@ sudo udevadm trigger
 
 Unplug and replug the probe afterward.
 
-### 4. Install
+### 4. Install and run
 
-From the project root:
+Each block below is the full sequence — pin the interpreter, build the
+environment, verify the probe, and start the server. Run it from the project
+root.
 
-Powershell:
-Remove-Item .python-version
-pip install uv
-uv python pin 3.12
-uv sync
-
+**macOS / Linux:**
 
 ```bash
-# Pin the interpreter the environment is built from (one-time; commit this file).
-echo "3.12" > .python-version
-
-# Create ./.venv and install runtime + dev dependencies, writing uv.lock.
-uv sync
+uv python pin 3.12         # pin the interpreter (one-time; commit .python-version)
+uv sync                    # create ./.venv, install deps, write uv.lock
+uv run pyocd list          # verify the probe is visible; copy its unique ID
+uv run pyocd-debug-mcp     # start the server
 ```
 
-This creates a gitignored `.venv/` and a committed `uv.lock`. A teammate runs
-the same `uv sync` to reproduce the exact environment. For a runtime-only
-install (no dev tools), use `uv sync --no-dev`.
+**Windows (PowerShell):**
 
-### 5. Verify the probe is visible
-
-```bash
-uv run pyocd list
+```powershell
+# If an earlier `echo > .python-version` left a UTF-16 file, remove it first.
+Remove-Item .python-version -ErrorAction SilentlyContinue
+uv python pin 3.12         # pin the interpreter (writes valid UTF-8)
+uv sync                    # create .\.venv, install deps, write uv.lock
+uv run pyocd list          # verify the probe is visible; copy its unique ID
+uv run pyocd-debug-mcp     # start the server
 ```
 
-If your probe appears here, the server can reach it. Copy the unique ID shown
-for use below.
-
-### 6. Run the server
-
-```bash
-uv run pyocd-debug-mcp
-```
-
-The server speaks the MCP stdio transport. Point your MCP client (Claude
-Desktop, the MCP Inspector, etc.) at this command. To test interactively:
+`uv python pin` writes a clean `.python-version` (avoiding PowerShell's UTF-16
+redirection trap). `uv sync` creates a gitignored `.venv/` and a committed
+`uv.lock`, so a teammate reproduces the exact environment with the same command;
+use `uv sync --no-dev` for a runtime-only install. The server speaks the MCP
+stdio transport — point your MCP client (Claude Desktop, the MCP Inspector,
+etc.) at the `uv run pyocd-debug-mcp` command. To test interactively instead:
 
 ```bash
 uv run mcp dev src/pyocd_debug_mcp/server.py
