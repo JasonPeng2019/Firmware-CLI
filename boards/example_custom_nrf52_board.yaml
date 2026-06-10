@@ -14,9 +14,10 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (example host-side serial-port
   - myboard
   - usb serial
   - virtual com
-reference_firmware_path: ../firmware/my_nrf52_board/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (example repo-local Stage 0 baseline artifact path)
+reference_firmware_path: ../firmware/my_nrf52_board/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (example repo-owned Stage 0 baseline artifact path; not a user's project path)
 reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (example expected UART validation text)
   - "boot ok"
 requires_recover_validation: true  # PROJECT-DEFINED, UNVERIFIED (example Stage 0 recovery policy)
 recover_command: "nrf recover"  # VENDOR-FIXED, UNVERIFIED (pyOCD command string for unlock/recover)
-
+# Do not add user project paths, build commands, or output artifact paths here.
+# Those are runtime/session inputs, not board metadata.

@@ -17,7 +17,8 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matchin
   - segger
   - nrf
   - virtual com
-reference_firmware_path: ../firmware/nrf52840dk/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (repo-local Stage 0 baseline artifact path)
+reference_firmware_path: ../firmware/nrf52840dk/reference/build/firmware.elf  # PROJECT-DEFINED, UNVERIFIED (repo-owned Stage 0 baseline artifact path; not a user's project path)
 requires_recover_validation: true  # PROJECT-DEFINED (Stage 0 policy for this board family)
 recover_command: "nrf recover"  # VENDOR-FIXED, UNVERIFIED (pyOCD command string for unlock/recover)
-
+# Do not add user project paths, build commands, or output artifact paths here.
+# Those are runtime/session inputs, not board metadata.
