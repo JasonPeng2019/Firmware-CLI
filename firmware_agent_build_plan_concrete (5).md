@@ -23,6 +23,54 @@
 
 ---
 
+## v1 Scope Assumptions (team & environment ground rules)
+
+These are the defaults the rest of the plan assumes. They exist so the team shares one understanding
+instead of each person discovering them independently. Most are "stay flexible / capture as you go,"
+not heavy upfront decisions.
+
+**Team is mixed macOS + Windows → cross-platform is a DEV requirement from day one (not a deferred
+product decision).** Code one teammate writes must run on the other's OS immediately. This forces the
+OS-agnostic discipline early, while it's cheap. (Note: neither OS is Linux, so the udev-rules driver
+story elsewhere in this plan doesn't apply to the team's own setup — care about the **macOS** and
+**Windows** paths. macOS usually needs fewer driver gymnastics for CMSIS-DAP/serial; Windows is the
+one more likely to need a driver-association step.)
+
+**Hard rule from the first line of code — never hardcode OS-specific values:**
+- **Serial ports come from config or pyserial enumeration**, never hardcoded. (Windows `COM3` vs macOS
+  `/dev/tty.usbmodem…` is the #1 "works on my machine" failure for this kind of project.)
+- **Paths via `pathlib`**, never literal separators. No shelling out to OS-specific commands.
+- The core stack (Python, pyserial, pyOCD, `mcp` SDK) is already cross-platform — you're not fighting
+  the tools, just avoiding places your *own* code accidentally assumes one OS.
+
+**Python version:** pick one modern version as the team standard (3.11 or 3.12 is a safe default; the
+`mcp` SDK and pyOCD both want a reasonably recent Python). Not a deliberation — just pick and record it.
+
+**Dependency versions:** don't pin thoughtfully upfront — install current versions, **commit a
+lockfile** (`pyproject.toml` + lock, or `requirements.txt`) so the mixed team stays in sync, then pin
+"what worked" once it works and revisit later. The lockfile matters *more* with a team than it would
+solo, because it keeps two OSes' environments matched so a bug isn't an environment mismatch in disguise.
+
+**Redis (external state store, not needed until Stage 3):** a single local Redis is the obvious default
+when you reach Stage 3.2. Defer until then.
+
+**Per-OS bootstrap docs — authored incrementally, not planned upfront.** The first teammate to set up
+each OS writes a short "on macOS do X / on Windows do Y" onboarding note as they go, so the next person
+on that OS has a path. This is a Stage-0 byproduct of setting up your own machine, not a document to
+pre-write from guesses.
+
+**Dev support vs. shipped-product support are intentionally different.** You develop on macOS+Windows
+because the team is on those; which OSes *customers* get supported is a separate, later decision
+(Stage 4+, driven by who buys). Building cross-platform for the team's sake means you'll naturally be
+cross-platform-*capable* for customers — product flexibility falls out of the team necessity for free,
+so this commitment stays cheap and open.
+
+**What is deliberately NOT decided yet** (and shouldn't be, to avoid premature lock-in): shipped-product
+OS matrix, a formal support-matrix table, and packaging/distribution format. These become meaningful at
+Stage 4+ and are recorded here only so it's clear their omission is intentional, not an oversight.
+
+---
+
 ## STAGE 0 — Foundations (do before anything else), on BOTH boards
 
 **Goal:** two known-good boards + toolchains, so later failures are *your* bugs, not setup bugs.
@@ -149,8 +197,8 @@ config and uses the same tools for either. Prove the server against both boards.
 - **Design:** `@mcp.tool()` / resource decorators wrapping Stage-1 adapter methods. stdio only (local,
   no auth, lowest latency; the natural fit since the server must sit next to the board).
 - **Decision — primitive split:** actions = **tools** (`flash_firmware`, `reset_and_halt`, `halt`,
-  `resume`, `apply_patch`); read-only data = **resources** (`read_serial`, `read_register`,
-  `read_memory`, `resolve_symbol`).
+  `resume`, `apply_patch`, `unlock_recover` [gated — destructive, see Step 3.1b]); read-only data =
+  **resources** (`read_serial`, `read_register`, `read_memory`, `resolve_symbol`).
 - **Decision — return types:** return typed text/content blocks (strings), **not raw dicts** (raw
   dicts can truncate silently in the client though they look fine in the Inspector).
 - **Decision — board selection:** target + port are server config/params, so one server binary serves
@@ -188,6 +236,32 @@ Code). **Design rule:** guardrails are deterministic code, not model judgment.
 - **Board note:** include the nRF APPROTECT/lock case — the gate (and recovery image) is what makes a
   locked nRF recoverable rather than a dead end. *Why first:* it prevents the most expensive failure.
 
+### Step 3.1b — Gated unlock/recover (SECURITY FLAG — destructive action)
+- **What it is:** the nRF APPROTECT unlock is **built into pyOCD** (option `auto_unlock`, default
+  **True**; it unlocks by performing a **mass erase**). You do NOT write the unlock logic — your
+  `unlock_recover` tool is a thin wrapper over pyOCD's built-in unlock/mass-erase.
+- **WHY IT'S A SECURITY FLAG, not just a convenience:** **unlocking erases the entire chip.** It is
+  irreversible. `auto_unlock` silently wiping a chip is fine on a dev bench but is exactly the kind of
+  destructive, irreversible action an autonomous agent must not trigger casually.
+- **Decision — gate it, don't leave it free/automatic:**
+  - In the shipped server, **disable silent `auto_unlock`** on connect; expose unlock only via the
+    explicit, **gated** `unlock_recover` tool.
+  - The gate (deterministic, like the flash gate) decides *when* an unlock is permitted — e.g. require
+    explicit confirmation / a known-good recovery image staged / not allowed mid-autonomous-loop without
+    sign-off. The unlock *call* is trivial; the **decision to allow it** is the real design work.
+  - Log every unlock as a high-severity event (it destroyed chip state) — feeds the audit trail.
+- **Related "mysterious won't-flash" gotchas to handle here (same symptom, different cause):**
+  - **SoftDevice lock:** loading firmware containing a Nordic SoftDevice locks that flash region;
+    reprogramming it requires a prior mass erase. Expected on BLE work (the nRF is the radio board).
+  - **Re-lock on power cycle:** some nRF boards (notably the dongle, less so the DK) re-enable APPROTECT
+    at startup, so "I unlocked it but it's locked again" can be the firmware, not a tooling failure.
+- **Stage 0 verification (no code yet):** prove the recover cycle by hand in pyOCD Commander —
+  `initdp` → `makeap 1` → `status` (Locked) → `unlock` → `status` (Unlocked) → `reinit`. Confirms the
+  capability works on *your* board before you wrap it.
+- **Verify at build time:** the exact pyOCD Python entry point for programmatic unlock/mass-erase and
+  the `auto_unlock` option name are version-specific — confirm against your installed pyOCD's API. The
+  *capability* is solidly built in; the precise call is the part to check.
+
 ### Step 3.2 — Session state, externalized and session-keyed
 - **Decision (settled):** store the watcher's per-session history in an **external store (Redis) keyed
   by session ID from day one**, even on one local instance. In-process memory can't be cloned for
@@ -205,8 +279,10 @@ Code). **Design rule:** guardrails are deterministic code, not model judgment.
 - **Design:** log every tool call structured. One mechanism, three payoffs: feeds the watcher, becomes
   the engineer-feedback feature, pre-conforms to the coming MCP audit spec.
 
-**Stage 3 exit criteria:** flash gate blocks a bad image (both boards); watcher halts a
-deliberately-unfixable loop; every tool call logged; watcher memory in the external store keyed by session.
+**Stage 3 exit criteria:** flash gate blocks a bad image (both boards); **the `unlock_recover` tool is
+gated and refuses without sign-off** (and silent `auto_unlock` is disabled in the server); watcher halts
+a deliberately-unfixable loop; every tool call logged (unlocks as high-severity); watcher memory in the
+external store keyed by session.
 
 ---
 
