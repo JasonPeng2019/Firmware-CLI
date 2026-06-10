@@ -65,12 +65,8 @@ Useful optional fields:
 - `requires_recover_validation`
 - `uart_note`
 
-Field ownership:
-
-- Board identity: `board_id`, `display_name`, `mcu_family`, `probe_family`, `pyocd_target`, `serial_baudrate`, `test_read_address`
-- Discovery / host matching: `pack_name`, `probe_hint_terms`, `serial_hint_terms`, `uart_note`
-- Project / validation data: `reference_uart_patterns`, `expected_uart_substring`
-- Recovery policy: `requires_recover_validation`, `recover_command`
+Board YAML is for board configuration only. Put board/probe values there; do not put firmware paths,
+project paths, build commands, or artifact paths there.
 
 Important distinction:
 
@@ -90,6 +86,20 @@ Examples:
 - `boards/example_custom_board.yaml`
 
 ## 4. Run the checker
+
+Run the host-level bootstrap first:
+
+```bash
+python host_bootstrap.py
+```
+
+That checks host readiness only. After that, run `stage0_check.py` for board-level validation.
+
+If you want it to install missing Python deps and missing target packs:
+
+```bash
+python host_bootstrap.py --install-missing --install-packs
+```
 
 By default, the script loads all non-example board files in `boards/`:
 
@@ -124,7 +134,7 @@ If you want flash + UART validation:
 ```bash
 python stage0_check.py \
   --board-id my_board \
-  --reference-firmware my_board=firmware/my_board/reference/build/firmware.elf \
+  --reference-firmware my_board=path/to/built/firmware.elf \
   --expect my_board="boot ok"
 ```
 
