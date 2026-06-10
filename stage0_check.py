@@ -11,12 +11,15 @@ Automates the Stage 0 checks that are safe and observable from the host:
 - optional reference firmware flash
 - optional UART smoke test
 
-Destructive or inherently physical checks are kept explicit:
-- nRF recover/unlock is opt-in because it erases flash
-- "one physical USB cable exposes both endpoints" still needs manual confirmation
+Board definitions are data-driven. Board facts come from board config files,
+not hardcoded board entries in this script.
 """
 
+from __future__ import annotations
+
 import argparse
+import json
+import re
 import subprocess
 import sys
 import time
@@ -32,11 +35,31 @@ SUMMARY_PASS = "pass"
 SUMMARY_FAIL = "fail"
 SUMMARY_MANUAL = "manual"
 
+DEFAULT_BOARD_CONFIG_DIR = Path(__file__).resolve().parent / "boards"  # PROJECT-DEFINED (repo layout)
+
+PROBE_FAMILY_LABELS = {
+    "jlink": "SEGGER J-Link",
+    "stlink": "ST-Link",
+    "cmsisdap": "CMSIS-DAP",
+}
+
+PROBE_FAMILY_HINTS = {
+    "jlink": {"j-link", "jlink", "segger"},
+    "stlink": {"st-link", "stlink"},
+    "cmsisdap": {"cmsis-dap", "cmsisdap", "daplink"},
+}
+
+
+class ConfigError(Exception):
+    pass
+
 
 @dataclass(frozen=True)
 class BoardConfig:
-    key: str
-    name: str
+    board_id: str
+    display_name: str
+    mcu_family: str
+    probe_family: str
     pyocd_target: str
     pack_name: str
     probe_type: str
@@ -46,6 +69,10 @@ class BoardConfig:
     default_baudrate: int = 115200
     uart_note: str = ""
     requires_recover_validation: bool = False
+    recover_command: str | None = None
+    reference_firmware_path: Path | None = None
+    expected_uart_substring: str | None = None
+    source_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -94,36 +121,12 @@ class SummaryItem:
     detail: str = ""
 
 
-BOARDS = {
-    "nrf": BoardConfig(
-        key="nrf",
-        name="nRF52840-DK",
-        pyocd_target="nrf52840",
-        pack_name="nrf52840",
-        probe_type="SEGGER J-Link",
-        probe_hint_terms=("j-link", "jlink", "segger", "nrf"),
-        serial_hint_terms=("j-link", "jlink", "segger", "nrf", "virtual com"),
-        test_addr=0x10000000,
-        default_baudrate=115200,
-        requires_recover_validation=True,
-    ),
-    "nucleo": BoardConfig(
-        key="nucleo",
-        name="Nucleo-L476RG",
-        pyocd_target="stm32l476rg",
-        pack_name="stm32l476",
-        probe_type="ST-Link/V2-1",
-        probe_hint_terms=("st-link", "stlink", "stm32", "nucleo"),
-        serial_hint_terms=("st-link", "stlink", "stm32", "nucleo", "virtual com"),
-        test_addr=0x08000000,
-        default_baudrate=115200,
-        uart_note="Reference firmware should print on USART2 at 115200 8N1.",
-    ),
-}
-
-
 def run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
-    result = subprocess.run(cmd, capture_output=capture, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=capture, text=True)
+    except FileNotFoundError:
+        executable = cmd[0] if cmd else "<unknown>"
+        return 127, "", f"command not found: {executable}"
     return result.returncode, result.stdout or "", result.stderr or ""
 
 
@@ -146,8 +149,8 @@ def score_terms(text: str, terms: tuple[str, ...]) -> int:
     return sum(1 for term in terms if term in text)
 
 
-def board_arg_name(board: BoardConfig, suffix: str) -> str:
-    return f"--{board.key}-{suffix}"
+def board_cli_label(board: BoardConfig) -> str:
+    return board.board_id
 
 
 def pyocd_base(subcommand: str, board: BoardConfig, probe: ProbeInfo | None) -> list[str]:
@@ -164,6 +167,237 @@ def load_pyserial():
     except ImportError:
         return None, None
     return serial_mod, list_ports
+
+
+def parse_key_value(items: list[str], option_name: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise ConfigError(f"{option_name} requires BOARD_ID=VALUE, got '{item}'")
+        key, value = item.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not key or not value:
+            raise ConfigError(f"{option_name} requires BOARD_ID=VALUE, got '{item}'")
+        parsed[key] = value
+    return parsed
+
+
+def normalize_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        if "," in value:
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if value.strip():
+            return [value.strip()]
+        return []
+    if isinstance(value, (list, tuple)):
+        output = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                output.append(text)
+        return output
+    raise ConfigError(f"Expected a string or list, got {type(value).__name__}")
+
+
+def parse_int(value: object, field_name: str) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise ConfigError(f"Field '{field_name}' must be an int or numeric string")
+
+
+def tokenize_hint_text(*values: str) -> set[str]:
+    terms: set[str] = set()
+    for value in values:
+        for token in re.findall(r"[a-z0-9]+", value.lower()):
+            if len(token) >= 3:
+                terms.add(token)
+    return terms
+
+
+def default_test_address(mcu_family: str) -> int:
+    lowered = mcu_family.lower()
+    if lowered.startswith("nrf"):
+        return 0x10000000  # HW-FIXED (nRF FICR base; safe readable smoke-test region)
+    if lowered.startswith("stm32"):
+        return 0x08000000  # HW-FIXED (STM32 flash base; safe readable smoke-test region)
+    raise ConfigError("Custom board config must set 'test_read_address' for non-nRF/non-STM32 families")
+
+
+def load_board_config_document(path: Path) -> dict:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    if suffix in {".yaml", ".yml"}:
+        try:
+            import yaml
+        except ImportError as exc:
+            raise ConfigError(
+                f"PyYAML is required to load {path.name}. Install it with 'pip install pyyaml' or use JSON."
+            ) from exc
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ConfigError(f"{path} must contain a single YAML object")
+        return data
+    raise ConfigError(f"Unsupported board config format for {path}. Use .json, .yaml, or .yml.")
+
+
+def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
+    required_fields = ["board_id", "display_name", "mcu_family", "probe_family", "pyocd_target"]
+    missing = [field for field in required_fields if not raw.get(field)]
+    if missing:
+        raise ConfigError(f"Missing required board config fields: {', '.join(missing)}")
+
+    board_id = str(raw["board_id"]).strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]+", board_id):
+        raise ConfigError("board_id must contain only lowercase letters, numbers, and underscores")
+
+    display_name = str(raw["display_name"]).strip()
+    mcu_family = str(raw["mcu_family"]).strip().lower()
+    probe_family = str(raw["probe_family"]).strip().lower()
+    pyocd_target = str(raw["pyocd_target"]).strip()
+    pack_name = str(raw.get("pack_name") or pyocd_target).strip()
+    probe_type = str(raw.get("probe_type") or PROBE_FAMILY_LABELS.get(probe_family, probe_family)).strip()
+
+    if raw.get("test_read_address") is None:
+        test_addr = default_test_address(mcu_family)
+    else:
+        test_addr = parse_int(raw["test_read_address"], "test_read_address")
+
+    default_baudrate = parse_int(raw.get("serial_baudrate", 115200), "serial_baudrate")
+    uart_note = str(raw.get("uart_note", "")).strip()
+
+    explicit_recover = raw.get("requires_recover_validation")
+    if explicit_recover is None:
+        requires_recover_validation = mcu_family.startswith("nrf")
+    else:
+        requires_recover_validation = bool(explicit_recover)
+
+    recover_command = raw.get("recover_command")
+    if recover_command is not None:
+        recover_command = str(recover_command).strip()
+    elif requires_recover_validation:
+        recover_command = "nrf recover"
+
+    probe_terms = set(normalize_list(raw.get("probe_hint_terms")))
+    serial_terms = set(normalize_list(raw.get("serial_hint_terms")))
+    default_terms = tokenize_hint_text(board_id, display_name, mcu_family, pyocd_target)
+    probe_terms.update(default_terms)
+    serial_terms.update(default_terms)
+    probe_terms.update(PROBE_FAMILY_HINTS.get(probe_family, set()))
+    serial_terms.update(PROBE_FAMILY_HINTS.get(probe_family, set()))
+    serial_terms.add("virtual com")
+
+    firmware_path = raw.get("reference_firmware_path")
+    resolved_firmware_path = None
+    if firmware_path:
+        resolved_firmware_path = resolve_firmware_path(str(firmware_path), source_path.parent if source_path else None)
+
+    expected_uart_substring = None
+    if raw.get("expected_uart_substring"):
+        expected_uart_substring = str(raw["expected_uart_substring"]).strip()
+    else:
+        patterns = normalize_list(raw.get("reference_uart_patterns"))
+        if patterns:
+            expected_uart_substring = patterns[0]
+
+    return BoardConfig(
+        board_id=board_id,
+        display_name=display_name,
+        mcu_family=mcu_family,
+        probe_family=probe_family,
+        pyocd_target=pyocd_target,
+        pack_name=pack_name,
+        probe_type=probe_type,
+        probe_hint_terms=tuple(sorted(term.lower() for term in probe_terms if term)),
+        serial_hint_terms=tuple(sorted(term.lower() for term in serial_terms if term)),
+        test_addr=test_addr,
+        default_baudrate=default_baudrate,
+        uart_note=uart_note,
+        requires_recover_validation=requires_recover_validation,
+        recover_command=recover_command,
+        reference_firmware_path=resolved_firmware_path,
+        expected_uart_substring=expected_uart_substring,
+        source_path=source_path,
+    )
+
+
+def load_board_configs_from_paths(paths: list[Path]) -> list[BoardConfig]:
+    boards: list[BoardConfig] = []
+    for path in paths:
+        if not path.exists():
+            raise ConfigError(f"Board config not found: {path}")
+        document = load_board_config_document(path)
+        boards.append(make_board_config(document, path))
+    return boards
+
+
+def iter_board_config_paths(board_config_dir: Path) -> list[Path]:
+    if not board_config_dir.exists():
+        raise ConfigError(f"Board config directory not found: {board_config_dir}")
+    if not board_config_dir.is_dir():
+        raise ConfigError(f"Board config path is not a directory: {board_config_dir}")
+
+    paths = [
+        path.resolve()
+        for path in sorted(board_config_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in {".json", ".yaml", ".yml"}
+    ]
+    if not paths:
+        raise ConfigError(f"No board config files found in: {board_config_dir}")
+    return paths
+
+
+def load_default_board_configs(board_config_dir: Path) -> list[BoardConfig]:
+    default_paths = [
+        path
+        for path in iter_board_config_paths(board_config_dir)
+        if not path.stem.startswith("example_")
+    ]
+    if not default_paths:
+        raise ConfigError(
+            f"No non-example board config files found in: {board_config_dir}. "
+            "Add board files or pass --board-config."
+        )
+    return load_board_configs_from_paths(default_paths)
+
+
+def merge_board_lists(builtins: list[BoardConfig], customs: list[BoardConfig]) -> list[BoardConfig]:
+    merged: list[BoardConfig] = []
+    seen: set[str] = set()
+    for board in builtins + customs:
+        if board.board_id in seen:
+            raise ConfigError(f"Duplicate board_id detected: {board.board_id}")
+        seen.add(board.board_id)
+        merged.append(board)
+    return merged
+
+
+def select_boards_by_id(boards: list[BoardConfig], requested_ids: list[str]) -> list[BoardConfig]:
+    if not requested_ids:
+        return boards
+
+    requested = [board_id.strip().lower() for board_id in requested_ids if board_id.strip()]
+    selected = [board for board in boards if board.board_id in requested]
+    missing = sorted(set(requested) - {board.board_id for board in selected})
+    if missing:
+        raise ConfigError(f"Requested board_id values not found: {', '.join(missing)}")
+    return selected
+
+
+def resolve_firmware_path(path_value: str | None, base_dir: Path | None = None) -> Path | None:
+    if not path_value:
+        return None
+    path = Path(path_value).expanduser()
+    if not path.is_absolute() and base_dir is not None:
+        path = base_dir / path
+    return path.resolve()
 
 
 def check_pyocd_installed() -> bool:
@@ -192,15 +426,13 @@ def check_pyserial_installed() -> bool:
 def list_probes() -> list[ProbeInfo]:
     rc, out, _ = run(["pyocd", "list", "--output", "json"])
     if rc != 0 or not out.strip():
-        rc, out, _ = run(["pyocd", "list"])
+        _, out, _ = run(["pyocd", "list"])
         probes: list[ProbeInfo] = []
         for line in out.splitlines():
             stripped = line.strip()
             if stripped and not stripped.startswith("#") and not stripped.lower().startswith("no"):
                 probes.append(ProbeInfo(uid="", description=stripped.lower(), raw=stripped))
         return probes
-
-    import json
 
     try:
         data = json.loads(out)
@@ -236,7 +468,7 @@ def pick_probe(board: BoardConfig, probes: list[ProbeInfo], allow_single_fallbac
         best = [probe for score, probe in scored if score == best_score]
         if len(best) == 1:
             return best[0], ""
-        return None, "multiple matching probes found; disconnect extras or refine detection"
+        return None, "multiple matching probes found; disconnect extras or refine probe_hint_terms"
 
     if allow_single_fallback and len(probes) == 1:
         return probes[0], "single connected probe assumed for this board"
@@ -253,8 +485,8 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
         print(f"  Raw output:\n{out or '  (none)'}")
         results = {}
         for board in boards_to_check:
-            check(False, f"{board.name} ({board.probe_type}) - no probes detected")
-            results[board.key] = None
+            check(False, f"{board.display_name} ({board.probe_type}) - no probes detected")
+            results[board.board_id] = None
         return results
 
     print(f"  Found {len(probes)} probe(s):")
@@ -268,13 +500,13 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
     for board in boards_to_check:
         probe, note = pick_probe(board, probes, allow_single_fallback)
         if probe:
-            detail = f"{board.name} ({board.probe_type}) probe visible"
+            detail = f"{board.display_name} ({board.probe_type}) probe visible"
             if note:
                 detail += f" - {note}"
             check(True, detail)
         else:
-            check(False, f"{board.name} ({board.probe_type}) probe not uniquely identifiable: {note}")
-        results[board.key] = probe
+            check(False, f"{board.display_name} ({board.probe_type}) probe not uniquely identifiable: {note}")
+        results[board.board_id] = probe
 
     return results
 
@@ -286,35 +518,35 @@ def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -
 
     results: dict[str, bool] = {}
     for board in boards_to_check:
-        target_present = board.pyocd_target in installed_targets
+        target_present = board.pyocd_target.lower() in installed_targets
         if target_present:
-            check(True, f"Target '{board.pyocd_target}' available")
-            results[board.key] = True
+            check(True, f"{board.display_name}: target '{board.pyocd_target}' available")
+            results[board.board_id] = True
             continue
 
-        check(False, f"Target '{board.pyocd_target}' not found")
+        check(False, f"{board.display_name}: target '{board.pyocd_target}' not found")
         if auto_install:
             log(INFO, f"Installing pack for {board.pack_name}...")
             rc, _, _ = run(["pyocd", "pack", "install", board.pack_name], capture=False)
             if rc == 0:
                 _, refreshed, _ = run(["pyocd", "list", "--targets"])
-                ok = board.pyocd_target in refreshed.lower()
+                ok = board.pyocd_target.lower() in refreshed.lower()
                 check(ok, f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}")
-                results[board.key] = ok
+                results[board.board_id] = ok
             else:
                 check(False, f"Pack install failed - try manually: pyocd pack find {board.pack_name}")
-                results[board.key] = False
+                results[board.board_id] = False
         else:
             print(f"      Fix: pyocd pack find {board.pack_name}")
             print(f"           pyocd pack install {board.pack_name}")
             print("      Or re-run with --install-packs")
-            results[board.key] = False
+            results[board.board_id] = False
 
     return results
 
 
 def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool) -> bool:
-    header(f"Connection test - {board.name}")
+    header(f"Connection test - {board.display_name}")
 
     if probe is None:
         check(False, "Skipped - probe not detected")
@@ -334,16 +566,16 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
 
     combined = f"{out}\n{err}".lower()
     if "approtect" in combined or "access port" in combined or "locked" in combined:
-        log(WARN, "nRF52840 appears access-protected.")
-        print("      Recover with: pyocd cmd -t nrf52840 -c \"nrf recover\"")
-        print("      This erases flash but restores SWD access.")
+        log(WARN, f"{board.display_name} appears access-protected.")
+        if board.recover_command:
+            print(f'      Recover with: pyocd cmd -t {board.pyocd_target} -c "{board.recover_command}"')
         return False
 
     if "no connected" in combined or "no target" in combined or "unable to connect" in combined:
         check(False, "pyOCD found the probe but could not connect to the target MCU")
         print("      - Is the board powered?")
         print("      - Is the USB cable a data cable (not charge-only)?")
-        if board.key == "nrf":
+        if board.probe_family == "jlink":
             print("      - J-Link firmware or drivers may need updating")
         return False
 
@@ -398,7 +630,7 @@ def pick_serial_port(
         best = [port for score, port in scored if score == best_score]
         if len(best) == 1:
             return best[0], ""
-        return None, "multiple matching serial ports found; use an explicit override"
+        return None, "multiple matching serial ports found; use --port BOARD_ID=PORT or refine serial_hint_terms"
 
     if allow_single_fallback and len(ports) == 1:
         return ports[0], "single connected serial port assumed for this board"
@@ -408,25 +640,25 @@ def pick_serial_port(
 
 def check_virtual_com_ports(
     boards_to_check: list[BoardConfig],
-    port_overrides: dict[str, str | None],
+    port_overrides: dict[str, str],
     pyserial_ok: bool,
 ) -> dict[str, SerialPortInfo | None]:
     header("Virtual COM / serial ports")
 
     if not pyserial_ok:
         for board in boards_to_check:
-            check(False, f"{board.name} COM-port check skipped - pyserial is not installed")
-        return {board.key: None for board in boards_to_check}
+            check(False, f"{board.display_name} COM-port check skipped - pyserial is not installed")
+        return {board.board_id: None for board in boards_to_check}
 
     ports = list_serial_ports()
     if ports is None:
         for board in boards_to_check:
-            check(False, f"{board.name} COM-port check unavailable")
-        return {board.key: None for board in boards_to_check}
+            check(False, f"{board.display_name} COM-port check unavailable")
+        return {board.board_id: None for board in boards_to_check}
 
     if not ports:
         check(False, "No serial ports detected")
-        return {board.key: None for board in boards_to_check}
+        return {board.board_id: None for board in boards_to_check}
 
     print(f"  Found {len(ports)} serial port(s):")
     for port in ports:
@@ -439,29 +671,23 @@ def check_virtual_com_ports(
     results: dict[str, SerialPortInfo | None] = {}
     allow_single_fallback = len(ports) == 1 and len(boards_to_check) == 1
     for board in boards_to_check:
-        port, note = pick_serial_port(board, ports, port_overrides.get(board.key), allow_single_fallback)
+        port, note = pick_serial_port(board, ports, port_overrides.get(board.board_id), allow_single_fallback)
         if port:
-            detail = f"{board.name} virtual COM port visible on {port.device}"
+            detail = f"{board.display_name} virtual COM port visible on {port.device}"
             if note:
                 detail += f" - {note}"
             check(True, detail)
         else:
-            check(False, f"{board.name} COM port not uniquely identifiable: {note}")
+            check(False, f"{board.display_name} COM port not uniquely identifiable: {note}")
             if board.uart_note:
                 print(f"      Note: {board.uart_note}")
-        results[board.key] = port
+        results[board.board_id] = port
 
     return results
 
 
-def resolve_firmware_path(path_value: str | None) -> Path | None:
-    if not path_value:
-        return None
-    return Path(path_value).expanduser().resolve()
-
-
 def flash_firmware(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, firmware_path: Path | None) -> bool | None:
-    header(f"Reference firmware flash - {board.name}")
+    header(f"Reference firmware flash - {board.display_name}")
 
     if firmware_path is None:
         log(WARN, "No firmware path supplied - leaving flash validation as a manual step")
@@ -499,7 +725,7 @@ def read_uart_output(
     read_seconds: float,
     expected_text: str | None,
 ) -> bool | None:
-    header(f"UART output check - {board.name}")
+    header(f"UART output check - {board.display_name}")
 
     if port is None:
         check(False, "Skipped - COM port not detected")
@@ -541,11 +767,11 @@ def read_uart_output(
     return ok
 
 
-def run_nrf_recover_test(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, enabled: bool) -> bool | None:
-    if board.key != "nrf":
+def run_recover_test(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, enabled: bool) -> bool | None:
+    if not board.requires_recover_validation:
         return None
 
-    header("nRF recover / unlock validation")
+    header(f"Recover / unlock validation - {board.display_name}")
 
     if not enabled:
         log(WARN, "Recover test not run - this remains a required manual Stage 0 validation")
@@ -556,19 +782,22 @@ def run_nrf_recover_test(board: BoardConfig, probe: ProbeInfo | None, target_ok:
     if not target_ok:
         check(False, "Skipped - target pack not installed")
         return False
+    if not board.recover_command:
+        check(False, "Skipped - no recover command configured for this board")
+        return False
 
-    print("  Running destructive recover command. This erases flash on the nRF52840-DK.")
+    print("  Running destructive recover command. This may erase flash on the target.")
     cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(["-c", "nrf recover"])
+    cmd.extend(["-c", board.recover_command])
     print(f"  Attempting: {' '.join(cmd)}")
-    rc, out, err = run(cmd)
+    rc, _, err = run(cmd)
     if rc != 0:
-        check(False, "nRF recover command failed")
+        check(False, "Recover command failed")
         if err.strip():
             print(f"      stderr: {err.strip()[:300]}")
         return False
 
-    check(True, "nRF recover command completed")
+    check(True, "Recover command completed")
     reconnect_ok = check_connection(board, probe, target_ok)
     return reconnect_ok
 
@@ -597,7 +826,11 @@ def print_summary(items: list[SummaryItem], manual_items: list[str]) -> bool:
 
     if manual_items:
         header("Manual validation still required")
+        seen = set()
         for item in manual_items:
+            if item in seen:
+                continue
+            seen.add(item)
             print(f"  - {item}")
 
     print()
@@ -612,13 +845,24 @@ def print_summary(items: list[SummaryItem], manual_items: list[str]) -> bool:
     return not automated_failures
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Stage 0 board validation")
     parser.add_argument(
-        "--board",
-        choices=["nrf", "nucleo", "both"],
-        default="both",
-        help="Which board(s) to check (default: both)",
+        "--board-config-dir",
+        default=str(DEFAULT_BOARD_CONFIG_DIR),
+        help="Directory containing board config files. Defaults to the repo's boards/ directory.",
+    )
+    parser.add_argument(
+        "--board-config",
+        action="append",
+        default=[],
+        help="Additional board config file (.json, .yaml, .yml). Repeat for multiple extra boards.",
+    )
+    parser.add_argument(
+        "--board-id",
+        action="append",
+        default=[],
+        help="Board id to run. Repeat to select multiple boards. Defaults to all non-example board configs in the board-config-dir plus any extra board-config files.",
     )
     parser.add_argument(
         "--install-packs",
@@ -626,74 +870,85 @@ def main():
         help="Automatically install missing CMSIS-Packs",
     )
     parser.add_argument(
-        "--nrf-firmware",
-        help="Path to the known-good nRF reference firmware image to flash",
+        "--port",
+        action="append",
+        default=[],
+        metavar="BOARD_ID=PORT",
+        help="Override the detected virtual COM port for a board.",
     )
     parser.add_argument(
-        "--nucleo-firmware",
-        help="Path to the known-good Nucleo reference firmware image to flash",
+        "--firmware",
+        action="append",
+        default=[],
+        metavar="BOARD_ID=PATH",
+        help="Override the reference firmware path for a board.",
     )
     parser.add_argument(
-        "--nrf-port",
-        help="Override the detected nRF virtual COM port (for example COM7)",
+        "--expect",
+        action="append",
+        default=[],
+        metavar="BOARD_ID=TEXT",
+        help="Substring expected in the UART output for a board.",
     )
     parser.add_argument(
-        "--nucleo-port",
-        help="Override the detected Nucleo virtual COM port (for example COM8)",
+        "--baudrate",
+        action="append",
+        default=[],
+        metavar="BOARD_ID=BAUD",
+        help="Override the UART baud rate for a board.",
     )
     parser.add_argument(
-        "--nrf-baudrate",
-        type=int,
-        default=BOARDS["nrf"].default_baudrate,
-        help="Baud rate for the nRF UART read check",
-    )
-    parser.add_argument(
-        "--nucleo-baudrate",
-        type=int,
-        default=BOARDS["nucleo"].default_baudrate,
-        help="Baud rate for the Nucleo UART read check",
-    )
-    parser.add_argument(
-        "--nrf-expect",
-        help="Substring expected in the nRF UART output after flashing",
-    )
-    parser.add_argument(
-        "--nucleo-expect",
-        help="Substring expected in the Nucleo UART output after flashing",
+        "--recover-test",
+        action="append",
+        default=[],
+        metavar="BOARD_ID",
+        help="Run the destructive recover validation for the given board_id. Repeat for multiple boards.",
     )
     parser.add_argument(
         "--serial-read-seconds",
         type=float,
         default=3.0,
-        help="How long to listen for UART output after opening the port",
+        help="How long to listen for UART output after opening the port.",
     )
-    parser.add_argument(
-        "--nrf-recover-test",
-        action="store_true",
-        help="Run the destructive 'nrf recover' validation on the nRF52840-DK",
-    )
+    return parser
+
+
+def collect_overrides(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str]]:
+    port_overrides = parse_key_value(args.port, "--port")
+    firmware_overrides = {
+        board_id: resolve_firmware_path(path_text)
+        for board_id, path_text in parse_key_value(args.firmware, "--firmware").items()
+    }
+    expect_overrides = parse_key_value(args.expect, "--expect")
+    baudrate_overrides = {
+        board_id: parse_int(value, "--baudrate")
+        for board_id, value in parse_key_value(args.baudrate, "--baudrate").items()
+    }
+    recover_tests = {board_id.strip().lower() for board_id in args.recover_test if board_id.strip()}
+
+    return port_overrides, firmware_overrides, expect_overrides, baudrate_overrides, recover_tests
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
-    boards_to_check = list(BOARDS.values()) if args.board == "both" else [BOARDS[args.board]]
-    firmware_paths = {
-        "nrf": resolve_firmware_path(args.nrf_firmware),
-        "nucleo": resolve_firmware_path(args.nucleo_firmware),
-    }
-    port_overrides = {
-        "nrf": args.nrf_port,
-        "nucleo": args.nucleo_port,
-    }
-    baudrates = {
-        "nrf": args.nrf_baudrate,
-        "nucleo": args.nucleo_baudrate,
-    }
-    expected_text = {
-        "nrf": args.nrf_expect,
-        "nucleo": args.nucleo_expect,
-    }
+    try:
+        board_config_dir = Path(args.board_config_dir).expanduser().resolve()
+        default_boards = load_default_board_configs(board_config_dir)
+        custom_board_paths = [Path(raw_path).expanduser().resolve() for raw_path in args.board_config]
+        custom_boards = load_board_configs_from_paths(custom_board_paths)
+        boards_to_check = merge_board_lists(default_boards, custom_boards)
+        boards_to_check = select_boards_by_id(boards_to_check, args.board_id)
+        if not boards_to_check:
+            raise ConfigError("No boards selected. Add board configs or pass --board-id for an existing board.")
+        port_overrides, firmware_overrides, expect_overrides, baudrate_overrides, recover_tests = collect_overrides(args)
+    except ConfigError as exc:
+        parser.error(str(exc))
+        return
 
     print("\nStage 0 - Board and toolchain validation")
-    print(f"Checking: {', '.join(board.name for board in boards_to_check)}")
+    print(f"Checking: {', '.join(board.display_name for board in boards_to_check)}")
 
     pyocd_ok = check_pyocd_installed()
     pyserial_ok = check_pyserial_installed()
@@ -708,41 +963,44 @@ def main():
     manual_items: list[str] = []
 
     for board in boards_to_check:
-        probe = probes.get(board.key)
-        target_available = target_ok.get(board.key, False)
-        port = serial_ports.get(board.key)
+        probe = probes.get(board.board_id)
+        target_available = target_ok.get(board.board_id, False)
+        port = serial_ports.get(board.board_id)
+        firmware_path = firmware_overrides.get(board.board_id, board.reference_firmware_path)
+        expected_text = expect_overrides.get(board.board_id, board.expected_uart_substring)
+        baudrate = baudrate_overrides.get(board.board_id, board.default_baudrate)
 
         conn_ok = check_connection(board, probe, target_available)
-        flash_ok = flash_firmware(board, probe, target_available, firmware_paths[board.key])
+        flash_ok = flash_firmware(board, probe, target_available, firmware_path)
         uart_ok = None
-        if firmware_paths[board.key] is not None:
+        if firmware_path is not None:
             uart_ok = read_uart_output(
                 board,
                 port,
-                baudrates[board.key],
+                baudrate,
                 args.serial_read_seconds,
-                expected_text[board.key],
+                expected_text,
             )
-        recover_ok = run_nrf_recover_test(
+        recover_ok = run_recover_test(
             board,
             probe,
             target_available,
-            args.nrf_recover_test,
+            board.board_id in recover_tests,
         )
 
         summary_items.extend(
             [
-                SummaryItem(f"{board.name}: probe visible", SUMMARY_PASS if probe else SUMMARY_FAIL),
+                SummaryItem(f"{board.display_name}: probe visible", SUMMARY_PASS if probe else SUMMARY_FAIL),
                 SummaryItem(
-                    f"{board.name}: target '{board.pyocd_target}' available",
+                    f"{board.display_name}: target '{board.pyocd_target}' available",
                     SUMMARY_PASS if target_available else SUMMARY_FAIL,
                 ),
                 SummaryItem(
-                    f"{board.name}: connect + read register",
+                    f"{board.display_name}: connect + read register",
                     SUMMARY_PASS if conn_ok else SUMMARY_FAIL,
                 ),
                 SummaryItem(
-                    f"{board.name}: virtual COM port visible",
+                    f"{board.display_name}: virtual COM port visible",
                     SUMMARY_PASS if port else SUMMARY_FAIL,
                 ),
             ]
@@ -751,71 +1009,67 @@ def main():
         if flash_ok is None:
             summary_items.append(
                 SummaryItem(
-                    f"{board.name}: flash known-good reference firmware",
+                    f"{board.display_name}: flash known-good reference firmware",
                     SUMMARY_MANUAL,
-                    f"provide {board_arg_name(board, 'firmware')} to automate this step",
+                    f"provide --firmware {board_cli_label(board)}=PATH or set reference_firmware_path in the board config",
                 )
             )
             manual_items.append(
-                f"{board.name}: flash a known-good reference image and verify it is the intended baseline artifact."
+                f"{board.display_name}: flash a known-good reference image and verify it is the intended baseline artifact."
             )
         else:
             summary_items.append(
                 SummaryItem(
-                    f"{board.name}: flash known-good reference firmware",
+                    f"{board.display_name}: flash known-good reference firmware",
                     SUMMARY_PASS if flash_ok else SUMMARY_FAIL,
                 )
             )
 
-        if firmware_paths[board.key] is None:
+        if firmware_path is None:
             summary_items.append(
                 SummaryItem(
-                    f"{board.name}: UART output observed",
+                    f"{board.display_name}: UART output observed",
                     SUMMARY_MANUAL,
-                    f"requires flashed reference firmware and optional {board_arg_name(board, 'expect')}",
+                    f"requires flashed reference firmware and optional --expect {board_cli_label(board)}=TEXT",
                 )
             )
             manual_items.append(
-                f"{board.name}: confirm the reference firmware prints over UART on the expected port and baudrate."
-            )
-        elif uart_ok is None:
-            summary_items.append(
-                SummaryItem(f"{board.name}: UART output observed", SUMMARY_MANUAL)
+                f"{board.display_name}: confirm the reference firmware prints over UART on the expected port and baudrate."
             )
         else:
             summary_items.append(
                 SummaryItem(
-                    f"{board.name}: UART output observed",
+                    f"{board.display_name}: UART output observed",
                     SUMMARY_PASS if uart_ok else SUMMARY_FAIL,
                 )
             )
-            if expected_text[board.key] is None:
+            if expected_text is None:
                 manual_items.append(
-                    f"{board.name}: confirm the captured UART text is the expected reference-firmware output, not just arbitrary bytes."
+                    f"{board.display_name}: confirm the captured UART text is the expected reference-firmware output, not just arbitrary bytes."
                 )
 
         if board.requires_recover_validation:
             if recover_ok is None:
                 summary_items.append(
                     SummaryItem(
-                        f"{board.name}: recover / unlock cycle proven",
+                        f"{board.display_name}: recover / unlock cycle proven",
                         SUMMARY_MANUAL,
-                        "run with --nrf-recover-test to automate the destructive check",
+                        f"run with --recover-test {board_cli_label(board)} to automate the destructive check",
                     )
                 )
                 manual_items.append(
-                    f"{board.name}: prove an nRF recover/unlock cycle on this machine. This erases flash, so it is opt-in."
+                    f"{board.display_name}: prove a recover/unlock cycle on this machine. This may erase flash, so it is opt-in."
                 )
             else:
                 summary_items.append(
                     SummaryItem(
-                        f"{board.name}: recover / unlock cycle proven",
+                        f"{board.display_name}: recover / unlock cycle proven",
                         SUMMARY_PASS if recover_ok else SUMMARY_FAIL,
                     )
                 )
 
         manual_items.append(
-            f"{board.name}: confirm the visible debug probe and COM port are exposed by the same physical USB connection."
+            f"{board.display_name}: confirm the visible debug probe and COM port are exposed by the same physical USB connection."
         )
 
     automated_ok = print_summary(summary_items, manual_items)
