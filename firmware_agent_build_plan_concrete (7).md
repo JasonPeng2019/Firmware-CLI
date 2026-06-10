@@ -156,6 +156,113 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 **Design rule:** each adapter is a small class with a stable method interface; test from a REPL until
 boringly reliable. The probe differences (J-Link vs ST-Link) must hide *behind* the SWD interface.
 
+### Step 1.0 — Define the canonical repo & artifact layout FIRST (do before any adapter code)
+**Why first:** `flash_firmware`, `apply_patch`, bug injection, recovery-image logic, logging, and the
+agent itself all need to *find* files. If each invents its own path convention they won't compose. This
+is one ten-minute decision that prevents six components from diverging. Decide it now, commit it, point
+all later tooling at it. (Not in Stage 0 — Stage 0 is hand-testing with no code/paths yet.)
+
+**Canonical directory layout:**
+```
+firmware-agent/
+├── pyproject.toml + lockfile        # deps + pinned versions (team sync, see Scope Assumptions)
+├── src/firmware_agent/              # all product code
+│   ├── adapters/                    # uart.py, swd_interface.py, swd_pyocd.py
+│   ├── tools/                       # MCP tool/resource definitions + dispatch
+│   ├── guardrails/                  # flash gate, unlock gate, convergence watcher, logging
+│   ├── server/                      # FastMCP server wiring
+│   └── brain/                       # turnkey client + skills loader (Stage 5)
+├── boards/                          # ONE config file per board (board definitions)
+│   ├── nrf52840dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
+│   └── nucleo_l476rg.yaml           #   (USART2, 115200, stm32l476 target, …)
+├── firmware/                        # all firmware ARTIFACTS + sources, per board
+│   ├── nrf52840dk/
+│   │   ├── reference/src/           #   reference firmware SOURCE tree (known-good, builds clean)
+│   │   ├── reference/build/         #   compiled known-good ARTIFACT (the baseline binary)
+│   │   ├── recovery/                #   known-good RECOVERY image the safety/unlock gates require
+│   │   └── bugs/                    #   injected-bug VARIANTS (see naming below)
+│   └── nucleo_l476rg/               #   (same shape)
+├── skills/                          # per-chip/peripheral knowledge data files (Stage 5)
+│   ├── nrf52840/
+│   └── stm32l476/
+├── runs/                            # all runtime OUTPUT, keyed by session id
+│   └── <session_id>/                #   logs/, captured-serial/, applied-patches/, run-metadata
+└── tests/                           # injected-bug test definitions, harness
+```
+
+**Naming conventions (the part that's more than "pick a folder"):**
+- **Boards:** lowercase board id used everywhere — `nrf52840dk`, `nucleo_l476rg`. Every per-board path
+  and config keys off this exact string. One board id, used identically across `boards/`, `firmware/`,
+  `skills/`.
+- **Firmware artifacts:** `reference/` = the known-good baseline (one canonical name per board, e.g.
+  `reference/build/firmware.elf` + `.bin`/`.hex`). Build always uses debug symbols (`-g`/DWARF) so
+  `resolve_symbol` works.
+- **Bug variants:** systematic, machine-iterable names — `bugs/<id>__<short-slug>/` (e.g.
+  `bugs/001__spi-miso-wrong-pin/`), each a self-contained variant the harness/agent can enumerate and
+  reference by id. The double-underscore separates the stable id from the human slug.
+- **Recovery images:** the canonical path the safety gate AND unlock gate check —
+  `firmware/<board>/recovery/`. The gates look here; nothing else writes here.
+- **Runtime output:** everything a run produces lives under `runs/<session_id>/`, **keyed by the same
+  session id the convergence watcher uses** (Stage 3.2). This aligns logs, captured serial, and applied
+  patches with the session-keyed state already decided — one keying scheme, not a parallel one.
+- **Session-state config:** the external store (Redis, Stage 3.2) is keyed by the same `<session_id>`;
+  `runs/<session_id>/` is its on-disk companion. Same key, two locations (fast store + durable files).
+
+**The alignment that makes this not-a-new-decision:** recovery-image path = what the safety/unlock
+gates check; `runs/` keying = the watcher's session key; board id = one string shared by configs,
+firmware, and skills. So this layout *implements* decisions already made (safety gate, session-keying,
+per-chip skills) rather than introducing new ones.
+
+**Exit:** the tree + naming committed; a short README in the repo root documents both so every later
+component references one convention.
+
+### Step 1.0b — Board configuration schema (minimal now, grows per-stage)
+**The principle (the durable part):** board differences live in `boards/<board>.yaml` as **data, never
+as code branches.** If board specifics become `if board == "nrf": … else: …` scattered through the code,
+"multi-board support" collapses into a tangle of conditionals that breaks on every new board. This is
+the same abstraction as the SWD-interface-with-backends decision, applied to board knowledge.
+
+**Format: YAML.** Decided, not worth deliberating — human-readable, comments allowed, matches Step 1.0.
+(Not Python config: that lets logic creep back into what must be pure data — the exact thing this
+prevents. JSON: no comments, worse to edit. TOML: also fine, but YAML is the convention here.)
+
+**Schema rule: start minimal, extend per-stage. NEVER add a field before the component that reads it
+exists** — otherwise you formalize guesses your later stages will correct.
+
+**Required v1 core (needed by Stage 2; every field traces to a decision already made):**
+```yaml
+board_id:            nrf52840dk          # the one canonical id (Step 1.0); keys all per-board paths
+display_name:        "Nordic nRF52840-DK"
+mcu_family:          nrf52840            # selects which skills/ dir applies (Stage 5)
+probe_family:        jlink               # jlink | stlink — selects SWD backend (Stage 7 vendor swap)
+pyocd_target:        nrf52840            # the Stage-0 confirmed target (the won't-flash trap)
+serial_baudrate:     115200
+reference_firmware_path: firmware/nrf52840dk/reference/build/firmware.elf
+recovery_image_path:     firmware/nrf52840dk/recovery/        # what the safety + unlock gates check
+```
+
+**Add later, when its stage arrives (listed so the omission is intentional, not forgotten):**
+- `reference_uart_patterns` — **Stage 4** (test harness). What "success/failure" looks like over serial;
+  you can't write good patterns until you've seen real output.
+- `recover_command` / `recover_mode` — **Stage 3.1b**. Likely just a flag, since the nRF unlock is
+  pyOCD's built-in `auto_unlock`/mass-erase, not a custom command string.
+- `register_aliases` — **Stage a / debug surface**. Convenience for the agent's register reads; you'll
+  know which aliases matter only once it's actually reading registers.
+- `probe_discovery_hints` / `serial_discovery_hints` — **only if needed.** Given the mixed-OS team,
+  discovery is best driven by pyserial/pyOCD *enumeration*, which may make per-board hint strings
+  unnecessary. Don't bake these in speculatively; add only if enumeration proves insufficient.
+- `memory_protection_rules` — **already covered** by the guardrails (fuse/option-byte refusal, APPROTECT
+  case in Steps 3.1/3.1b). Don't duplicate that logic into a vague config field; extend only if a real
+  per-board protection rule appears that the gates can't express generically.
+
+**Decision — validate the schema:** every component reads board config through one small loader that
+validates the required core is present and fails loudly on a malformed/incomplete board file (a missing
+`pyocd_target` should be an obvious error, not a silent wrong-target flash). One loader, one schema, one
+source of truth — not each component parsing the YAML its own way.
+
+**Exit:** the minimal schema + one loader committed; both boards have a valid `boards/<board>.yaml`; the
+"data-not-branches, grows-per-stage" rule documented in the repo README.
+
 ### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
 - **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both
   boards — UART is the same; only the COM port differs.

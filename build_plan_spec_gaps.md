@@ -27,6 +27,7 @@ What should be defined:
 
 Why this matters:
 - USB detection, COM-port mapping, driver instructions, process launch, and packaging all depend on OS decisions
+###  ADRESSED ABOVE! #############
 
 ### X.2 Repository and artifact layout
 Needs clarification:
@@ -44,6 +45,8 @@ What should be defined:
 
 Why this matters:
 - otherwise `flash_firmware`, `apply_patch`, bug injection, and recovery-image logic will all invent different path conventions
+
+###  ADRESSED ABOVE! #############
 
 ### X.3 Board configuration schema
 Needs clarification:
