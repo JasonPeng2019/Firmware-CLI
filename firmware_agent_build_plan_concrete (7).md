@@ -44,21 +44,27 @@ one more likely to need a driver-association step.)
   the tools, just avoiding places your *own* code accidentally assumes one OS.
 
 **Python version:** pick one modern version as the team standard (3.11 or 3.12 is a safe default; the
-`mcp` SDK and pyOCD both want a reasonably recent Python). Not a deliberation — just pick and record it.
+`mcp` SDK and pyOCD both want a reasonably recent Python). 
+Selection: 3.11
 
 **Dependency versions:** don't pin thoughtfully upfront — install current versions, **commit a
 lockfile** (`pyproject.toml` + lock, or `requirements.txt`) so the mixed team stays in sync, then pin
 "what worked" once it works and revisit later. The lockfile matters *more* with a team than it would
 solo, because it keeps two OSes' environments matched so a bug isn't an environment mismatch in disguise.
 
-**Redis (external state store, not needed until Stage 3):** a single local Redis is the obvious default
-when you reach Stage 3.2. Defer until then.
+
 
 **Per-OS bootstrap docs — authored incrementally, not planned upfront.** The first teammate to set up
 each OS writes a short "on macOS do X / on Windows do Y" onboarding note as they go, so the next person
 on that OS has a path. This is a Stage-0 byproduct of setting up your own machine, not a document to
 pre-write from guesses.
 
+-------------------------------Do Not Implement Until Stage 3----------------------------------------
+**Redis (external state store, not needed until Stage 3):** a single local Redis is the obvious default
+when you reach Stage 3.2. Defer until then.
+----------------------------------------------------------------------------------------------
+
+Shiptime Notes:
 **Dev support vs. shipped-product support are intentionally different.** You develop on macOS+Windows
 because the team is on those; which OSes *customers* get supported is a separate, later decision
 (Stage 4+, driven by who buys). Building cross-platform for the team's sake means you'll naturally be
