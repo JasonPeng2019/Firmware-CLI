@@ -54,7 +54,6 @@ uv sync
 ```bash
 # Pin the interpreter the environment is built from (one-time; commit this file).
 echo "3.12" > .python-version
-
 # Create ./.venv and install runtime + dev dependencies, writing uv.lock.
 uv sync
 ```
