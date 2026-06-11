@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -34,7 +35,9 @@ FAIL = "FAIL"
 WARN = "WARN"
 INFO = "INFO"
 
-DEFAULT_BOARD_CONFIG_DIR = Path(__file__).resolve().parent / "boards"  # PROJECT-DEFINED (repo layout)
+DEFAULT_BOARD_CONFIG_DIR = (
+    Path(__file__).resolve().parent / "boards"
+)  # PROJECT-DEFINED (repo layout)
 BOARD_CONFIG_SUFFIXES = {".json", ".yaml", ".yml"}  # PROJECT-DEFINED (supported config formats)
 
 load_local_env()
@@ -99,7 +102,9 @@ DEPENDENCIES = (
 
 def run(cmd: list[str], capture: bool = True, cwd: Path | None = None) -> tuple[int, str, str]:
     try:
-        result = subprocess.run(cmd, capture_output=capture, text=True, cwd=str(cwd) if cwd else None)
+        result = subprocess.run(
+            cmd, capture_output=capture, text=True, cwd=str(cwd) if cwd else None
+        )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
@@ -158,7 +163,10 @@ def dependency_summary(require_yaml: bool, install_missing: bool) -> dict[str, b
             if ok:
                 log(PASS, "Reconciled the canonical repo environment with 'uv sync --locked'")
             else:
-                log(FAIL, "Failed to reconcile the canonical repo environment with 'uv sync --locked'")
+                log(
+                    FAIL,
+                    "Failed to reconcile the canonical repo environment with 'uv sync --locked'",
+                )
             for dep in DEPENDENCIES:
                 results[dep.package_name] = package_installed(dep.import_name)
 
@@ -207,7 +215,12 @@ def list_probes() -> list[ProbeInfo]:
         probes: list[ProbeInfo] = []
         for line in out.splitlines():
             stripped = line.strip()
-            if stripped and not stripped.startswith("#") and not stripped.lower().startswith("no"):
+            if (
+                stripped
+                and not stripped.startswith("#")
+                and not stripped.lower().startswith("no")
+                and not re.fullmatch(r"-+", stripped)
+            ):
                 probes.append(ProbeInfo(uid="", description=stripped.lower(), raw=stripped))
         return probes
 
@@ -217,8 +230,7 @@ def list_probes() -> list[ProbeInfo]:
         probes = []
         for item in boards:
             description = " ".join(
-                part for part in [item.get("description", ""), item.get("board_name", "")]
-                if part
+                part for part in [item.get("description", ""), item.get("board_name", "")] if part
             )
             probes.append(
                 ProbeInfo(
@@ -231,6 +243,17 @@ def list_probes() -> list[ProbeInfo]:
         return probes
     except (json.JSONDecodeError, AttributeError, TypeError):
         return []
+
+
+def list_target_names() -> set[str]:
+    _, out, _ = run(["pyocd", "list", "--targets"])
+    names: set[str] = set()
+    for line in out.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or re.fullmatch(r"-+", stripped):
+            continue
+        names.add(stripped.split()[0].lower())
+    return names
 
 
 def pyocd_summary(pyocd_ok: bool) -> int | None:
@@ -256,7 +279,9 @@ def pyocd_summary(pyocd_ok: bool) -> int | None:
         return len(probes)
     else:
         log(WARN, "No debug probes detected by pyOCD")
-        print("      This usually means an OS driver / vendor tooling / USB enumeration issue, not a board-config issue.")
+        print(
+            "      This usually means an OS driver / vendor tooling / USB enumeration issue, not a board-config issue."
+        )
         return 0
 
 
@@ -303,7 +328,9 @@ def preview_board_config_paths(board_config_dir: Path) -> list[Path]:
     ]
 
 
-def load_board_specs(board_config_dir: Path, extra_paths: list[Path], selected_ids: list[str]) -> list[BoardHostSpec]:
+def load_board_specs(
+    board_config_dir: Path, extra_paths: list[Path], selected_ids: list[str]
+) -> list[BoardHostSpec]:
     default_paths = [
         path
         for path in iter_board_config_paths(board_config_dir)
@@ -350,10 +377,14 @@ def board_config_summary(boards: list[BoardHostSpec]):
 
     log(PASS, f"Loaded {len(boards)} board config(s)")
     for board in boards:
-        print(f"    - {board.board_id} :: {board.display_name} :: target={board.pyocd_target} :: pack={board.pack_name}")
+        print(
+            f"    - {board.board_id} :: {board.display_name} :: target={board.pyocd_target} :: pack={board.pack_name}"
+        )
 
 
-def target_pack_summary(boards: list[BoardHostSpec], pyocd_ok: bool, install_packs: bool) -> dict[str, bool]:
+def target_pack_summary(
+    boards: list[BoardHostSpec], pyocd_ok: bool, install_packs: bool
+) -> dict[str, bool]:
     header("Target packs")
     if not boards:
         log(WARN, "No board configs selected - skipping pack checks")
@@ -362,8 +393,7 @@ def target_pack_summary(boards: list[BoardHostSpec], pyocd_ok: bool, install_pac
         log(FAIL, "pyocd missing - cannot check target packs")
         return {board.board_id: False for board in boards}
 
-    _, out, _ = run(["pyocd", "list", "--targets"])
-    installed_targets = out.lower()
+    installed_targets = list_target_names()
     results: dict[str, bool] = {}
 
     for board in boards:
@@ -380,7 +410,10 @@ def target_pack_summary(boards: list[BoardHostSpec], pyocd_ok: bool, install_pac
             if rc == 0:
                 _, refreshed, _ = run(["pyocd", "list", "--targets"])
                 ok = board.pyocd_target.lower() in refreshed.lower()
-                log(PASS if ok else FAIL, f"{board.board_id}: pack install {'succeeded' if ok else 'did not expose target'}")
+                log(
+                    PASS if ok else FAIL,
+                    f"{board.board_id}: pack install {'succeeded' if ok else 'did not expose target'}",
+                )
                 results[board.board_id] = ok
             else:
                 log(FAIL, f"{board.board_id}: pack install failed")
@@ -435,7 +468,9 @@ def main():
         for path in [*extra_paths, *preview_board_config_paths(board_config_dir)]
     )
 
-    dependency_results = dependency_summary(require_yaml=require_yaml, install_missing=args.install_missing)
+    dependency_results = dependency_summary(
+        require_yaml=require_yaml, install_missing=args.install_missing
+    )
     pyocd_ok = dependency_results.get("pyocd", False)
     pyserial_ok = dependency_results.get("pyserial", False)
 
@@ -454,7 +489,14 @@ def main():
     board_config_summary(boards)
     pack_results = target_pack_summary(boards, pyocd_ok=pyocd_ok, install_packs=args.install_packs)
     packs_ready = bool(boards) and all(pack_results.get(board.board_id, False) for board in boards)
-    host_ready = pyocd_ok and pyserial_ok and board_config_ok and packs_ready and (probe_count or 0) > 0 and (serial_count or 0) > 0
+    host_ready = (
+        pyocd_ok
+        and pyserial_ok
+        and board_config_ok
+        and packs_ready
+        and (probe_count or 0) > 0
+        and (serial_count or 0) > 0
+    )
 
     header("Summary")
     if host_ready:
@@ -462,7 +504,10 @@ def main():
     elif not pyocd_ok or not pyserial_ok or not board_config_ok or not packs_ready:
         log(WARN, "Host is not fully ready for stage0_check.py yet")
     else:
-        log(WARN, "Canonical env and board-target support are present, but attached hardware is not fully visible yet")
+        log(
+            WARN,
+            "Canonical env and board-target support are present, but attached hardware is not fully visible yet",
+        )
     print("  This script does not verify flashing, UART behavior, or recovery on real hardware.")
     sys.exit(0 if host_ready else 1)
 

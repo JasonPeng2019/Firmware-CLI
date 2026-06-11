@@ -41,7 +41,9 @@ SUMMARY_PASS = "pass"
 SUMMARY_FAIL = "fail"
 SUMMARY_MANUAL = "manual"
 
-DEFAULT_BOARD_CONFIG_DIR = Path(__file__).resolve().parent / "boards"  # PROJECT-DEFINED (repo layout)
+DEFAULT_BOARD_CONFIG_DIR = (
+    Path(__file__).resolve().parent / "boards"
+)  # PROJECT-DEFINED (repo layout)
 
 PROBE_FAMILY_LABELS = {
     "jlink": "SEGGER J-Link",
@@ -234,7 +236,9 @@ def default_test_address(mcu_family: str) -> int:
         return 0x10000000  # HW-FIXED (nRF FICR base; safe readable smoke-test region)
     if lowered.startswith("stm32"):
         return 0x08000000  # HW-FIXED (STM32 flash base; safe readable smoke-test region)
-    raise ConfigError("Custom board config must set 'test_read_address' for non-nRF/non-STM32 families")
+    raise ConfigError(
+        "Custom board config must set 'test_read_address' for non-nRF/non-STM32 families"
+    )
 
 
 def load_board_config_document(path: Path) -> dict:
@@ -287,7 +291,9 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
     probe_family = str(raw["probe_family"]).strip().lower()
     pyocd_target = str(raw["pyocd_target"]).strip()
     pack_name = str(raw.get("pack_name") or pyocd_target).strip()
-    probe_type = str(raw.get("probe_type") or PROBE_FAMILY_LABELS.get(probe_family, probe_family)).strip()
+    probe_type = str(
+        raw.get("probe_type") or PROBE_FAMILY_LABELS.get(probe_family, probe_family)
+    ).strip()
 
     if raw.get("test_read_address") is None:
         test_addr = default_test_address(mcu_family)
@@ -448,7 +454,12 @@ def list_probes() -> list[ProbeInfo]:
         probes: list[ProbeInfo] = []
         for line in out.splitlines():
             stripped = line.strip()
-            if stripped and not stripped.startswith("#") and not stripped.lower().startswith("no"):
+            if (
+                stripped
+                and not stripped.startswith("#")
+                and not stripped.lower().startswith("no")
+                and not re.fullmatch(r"-+", stripped)
+            ):
                 probes.append(ProbeInfo(uid="", description=stripped.lower(), raw=stripped))
         return probes
 
@@ -458,8 +469,7 @@ def list_probes() -> list[ProbeInfo]:
         probes = []
         for item in boards:
             description = " ".join(
-                part for part in [item.get("description", ""), item.get("board_name", "")]
-                if part
+                part for part in [item.get("description", ""), item.get("board_name", "")] if part
             )
             probes.append(
                 ProbeInfo(
@@ -474,7 +484,20 @@ def list_probes() -> list[ProbeInfo]:
         return []
 
 
-def pick_probe(board: BoardConfig, probes: list[ProbeInfo], allow_single_fallback: bool) -> tuple[ProbeInfo | None, str]:
+def list_target_names() -> set[str]:
+    _, out, _ = run(["pyocd", "list", "--targets"])
+    names: set[str] = set()
+    for line in out.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or re.fullmatch(r"-+", stripped):
+            continue
+        names.add(stripped.split()[0].lower())
+    return names
+
+
+def pick_probe(
+    board: BoardConfig, probes: list[ProbeInfo], allow_single_fallback: bool
+) -> tuple[ProbeInfo | None, str]:
     scored = []
     for probe in probes:
         score = score_terms(probe.searchable_text, board.probe_hint_terms)
@@ -489,7 +512,11 @@ def pick_probe(board: BoardConfig, probes: list[ProbeInfo], allow_single_fallbac
         return None, "multiple matching probes found; disconnect extras or refine probe_hint_terms"
 
     if allow_single_fallback and len(probes) == 1:
-        return probes[0], "single connected probe assumed for this board"
+        probe = probes[0]
+        family_terms = tuple(PROBE_FAMILY_HINTS.get(board.probe_family, set()))
+        if family_terms and score_terms(probe.searchable_text, family_terms) > 0:
+            return probe, "single connected probe assumed for this board"
+        return None, "single connected probe does not match the expected probe family"
 
     return None, "no matching probe found"
 
@@ -523,7 +550,10 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
                 detail += f" - {note}"
             check(True, detail)
         else:
-            check(False, f"{board.display_name} ({board.probe_type}) probe not uniquely identifiable: {note}")
+            check(
+                False,
+                f"{board.display_name} ({board.probe_type}) probe not uniquely identifiable: {note}",
+            )
         results[board.board_id] = probe
 
     return results
@@ -531,8 +561,7 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
 
 def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -> dict[str, bool]:
     header("CMSIS-Pack / target availability")
-    _, out, _ = run(["pyocd", "list", "--targets"])
-    installed_targets = out.lower()
+    installed_targets = list_target_names()
 
     results: dict[str, bool] = {}
     for board in boards_to_check:
@@ -549,10 +578,16 @@ def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -
             if rc == 0:
                 _, refreshed, _ = run(["pyocd", "list", "--targets"])
                 ok = board.pyocd_target.lower() in refreshed.lower()
-                check(ok, f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}")
+                check(
+                    ok,
+                    f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}",
+                )
                 results[board.board_id] = ok
             else:
-                check(False, f"Pack install failed - try manually: uv run pyocd pack find {board.pack_name}")
+                check(
+                    False,
+                    f"Pack install failed - try manually: uv run pyocd pack find {board.pack_name}",
+                )
                 results[board.board_id] = False
         else:
             print(f"      Fix: uv run pyocd pack find {board.pack_name}")
@@ -574,19 +609,21 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
         return False
 
     cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(["-c", f"read32 {hex(board.test_addr)} 1"])
+    cmd.extend(["-c", f"read32 {hex(board.test_addr)} 4"])
     print(f"  Attempting: {' '.join(cmd)}")
     rc, out, err = run(cmd)
+    combined = f"{out}\n{err}".lower()
 
-    if rc == 0 and out.strip():
+    if rc == 0 and out.strip() and "error" not in combined:
         check(True, f"Connected and read {hex(board.test_addr)}: {out.strip()}")
         return True
 
-    combined = f"{out}\n{err}".lower()
     if "approtect" in combined or "access port" in combined or "locked" in combined:
         log(WARN, f"{board.display_name} appears access-protected.")
         if board.recover_command:
-            print(f'      Recover with: pyocd cmd -t {board.pyocd_target} -c "{board.recover_command}"')
+            print(
+                f'      Recover with: pyocd cmd -t {board.pyocd_target} -c "{board.recover_command}"'
+            )
         return False
 
     if "no connected" in combined or "no target" in combined or "unable to connect" in combined:
@@ -598,6 +635,8 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
         return False
 
     check(False, f"Unexpected error (rc={rc})")
+    if out.strip():
+        print(f"      stdout: {out.strip()[:300]}")
     if err.strip():
         print(f"      stderr: {err.strip()[:300]}")
     return False
@@ -648,7 +687,10 @@ def pick_serial_port(
         best = [port for score, port in scored if score == best_score]
         if len(best) == 1:
             return best[0], ""
-        return None, "multiple matching serial ports found; use --port BOARD_ID=PORT or refine serial_hint_terms"
+        return (
+            None,
+            "multiple matching serial ports found; use --port BOARD_ID=PORT or refine serial_hint_terms",
+        )
 
     if allow_single_fallback and len(ports) == 1:
         return ports[0], "single connected serial port assumed for this board"
@@ -681,7 +723,9 @@ def check_virtual_com_ports(
     print(f"  Found {len(ports)} serial port(s):")
     for port in ports:
         desc = port.description or "(no description)"
-        extras = " ".join(part for part in [port.manufacturer, port.product, port.interface] if part)
+        extras = " ".join(
+            part for part in [port.manufacturer, port.product, port.interface] if part
+        )
         if extras:
             desc = f"{desc} :: {extras}"
         print(f"    - {port.device} :: {desc}")
@@ -689,7 +733,9 @@ def check_virtual_com_ports(
     results: dict[str, SerialPortInfo | None] = {}
     allow_single_fallback = len(ports) == 1 and len(boards_to_check) == 1
     for board in boards_to_check:
-        port, note = pick_serial_port(board, ports, port_overrides.get(board.board_id), allow_single_fallback)
+        port, note = pick_serial_port(
+            board, ports, port_overrides.get(board.board_id), allow_single_fallback
+        )
         if port:
             detail = f"{board.display_name} virtual COM port visible on {port.device}"
             if note:
@@ -778,7 +824,9 @@ def read_uart_output(
 
     if expected_text:
         ok = expected_text in text
-        check(ok, f"UART output {'matched' if ok else 'did not match'} expected text on {port.device}")
+        check(
+            ok, f"UART output {'matched' if ok else 'did not match'} expected text on {port.device}"
+        )
         if excerpt:
             print(f"      Captured: {excerpt}")
         return ok
@@ -790,7 +838,9 @@ def read_uart_output(
     return ok
 
 
-def run_recover_test(board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, enabled: bool) -> bool | None:
+def run_recover_test(
+    board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, enabled: bool
+) -> bool | None:
     if not board.requires_recover_validation:
         return None
 
@@ -860,7 +910,9 @@ def print_summary(items: list[SummaryItem], manual_items: list[str]) -> bool:
     if automated_failures:
         print("  Automated Stage 0 checks failed. Fix the items above and re-run.")
     elif pending_manual or manual_items:
-        print("  Automated checks passed, but full Stage 0 is not complete until the manual items are validated.")
+        print(
+            "  Automated checks passed, but full Stage 0 is not complete until the manual items are validated."
+        )
     else:
         print("  Automated checks passed and this run covered the requested Stage 0 validations.")
     print()
@@ -936,11 +988,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def collect_overrides(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str]]:
+def collect_overrides(
+    args: argparse.Namespace,
+) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str]]:
     port_overrides = parse_key_value(args.port, "--port")
     reference_firmware_overrides = {
         board_id: resolve_firmware_path(path_text)
-        for board_id, path_text in parse_key_value(args.reference_firmware, "--reference-firmware").items()
+        for board_id, path_text in parse_key_value(
+            args.reference_firmware, "--reference-firmware"
+        ).items()
     }
     expect_overrides = parse_key_value(args.expect, "--expect")
     baudrate_overrides = {
@@ -949,7 +1005,13 @@ def collect_overrides(args: argparse.Namespace) -> tuple[dict[str, str], dict[st
     }
     recover_tests = {board_id.strip().lower() for board_id in args.recover_test if board_id.strip()}
 
-    return port_overrides, reference_firmware_overrides, expect_overrides, baudrate_overrides, recover_tests
+    return (
+        port_overrides,
+        reference_firmware_overrides,
+        expect_overrides,
+        baudrate_overrides,
+        recover_tests,
+    )
 
 
 def main():
@@ -959,13 +1021,23 @@ def main():
     try:
         board_config_dir = Path(args.board_config_dir).expanduser().resolve()
         default_boards = load_default_board_configs(board_config_dir)
-        custom_board_paths = [Path(raw_path).expanduser().resolve() for raw_path in args.board_config]
+        custom_board_paths = [
+            Path(raw_path).expanduser().resolve() for raw_path in args.board_config
+        ]
         custom_boards = load_board_configs_from_paths(custom_board_paths)
         boards_to_check = merge_board_lists(default_boards, custom_boards)
         boards_to_check = select_boards_by_id(boards_to_check, args.board_id)
         if not boards_to_check:
-            raise ConfigError("No boards selected. Add board configs or pass --board-id for an existing board.")
-        port_overrides, reference_firmware_overrides, expect_overrides, baudrate_overrides, recover_tests = collect_overrides(args)
+            raise ConfigError(
+                "No boards selected. Add board configs or pass --board-id for an existing board."
+            )
+        (
+            port_overrides,
+            reference_firmware_overrides,
+            expect_overrides,
+            baudrate_overrides,
+            recover_tests,
+        ) = collect_overrides(args)
     except ConfigError as exc:
         parser.error(str(exc))
         return
@@ -1013,7 +1085,9 @@ def main():
 
         summary_items.extend(
             [
-                SummaryItem(f"{board.display_name}: probe visible", SUMMARY_PASS if probe else SUMMARY_FAIL),
+                SummaryItem(
+                    f"{board.display_name}: probe visible", SUMMARY_PASS if probe else SUMMARY_FAIL
+                ),
                 SummaryItem(
                     f"{board.display_name}: target '{board.pyocd_target}' available",
                     SUMMARY_PASS if target_available else SUMMARY_FAIL,
