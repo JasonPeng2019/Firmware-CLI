@@ -29,6 +29,7 @@ if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.serial_resolver import command_exists
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -59,6 +60,8 @@ class DependencySpec:
 class BoardHostSpec:
     board_id: str
     display_name: str
+    mcu_family: str
+    probe_family: str
     pyocd_target: str
     pack_name: str
     source_path: Path
@@ -353,6 +356,8 @@ def load_board_specs(
             BoardHostSpec(
                 board_id=board_id,
                 display_name=str(data["display_name"]).strip(),
+                mcu_family=str(data.get("mcu_family") or "").strip(),
+                probe_family=str(data.get("probe_family") or "").strip().lower(),
                 pyocd_target=str(data["pyocd_target"]).strip(),
                 pack_name=str(data.get("pack_name") or data["pyocd_target"]).strip(),
                 source_path=path,
@@ -424,6 +429,47 @@ def target_pack_summary(
     return results
 
 
+def vendor_serial_tool_summary(boards: list[BoardHostSpec]):
+    header("Serial auto-detect helpers")
+    if not boards:
+        log(WARN, "No board configs selected - skipping vendor serial-tool hints")
+        return
+
+    needs_nrfjprog = any(
+        board.mcu_family.lower().startswith("nrf") and board.probe_family == "jlink"
+        for board in boards
+    )
+    needs_stm32_cli = any(board.probe_family == "stlink" for board in boards)
+
+    if not needs_nrfjprog and not needs_stm32_cli:
+        log(INFO, "Selected boards do not require vendor-specific serial auto-detect helpers")
+        return
+
+    if needs_nrfjprog:
+        if command_exists("nrfjprog"):
+            log(
+                PASS,
+                "nrfjprog found - Nordic J-Link serial auto-detect can use 'nrfjprog --com'",
+            )
+        else:
+            log(
+                WARN,
+                "nrfjprog not found - Nordic J-Link serial auto-detect will fall back to generic matching or manual --port",
+            )
+
+    if needs_stm32_cli:
+        if command_exists("STM32_Programmer_CLI"):
+            log(
+                PASS,
+                "STM32_Programmer_CLI found - ST-LINK serial auto-detect can use 'STM32_Programmer_CLI -l'",
+            )
+        else:
+            log(
+                WARN,
+                "STM32_Programmer_CLI not found - ST-LINK serial auto-detect will fall back to generic matching or manual --port",
+            )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Host bootstrap before Stage 0 board checks")
     parser.add_argument(
@@ -487,6 +533,7 @@ def main():
 
     board_config_summary(boards)
     pack_results = target_pack_summary(boards, pyocd_ok=pyocd_ok, install_packs=args.install_packs)
+    vendor_serial_tool_summary(boards)
     packs_ready = bool(boards) and all(pack_results.get(board.board_id, False) for board in boards)
     host_ready = (
         pyocd_ok

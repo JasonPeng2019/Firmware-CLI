@@ -102,6 +102,11 @@ Notes:
 - `host_bootstrap.py` and `stage0_check.py` default to all non-example tracked
   boards. For first-time bring-up on one physical bench, prefer
   `--board-id <board>`.
+- `stage0_check.py` now tries vendor-assisted UART auto-detect where supported:
+  `nrfjprog --com` for Nordic J-Link boards and
+  `STM32_Programmer_CLI -l` for ST-LINK boards.
+- If UART auto-detect remains ambiguous, the script prompts in an interactive
+  terminal. In non-interactive runs, re-run with `--port BOARD_ID=PORT`.
 - The MCP Inspector entrypoint is:
 
 ```bash

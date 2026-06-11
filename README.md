@@ -152,12 +152,25 @@ Run Stage 0 validation for all tracked boards:
 uv run python stage0_check.py
 ```
 
+If Stage 0 cannot auto-resolve the UART endpoint, it now prompts in an
+interactive terminal. In non-interactive runs, re-run with
+`--port BOARD_ID=PORT`.
+
 Run host bootstrap and Stage 0 for one board on your bench:
 
 ```bash
 uv run python host_bootstrap.py --board-id nrf52840dk
 uv run python stage0_check.py --board-id nrf52840dk
 ```
+
+Vendor-assisted serial auto-detect is used when the helper CLI is available:
+
+- Nordic + J-Link boards: `nrfjprog --com`
+- ST-LINK boards: `STM32_Programmer_CLI -l`
+
+These CLIs improve auto-detect but are not required for every board. If they
+are missing or a board remains ambiguous, Stage 0 falls back to prompting or
+an explicit `--port` override.
 
 Start the MCP server:
 

@@ -770,7 +770,8 @@ This item creates the serial/UART code and its behavior contract.
 - define buffering and newline handling
 - define reopen behavior after reset/reflash
 - define error handling for disappearing ports
-- implement serial-port discovery and selection using config plus local overrides
+- implement serial-port discovery and selection using config, vendor-assisted
+  helpers where proven, and local overrides
 - validate behavior on both macOS and Windows
 
 ### Concrete outputs
@@ -787,6 +788,7 @@ This item creates the serial/UART code and its behavior contract.
 - What happens to partial lines?
 - What happens if the board disconnects and re-enumerates?
 - How do we pick the correct port on a machine with many ports?
+- When should the runtime prompt for human port selection instead of guessing?
 
 ### Definition of done
 

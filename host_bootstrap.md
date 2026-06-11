@@ -15,6 +15,7 @@ ready to attempt board-level validation.
 - serial-port enumeration through `pyserial`
 - board-config loading from `boards/` and any extra `--board-config` files
 - pyOCD target-pack availability for the selected board configs
+- vendor serial auto-detect helper availability for supported board families
 
 Optional actions:
 
@@ -28,6 +29,13 @@ What it does **not** do:
 - install vendor probe software such as SEGGER or ST tooling
 - update probe firmware
 - prove flashing, UART behavior, or recover behavior on real hardware
+
+Serial auto-detect helper notes:
+
+- Nordic J-Link boards can use `nrfjprog --com` when `nrfjprog` is installed.
+- ST-LINK boards can use `STM32_Programmer_CLI -l` when that tool is installed.
+- Missing vendor CLIs are warnings only; Stage 0 still falls back to generic
+  matching and manual `--port` overrides.
 
 ## Canonical Commands
 
@@ -80,8 +88,11 @@ uv run python stage0_check.py --board-id nrf52840dk
 - If `python-dotenv` is missing, repo-local `.env` defaults will not auto-load.
 - If no probes are detected, the problem is usually OS driver, vendor tooling,
   or USB enumeration.
-- If no serial ports are detected, the host cannot yet see the board’s UART
+- If no serial ports are detected, the host cannot yet see the board's UART
   interface.
+- If `nrfjprog` or `STM32_Programmer_CLI` is missing, vendor-assisted serial
+  auto-detect will be unavailable for the matching board family, but Stage 0
+  can still continue with generic matching or `--port`.
 - If a target pack is missing, install it with `--install-packs` or
   `uv run pyocd pack install ...`.
 

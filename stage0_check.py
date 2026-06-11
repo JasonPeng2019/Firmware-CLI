@@ -31,6 +31,11 @@ if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.serial_resolver import (
+    SerialPortInfo,
+    is_interactive_terminal,
+    resolve_serial_port,
+)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -99,33 +104,6 @@ class ProbeInfo:
     @property
     def searchable_text(self) -> str:
         return f"{self.uid} {self.description} {self.raw}".lower()
-
-
-@dataclass(frozen=True)
-class SerialPortInfo:
-    device: str
-    description: str
-    manufacturer: str
-    product: str
-    interface: str
-    hwid: str
-    vid: int | None = None
-    pid: int | None = None
-
-    @property
-    def searchable_text(self) -> str:
-        return " ".join(
-            [
-                self.device,
-                self.description,
-                self.manufacturer,
-                self.product,
-                self.interface,
-                self.hwid,
-                "" if self.vid is None else f"{self.vid:04x}",
-                "" if self.pid is None else f"{self.pid:04x}",
-            ]
-        ).lower()
 
 
 @dataclass(frozen=True)
@@ -734,6 +712,40 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
             print("      - J-Link firmware or drivers may need updating")
         return False
 
+    if (
+        "no emulator" in result.combined
+        or "could not read j-link capabilities" in result.combined
+        or "no j-link" in result.combined
+        or "unable to open" in result.combined
+        or "could not open" in result.combined
+        or "failed to open" in result.combined
+        or "access denied" in result.combined
+        or "no backend available" in result.combined
+        or "no usb backend" in result.combined
+        or "libusb" in result.combined
+    ):
+        check(
+            False,
+            f"{board.display_name} probe is visible but the {board.probe_type} backend could not claim it",
+        )
+        print("      The probe enumerates on the host but the debug channel cannot be opened.")
+        print("      This is almost always a USB driver-binding or exclusive-access issue, not the board:")
+        print("      - Close anything else holding the probe (other pyOCD/JLink/IDE sessions, an MCP server) and replug.")
+        if board.probe_family == "jlink":
+            print(
+                "      - The J-Link debug interface must be bound to the SEGGER J-Link driver, not generic WinUSB."
+            )
+            print(
+                "        Reinstall the SEGGER J-Link Software pack (it rebinds the driver), then replug."
+            )
+        elif board.probe_family == "stlink":
+            print("      - Install/repair the ST-Link USB driver, then replug.")
+        else:
+            print(
+                "      - Ensure the debug interface is bound to the driver pyOCD expects for this probe family."
+            )
+        return False
+
     check(False, f"Unexpected error (rc={result.rc})")
     if result.stdout.strip():
         print(f"      stdout: {result.stdout.strip()[:300]}")
@@ -810,6 +822,8 @@ def list_serial_ports() -> list[SerialPortInfo] | None:
                 product=getattr(port, "product", "") or "",
                 interface=getattr(port, "interface", "") or "",
                 hwid=port.hwid or "",
+                serial_number=getattr(port, "serial_number", "") or "",
+                location=getattr(port, "location", "") or "",
                 vid=getattr(port, "vid", None),
                 pid=getattr(port, "pid", None),
             )
@@ -817,42 +831,9 @@ def list_serial_ports() -> list[SerialPortInfo] | None:
     return ports
 
 
-def pick_serial_port(
-    board: BoardConfig,
-    ports: list[SerialPortInfo],
-    override: str | None,
-    allow_single_fallback: bool,
-) -> tuple[SerialPortInfo | None, str]:
-    if override:
-        for port in ports:
-            if port.device.lower() == override.lower():
-                return port, ""
-        return None, f"override port '{override}' not found"
-
-    scored = []
-    for port in ports:
-        score = score_terms(port.searchable_text, board.serial_hint_terms)
-        if score > 0:
-            scored.append((score, port))
-
-    if scored:
-        best_score = max(score for score, _ in scored)
-        best = [port for score, port in scored if score == best_score]
-        if len(best) == 1:
-            return best[0], ""
-        return (
-            None,
-            "multiple matching serial ports found; use --port BOARD_ID=PORT or refine serial_hint_terms",
-        )
-
-    if allow_single_fallback and len(ports) == 1:
-        return ports[0], "single connected serial port assumed for this board"
-
-    return None, "no matching serial port found"
-
-
 def check_virtual_com_ports(
     boards_to_check: list[BoardConfig],
+    probes_by_board: dict[str, ProbeInfo | None],
     port_overrides: dict[str, str],
     pyserial_ok: bool,
 ) -> dict[str, SerialPortInfo | None]:
@@ -877,7 +858,15 @@ def check_virtual_com_ports(
     for port in ports:
         desc = port.description or "(no description)"
         extras = " ".join(
-            part for part in [port.manufacturer, port.product, port.interface] if part
+            part
+            for part in [
+                port.manufacturer,
+                port.product,
+                port.interface,
+                port.serial_number,
+                port.location,
+            ]
+            if part
         )
         if extras:
             desc = f"{desc} :: {extras}"
@@ -885,10 +874,19 @@ def check_virtual_com_ports(
 
     results: dict[str, SerialPortInfo | None] = {}
     allow_single_fallback = len(ports) == 1 and len(boards_to_check) == 1
+    interactive = is_interactive_terminal()
     for board in boards_to_check:
-        port, note = pick_serial_port(
-            board, ports, port_overrides.get(board.board_id), allow_single_fallback
+        resolution = resolve_serial_port(
+            board=board,
+            ports=ports,
+            probe=probes_by_board.get(board.board_id),
+            override=port_overrides.get(board.board_id),
+            allow_single_fallback=allow_single_fallback,
+            run_cmd=run,
+            interactive=interactive,
         )
+        port = resolution.port
+        note = resolution.note
         if port:
             detail = f"{board.display_name} virtual COM port visible on {port.device}"
             if note:
@@ -1216,7 +1214,7 @@ def main():
 
     probes = check_probes(boards_to_check)
     target_ok = check_target_packs(boards_to_check, auto_install=args.install_packs)
-    serial_ports = check_virtual_com_ports(boards_to_check, port_overrides, pyserial_ok)
+    serial_ports = check_virtual_com_ports(boards_to_check, probes, port_overrides, pyserial_ok)
 
     summary_items: list[SummaryItem] = []
     manual_items: list[str] = []

@@ -148,6 +148,15 @@ uv run python stage0_check.py \
   --port my_board=<serial-port>
 ```
 
+When available, Stage 0 now tries vendor-assisted UART auto-detect first:
+
+- Nordic J-Link boards: `nrfjprog --com`
+- ST-LINK boards: `STM32_Programmer_CLI -l`
+
+If ambiguity remains in an interactive terminal, the script prompts you to pick
+one of the candidate ports. In non-interactive runs, it fails with an explicit
+`--port BOARD_ID=PORT` rerun hint.
+
 If you want flash plus UART validation:
 
 ```bash
@@ -196,7 +205,8 @@ Still manual:
 - target missing: run with `--install-packs` or install the pack manually
 - wrong nearby board attached: add or fix the board config's silicon-id fields
 - probe not found: fix the OS and probe-driver path first
-- COM port ambiguous: pass `--port BOARD_ID=...`
+- COM port ambiguous: respond to the prompt in an interactive run or rerun with
+  `--port BOARD_ID=...`
 - wrong target: fix `pyocd_target` in the board config
 
 ## Verification Status

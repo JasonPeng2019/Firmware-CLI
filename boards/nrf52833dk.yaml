@@ -24,6 +24,6 @@ serial_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED (host-side serial-port mat
   - 52833
   - virtual com
 requires_recover_validation: true  # PROJECT-DEFINED (Stage 0 policy for this board family)
-recover_command: "nrf recover"  # VENDOR-FIXED, UNVERIFIED (pyOCD command string for unlock/recover)
+recover_command: "unlock"  # VENDOR-FIXED, API-VERIFIED (valid pyOCD Commander command -> target.mass_erase(); clears APPROTECT). Pending hardware proof of the full recover cycle.
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.
 # Those are runtime/session inputs supplied by the host, not board metadata.
