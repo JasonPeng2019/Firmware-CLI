@@ -19,6 +19,10 @@ That runtime path may point at the canonical repo-owned baseline location later,
 for example `firmware/<board>/reference/build/firmware.elf`, but it is not
 stored in tracked board YAML.
 
+The canonical firmware tree may still be scaffolding before `R4` baselines are
+actually populated. Until those baseline artifacts exist, flash and UART
+validation still require an explicit runtime `--reference-firmware` path.
+
 ## 1. Bootstrap The Canonical Environment
 
 ```bash
@@ -94,6 +98,9 @@ If you want it to install missing Python packages and missing target packs:
 uv run python host_bootstrap.py --install-missing --install-packs
 ```
 
+`--install-missing` reconciles the canonical repo environment with
+`uv sync --locked`; it does not do ad hoc per-package installs.
+
 The script auto-loads `.env` if present, so repo-local `PYOCD_*` defaults are
 available without manual shell export.
 
@@ -104,6 +111,10 @@ By default, the script loads all non-example board files in `boards/`:
 ```bash
 uv run python stage0_check.py
 ```
+
+That default is for repo-wide validation across all tracked reference boards.
+For first-time bring-up on one physical bench, prefer `--board-id <board>` so
+an unrelated tracked board does not dominate the result.
 
 Run one tracked board:
 

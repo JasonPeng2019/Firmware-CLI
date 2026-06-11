@@ -683,6 +683,8 @@ This item makes "known-good firmware" concrete and shareable.
 - ensure debug-symbol-bearing artifacts exist
 - define where recovery artifacts live
 - define the initial expected UART behavior of the reference image
+- keep tracked board YAML hardware-focused while the reference firmware path is
+  still supplied to Stage 0 as a runtime argument
 
 ### Concrete outputs
 
@@ -690,6 +692,8 @@ This item makes "known-good firmware" concrete and shareable.
 - one repeatable build path per board
 - canonical ELF and flashable artifact locations
 - initial UART expectations documented
+- a documented runtime handoff from Stage 0 to the selected reference artifact,
+  without moving artifact paths into tracked board YAML
 
 ### Questions this item must answer
 
@@ -698,6 +702,8 @@ This item makes "known-good firmware" concrete and shareable.
 - Which artifact is flashed?
 - Which artifact is used for symbol resolution?
 - What is the recovery image and where does it live?
+- How does Stage 0 receive the chosen reference artifact without turning
+  artifact paths into tracked board-config fields?
 
 ### Definition of done
 
@@ -707,6 +713,7 @@ This item makes "known-good firmware" concrete and shareable.
 
 - bug variants beyond the baseline setup
 - agent evaluation yet
+- storing reference firmware paths in tracked board YAML
 
 ---
 
@@ -730,7 +737,8 @@ This item defines how the project represents board facts and how local machine a
 
 - board YAML files for both boards
 - one config loader module
-- one local override convention and example files
+- one local override convention such as `.env` plus optional
+  `pyocd.local.yaml`, with documented precedence
 
 ### Questions this item must answer
 

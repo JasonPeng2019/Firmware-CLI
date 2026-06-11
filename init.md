@@ -19,6 +19,46 @@ The team-standard interpreter is pinned in `.python-version` as `3.12`.
 `pyproject.toml` still declares the broader package floor, but development and
 validation should use the pinned Phase A environment.
 
+## Raw Machine Setup
+
+If this is a fresh machine, do these steps first.
+
+### 1. Install `uv`
+
+Windows (PowerShell):
+
+```powershell
+pip install uv
+```
+
+macOS:
+
+```bash
+brew install uv
+```
+
+Then open a new shell so `uv` is on `PATH`.
+
+If `uv` is not installed yet, nothing else in this repo will work.
+
+### 2. Do not create a venv manually
+
+You do not need to run `python -m venv ...` and you do not need to activate a
+virtual environment yourself.
+
+This repo uses `uv` as the canonical environment manager. The first `uv sync`
+creates `.venv/` automatically and installs the locked dependency set.
+
+### 3. Bootstrap the repo environment
+
+From the repo root:
+
+```bash
+uv sync
+```
+
+After that, use `uv run ...` for repo commands.
+
 ## Native Probe Dependencies
 
 If probe enumeration fails, install the missing host-level dependency first.
@@ -55,8 +95,13 @@ Notes:
 
 - `uv sync` creates `.venv/`, installs runtime and dev dependencies, and honors
   the committed `uv.lock`.
+- `uv sync` is the step that creates the repo venv; there is no separate
+  manual venv creation step.
 - Use `uv sync --no-dev` if you intentionally want a runtime-only install.
 - Use `uv run ...` for repo commands so they always run inside the pinned env.
+- `host_bootstrap.py` and `stage0_check.py` default to all non-example tracked
+  boards. For first-time bring-up on one physical bench, prefer
+  `--board-id <board>`.
 - The MCP Inspector entrypoint is:
 
 ```bash
@@ -88,7 +133,9 @@ which override `.env` defaults at runtime.
 
 ```bash
 uv run python host_bootstrap.py
-uv run python stage0_check.py --board-id nucleo_l476rg
+uv run python stage0_check.py
+uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
 uv run pyocd-debug-mcp
 uv run pytest
 uv run ruff check .

@@ -246,7 +246,7 @@ def load_board_config_document(path: Path) -> dict:
             import yaml
         except ImportError as exc:
             raise ConfigError(
-                f"PyYAML is required to load {path.name}. Install it with 'pip install pyyaml' or use JSON."
+                f"PyYAML is required to load {path.name}. Run 'uv sync' from the repo root or use JSON."
             ) from exc
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -425,7 +425,7 @@ def check_pyocd_installed() -> bool:
     if ok:
         check(True, f"pyOCD found: {out.strip()}")
     else:
-        check(False, "pyOCD not found - run: pip install pyocd")
+        check(False, "pyOCD not found - run: uv sync")
     return ok
 
 
@@ -437,7 +437,7 @@ def check_pyserial_installed() -> bool:
         version = getattr(serial_mod, "__version__", "unknown version")
         check(True, f"pyserial found: {version}")
     else:
-        check(False, "pyserial not found - run: pip install pyserial")
+        check(False, "pyserial not found - run: uv sync")
     return ok
 
 
@@ -552,11 +552,11 @@ def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -
                 check(ok, f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}")
                 results[board.board_id] = ok
             else:
-                check(False, f"Pack install failed - try manually: pyocd pack find {board.pack_name}")
+                check(False, f"Pack install failed - try manually: uv run pyocd pack find {board.pack_name}")
                 results[board.board_id] = False
         else:
-            print(f"      Fix: pyocd pack find {board.pack_name}")
-            print(f"           pyocd pack install {board.pack_name}")
+            print(f"      Fix: uv run pyocd pack find {board.pack_name}")
+            print(f"           uv run pyocd pack install {board.pack_name}")
             print("      Or re-run with --install-packs")
             results[board.board_id] = False
 

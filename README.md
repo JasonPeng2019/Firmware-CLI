@@ -88,6 +88,10 @@ Firmware-CLI/
 
 - `.python-version` is committed and pins the team interpreter to `3.12`.
 - Use `uv` as the canonical environment and command surface.
+- Install `uv` first on a raw machine; this repo does not assume it already
+  exists.
+  Windows: `pip install uv`
+  macOS: `brew install uv`
 - Use `uv sync` to create `.venv/` and install the locked dependency set.
 - Use `uv run ...` for repo commands so they always run inside the pinned env.
 - `.env` is optional, gitignored, and auto-loaded by the MCP server and the
@@ -97,6 +101,9 @@ Firmware-CLI/
   gitignored.
 - `pyocd.yaml` is optional and only belongs in the repo once the team has a
   real shared pyOCD option to commit.
+- Host and Stage 0 validation default to all non-example tracked boards.
+- For first-time bring-up on one physical bench, use `--board-id <board>` to
+  scope the run to the board you actually have attached.
 
 ## Board YAML Policy
 
@@ -133,16 +140,23 @@ Bootstrap the environment:
 uv sync
 ```
 
-Run host bootstrap:
+Run host bootstrap for all tracked boards:
 
 ```bash
 uv run python host_bootstrap.py
 ```
 
-Run Stage 0 validation:
+Run Stage 0 validation for all tracked boards:
 
 ```bash
-uv run python stage0_check.py --board-id nucleo_l476rg
+uv run python stage0_check.py
+```
+
+Run host bootstrap and Stage 0 for one board on your bench:
+
+```bash
+uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
 ```
 
 Start the MCP server:

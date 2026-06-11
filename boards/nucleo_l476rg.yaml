@@ -6,6 +6,8 @@ pyocd_target: stm32l476rg  # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list -
 serial_baudrate: 115200  # PROJECT-DEFINED, UNVERIFIED (chosen reference-firmware UART default)
 test_read_address: 0x08000000  # HW-FIXED (STM32 flash base; safe readable smoke-test address)
 pack_name: stm32l476  # VENDOR-FIXED, UNVERIFIED (`pyocd pack install` search/install token)
+# This board remains pending real R2 bench validation for its exact pyOCD target and pack behavior.
+# If host bootstrap reports missing target support here, treat it as a surfaced Stage 0 readiness gap.
 uart_note: "Reference firmware should print on USART2 at 115200 8N1."  # PROJECT-DEFINED, UNVERIFIED (expected Stage 0 validation note)
 probe_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side probe matching heuristics)
   - st-link

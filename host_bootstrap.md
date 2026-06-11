@@ -18,7 +18,8 @@ ready to attempt board-level validation.
 
 Optional actions:
 
-- install missing Python packages with `--install-missing`
+- reconcile the canonical repo environment with `uv sync --locked` via
+  `--install-missing`
 - install missing pyOCD target packs with `--install-packs`
 
 What it does **not** do:
@@ -35,6 +36,9 @@ Basic host check:
 ```bash
 uv run python host_bootstrap.py
 ```
+
+That default run is repo-wide: it checks all non-example tracked boards.
+For first-time bring-up on one physical bench, prefer `--board-id <board>`.
 
 Install missing Python deps and missing target packs:
 
@@ -71,13 +75,15 @@ uv run python stage0_check.py --board-id nrf52840dk
 
 - If `pyocd` is missing, install the canonical repo environment with `uv sync`.
 - If `pyserial` is missing, install the canonical repo environment with `uv sync`.
+- If `--install-missing` is used, the script repairs the repo env by running
+  `uv sync --locked`; it does not do ad hoc per-package installs.
 - If `python-dotenv` is missing, repo-local `.env` defaults will not auto-load.
 - If no probes are detected, the problem is usually OS driver, vendor tooling,
   or USB enumeration.
 - If no serial ports are detected, the host cannot yet see the board’s UART
   interface.
 - If a target pack is missing, install it with `--install-packs` or
-  `pyocd pack install ...`.
+  `uv run pyocd pack install ...`.
 
 ## Verification Status
 

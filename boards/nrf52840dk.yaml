@@ -6,6 +6,7 @@ pyocd_target: nrf52840  # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --ta
 serial_baudrate: 115200  # PROJECT-DEFINED, UNVERIFIED (chosen reference-firmware UART default)
 test_read_address: 0x10000000  # HW-FIXED (nRF FICR base; safe readable smoke-test address)
 pack_name: nrf52840  # VENDOR-FIXED, UNVERIFIED (`pyocd pack install` search/install token)
+# This board remains pending real R3 bench validation for exact probe, UART, and recover behavior.
 probe_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side probe matching heuristics)
   - j-link
   - jlink
