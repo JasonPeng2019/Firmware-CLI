@@ -45,6 +45,13 @@ Basic host check:
 uv run python host_bootstrap.py
 ```
 
+On Windows, run the unattended setup helper first when bootstrapping a fresh
+machine:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
 That default run is repo-wide: it checks all non-example tracked boards.
 For first-time bring-up on one physical bench, prefer `--board-id <board>`.
 

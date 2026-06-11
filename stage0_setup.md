@@ -43,6 +43,16 @@ The script does not install probe drivers for you.
 Stage 0 only works after the host can see both the debug probe and the USB
 serial interface.
 
+On Windows, the preferred unattended host setup path is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+That script can bootstrap Python/`uv`, sync the repo, repair common vendor-tool
+`PATH` issues, and automate the Nordic `nrfjprog` path used by Stage 0's
+vendor-assisted UART auto-detect.
+
 ## 3. Use A Tracked Board Config
 
 Board support is config-driven. Put one tracked config per board in `boards/`,

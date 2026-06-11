@@ -636,7 +636,8 @@ This is the manual validation package for the nRF board and its harder operation
 ### Included work
 
 - verify J-Link visibility through pyOCD
-- choose and document the actual J-Link route used in development
+- document the J-Link route (DECIDED: native SEGGER J-Link path is the default; CMSIS-DAP is the
+  fallback — the onboard J-Link OB does not expose CMSIS-DAP unless explicitly switched into it)
 - verify the correct target name
 - verify connection and simple memory access
 - identify the correct UART endpoint
@@ -647,13 +648,14 @@ This is the manual validation package for the nRF board and its harder operation
 ### Concrete outputs
 
 - validated `pyocd_target` for the nRF board
-- documented J-Link path decision
+- documented J-Link path decision (native SEGGER default, CMSIS-DAP fallback)
 - known-good serial enumeration behavior for the nRF board
 - documented recover/unlock checklist and observed behavior
 
 ### Questions this item must answer
 
-- What exact pyOCD path is used for J-Link on the team bench?
+- What exact pyOCD path is used for J-Link on the team bench? (ANSWERED: native SEGGER J-Link path by
+  default, CMSIS-DAP as fallback)
 - Does the onboard J-Link behave consistently on the chosen hosts?
 - What does a real unlock/recover cycle look like on this board?
 - What evidence distinguishes a locked board from a dead connection?

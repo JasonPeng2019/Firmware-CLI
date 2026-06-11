@@ -102,7 +102,7 @@ only values whose *origin and changeability* a future reader would need to know.
 ## 2. Read everything before writing anything
 
 - **Read the current build plan and this doc before each task.** Decisions already made (blocking v1,
-  CMSIS-DAP default, session-keyed state, data-not-branches board config, the repo layout) are binding
+  native-probe default with CMSIS-DAP fallback, session-keyed state, data-not-branches board config, the repo layout) are binding
   — do not silently re-decide them. If you think a prior decision is wrong, **flag it and ask**, don't
   quietly diverge.
 - **Read the actual files you're about to touch, in full, before editing.** No editing from assumption

@@ -68,8 +68,8 @@ Once reconciled, match the codebase you're joining — don't import a foreign st
   through.
 - **Apply the origin tags** (`HW-FIXED` / `VENDOR-FIXED` / `PROJECT-DEFINED`, plus `UNVERIFIED`) to
   every non-obvious value, in code and YAML, per the guidelines.
-- **Don't re-decide settled decisions.** The plan's settled choices (pyOCD-in-process, CMSIS-DAP
-  default, blocking-v1, multi-board-from-day-one, MCP-server-headless, etc.) are binding. If you think
+- **Don't re-decide settled decisions.** The plan's settled choices (pyOCD-in-process, native-probe
+  default with CMSIS-DAP fallback, blocking-v1, multi-board-from-day-one, MCP-server-headless, etc.) are binding. If you think
   one is wrong, that's a §4 surface-it event, not a quiet divergence.
 
 ---

@@ -161,6 +161,17 @@ def pyocd_base(subcommand: str, board: BoardConfig, probe: ProbeInfo | None) -> 
     cmd = ["pyocd", subcommand, "-t", board.pyocd_target]
     if probe and probe.uid:
         cmd.extend(["-u", probe.uid])
+    if board.probe_family == "jlink":
+        # VENDOR-FIXED, UNVERIFIED ACROSS VERSIONS (pyOCD session option; behaviour depends on
+        # the pyOCD + pylink + J-Link DLL combo). pyOCD calls pylink's disable_dialog_boxes()
+        # when jlink.non_interactive is True (its default). Verified here on pyOCD 0.44.1 +
+        # pylink 1.7.0 + J-Link DLL V9.50: that call clears the USB emulator selection, so the
+        # subsequent open-by-serial fails with "No emulator with serial number <sn> found" even
+        # though the probe is present and enumerable. Turning the option off skips the call and
+        # lets the open succeed. Tradeoff: a J-Link dialog (e.g. a firmware-update prompt) could
+        # appear during an automated run. NOTE: the plan standardizes the shipped product on
+        # CMSIS-DAP, not this SEGGER-DLL path (see surfaced conflict).
+        cmd.extend(["-O", "jlink.non_interactive=false"])
     return cmd
 
 

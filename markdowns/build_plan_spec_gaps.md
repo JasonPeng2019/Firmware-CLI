@@ -128,21 +128,27 @@ What code becomes easier once this is defined:
 - flash preflight checks
 
 ### 0.2 Probe-specific setup
-What is still underspecified:
-- the nRF probe route to standardize on during development
-- the route to standardize on for the shipped product
-- whether native J-Link support is merely a dev convenience or a supported runtime path
-- whether ST-Link setup assumes vendor drivers, generic drivers, or both
-- whether WinUSB/Zadig is ever considered part of the happy path
 
-What should be clarified:
-- choose one primary nRF path now:
-  - `pyOCD` via CMSIS-DAP
-  - `pyOCD` via native J-Link path
-- define whether the other path is:
-  - unsupported
-  - fallback-only
-  - dev-only
+**RESOLVED (2026-06-11, user sign-off — see the driver sidebar DECISION in `build_plan_concrete`):**
+the probe route is **the board's native probe family by default, with CMSIS-DAP as the fallback** (and
+as the default only for boards whose native family is CMSIS-DAP). The native J-Link path is a
+**supported runtime path**, not merely a dev convenience, because the Nordic DK's onboard J-Link OB does
+not expose CMSIS-DAP unless explicitly switched into it — so a CMSIS-DAP default would fail it. CMSIS-DAP
+remains fully supported: everything must work through it, and it is the automatic fallback when the
+native route fails. The items below are kept as the original gap record.
+
+What was underspecified (now resolved per the decision above):
+
+- the nRF probe route to standardize on during development → native SEGGER J-Link, CMSIS-DAP fallback
+- the route to standardize on for the shipped product → per-board native default, CMSIS-DAP fallback
+- whether native J-Link support is merely a dev convenience or a supported runtime path → supported runtime path
+- whether ST-Link setup assumes vendor drivers, generic drivers, or both → native ST-Link default, CMSIS-DAP fallback
+- whether WinUSB/Zadig is ever considered part of the happy path → only for probes whose native/fallback route is CMSIS-DAP
+
+Decision recorded:
+
+- primary route: the board's native probe path (`probe_family`)
+- the other path (CMSIS-DAP) is: **fallback-only** (and the default where a probe is natively CMSIS-DAP)
 - define the Windows driver story for each supported probe family
 - define whether the tooling detects driver state or merely infers likely causes from probe visibility failures
 

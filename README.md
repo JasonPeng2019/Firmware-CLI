@@ -140,6 +140,15 @@ Bootstrap the environment:
 uv sync
 ```
 
+On Windows, the preferred unattended host bootstrap entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+That script can install Python/`uv` if needed, sync the repo, repair vendor
+tool `PATH`s, and automate the Nordic `nrfjprog` path for J-Link boards.
+
 Run host bootstrap for all tracked boards:
 
 ```bash

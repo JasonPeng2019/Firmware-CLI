@@ -23,6 +23,16 @@ validation should use the pinned Phase A environment.
 
 If this is a fresh machine, do these steps first.
 
+On Windows, the preferred unattended entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+That script can install Python and `uv`, run `uv sync --locked`, repair common
+vendor-tool `PATH` issues, and automate Nordic `nrfjprog` setup for J-Link
+boards.
+
 ### 1. Install `uv`
 
 Windows (PowerShell):

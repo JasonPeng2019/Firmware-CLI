@@ -80,9 +80,11 @@ Stage 4+ and are recorded here only so it's clear their omission is intentional,
    CMSIS-Pack if prompted). Expect roughly `nrf52840` and an `stm32l476`-family target. *Why first:*
    the generic `cortex_m` type debugs but **cannot program flash** — the "connects but won't flash" trap.
 2. **Probe-specific setup:**
-   - **nRF52840-DK (J-Link):** install SEGGER J-Link software (drivers). Decide pyOCD's route to the
-     J-Link (CMSIS-DAP mode vs. SEGGER path) and **test a flash + a recover/unlock cycle** — confirm
-     you can recover the chip if APPROTECT locks it. This is the nRF's one real setup risk; clear it now.
+   - **nRF52840-DK (J-Link):** install SEGGER J-Link software (drivers). Route decision is made: use the
+     **native SEGGER J-Link path by default** (the OB does not expose CMSIS-DAP without being explicitly
+     switched into it — see the driver sidebar), with CMSIS-DAP as the fallback. **Test a flash + a
+     recover/unlock cycle** — confirm you can recover the chip if APPROTECT locks it. This is the nRF's
+     one real setup risk; clear it now.
    - **L476RG (ST-Link):** install ST-Link drivers. pyOCD should see it out of the box.
 3. **Confirm one USB cable yields BOTH** a debug probe and a virtual COM port, on each board.
 4. **Get a known-good reference firmware per board** that prints over UART (a vendor sample; for the
@@ -116,8 +118,18 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 >   drivers on modern systems.
 >
 > **Key point:** what the machine needs depends on **which path your code uses to reach the probe**,
-> not on anything you embed in your code. Standardize the shipped product on **pyOCD-over-CMSIS-DAP**
-> and the heavy proprietary packages (SEGGER especially) are not needed at runtime.
+> not on anything you embed in your code.
+>
+> **DECISION (amended 2026-06-11, user sign-off — supersedes the earlier "standardize on CMSIS-DAP"
+> framing throughout this doc): default to each board's NATIVE probe path; CMSIS-DAP is a supported
+> FALLBACK, not the default.** pyOCD reaches a probe over the route named by the board's `probe_family`
+> — SEGGER native for J-Link boards, ST-Link for ST boards, CMSIS-DAP for boards whose probe is natively
+> CMSIS-DAP. CMSIS-DAP is **not** the global default because some onboard probes — notably the Nordic
+> DK's **SEGGER J-Link OB** — do **not** expose a CMSIS-DAP interface unless it is explicitly switched on,
+> so defaulting everything to CMSIS-DAP would make those boards fail outright. CMSIS-DAP stays a
+> first-class, fully supported path: everything must work through it, it is the automatic fallback when
+> the native route fails, and it is the default for boards whose native family already *is* CMSIS-DAP.
+> This is empirically confirmed on the bench (see "Verify empirically" below).
 >
 > **What ships to customers — declare + guide, do NOT bundle drivers:**
 > - **You DON'T redistribute vendor drivers inside your CLI.** Legally, SEGGER's/ST's software is
@@ -131,22 +143,34 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 > - **Automate only the light, non-proprietary setup** — a udev rule (Linux) or WinUSB association
 >   (Windows) your installer *can* help with, because those aren't vendor software.
 >
-> **Why this reinforces the CMSIS-DAP-for-the-product decision:** standardizing on CMSIS-DAP shrinks
-> the customer's required OS-level setup to the lightest case (often just a udev rule / WinUSB assoc),
-> which your installer can automate. The native-J-Link path (Stage 7) reintroduces a
-> "customer must install SEGGER's proprietary software" requirement — a real deployment cost, and
-> another reason it's an opt-in upgrade, not the default.
+> **What this means for the customer's OS-level setup:** when CMSIS-DAP *is* the route for a board
+> (its native family, or a working fallback), the required setup shrinks to the lightest case — often
+> just a udev rule / WinUSB association your installer can automate. When a board's native route is
+> SEGGER J-Link (the Nordic DK default), that path requires the customer to have SEGGER's proprietary
+> software present — a real deployment cost. So the routing rule is: use the native path because it is
+> what actually works on that probe out of the box, and prefer CMSIS-DAP wherever a probe genuinely
+> supports it (lighter setup), falling back to CMSIS-DAP when the native route fails. CMSIS-DAP is
+> lighter *when available*; it is not assumed available everywhere.
 >
 > **Dev bench vs. shipped product:**
 > - *You, in Stage 0:* install everything (SEGGER software, ST drivers) — safest way to get both
->   boards working and to have vendor fallback tools. A dev convenience, not a shipping commitment.
-> - *Shipped product:* pyOCD + device packs as Python deps; standardize on CMSIS-DAP; automate the
->   light USB setup; detect-and-instruct for anything proprietary; never redistribute vendor drivers.
+>   boards working and to have vendor fallback tools.
+> - *Shipped product:* pyOCD + device packs as Python deps; route per board (native default,
+>   CMSIS-DAP fallback); automate the light USB setup; detect-and-instruct for anything proprietary;
+>   never redistribute vendor drivers. CMSIS-DAP remains fully supported and is preferred wherever a
+>   probe exposes it, but is not the forced global default.
 >
 > **Verify empirically in Stage 0 (platform/board-specific, don't trust the general picture):** whether
 > a given CMSIS-DAP probe needs Zadig on Windows, what udev rules pyOCD needs on Linux, and especially
 > **whether the DK's onboard J-Link presents cleanly as CMSIS-DAP without any SEGGER component present**
 > (onboard probes can behave differently from standalone CMSIS-DAP probes).
+>
+> **ANSWERED (2026-06-11, nRF52840-DK on Windows bench):** the Nordic DK's onboard SEGGER J-Link OB does
+> **not** present as CMSIS-DAP without a SEGGER component — its USB interface is the SEGGER bulk/WinUSB
+> debug channel, driven through SEGGER's J-Link DLL, not a generic CMSIS-DAP class. Reaching it over
+> CMSIS-DAP would require explicitly switching the OB into CMSIS-DAP mode. This is the concrete reason
+> the routing decision above defaults to the native probe path and treats CMSIS-DAP as a fallback rather
+> than the forced default.
 
 ---
 
