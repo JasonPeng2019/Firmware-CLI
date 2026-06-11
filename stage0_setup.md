@@ -63,6 +63,11 @@ test_read_address: 0x20000000
 Useful optional fields:
 
 - `pack_name`
+- `silicon_id_address`
+- `silicon_id_expected`
+- `silicon_id_mask`
+- `silicon_id_width_bits`
+- `silicon_id_label`
 - `probe_hint_terms`
 - `serial_hint_terms`
 - `reference_uart_patterns`
@@ -85,6 +90,11 @@ Examples:
 - `boards/nucleo_l476rg.yaml`
 - `boards/example_custom_nrf52_board.yaml`
 - `boards/example_custom_board.yaml`
+
+If two nearby MCUs can both answer a generic debug read through the same probe
+family, add silicon-identity metadata to the board YAML. Stage 0 will then read
+that register and reject the wrong attached device even if the probe and target
+family are otherwise compatible.
 
 ## 4. Run Host Bootstrap First
 
@@ -164,6 +174,7 @@ Automated:
 - probe visible
 - pyOCD target pack available
 - SWD connect plus smoke-test register read
+- exact silicon identity match, when the board config supplies silicon-id fields
 - virtual COM port visible
 - optional flash of known-good firmware
 - optional UART output capture
@@ -183,6 +194,7 @@ Still manual:
 - `pyOCD not found`: run `uv sync`
 - `pyserial not found`: run `uv sync`
 - target missing: run with `--install-packs` or install the pack manually
+- wrong nearby board attached: add or fix the board config's silicon-id fields
 - probe not found: fix the OS and probe-driver path first
 - COM port ambiguous: pass `--port BOARD_ID=...`
 - wrong target: fix `pyocd_target` in the board config

@@ -1,25 +1,27 @@
-board_id: nrf52840dk  # PROJECT-DEFINED (our canonical board id)
-display_name: "nRF52840-DK"  # PROJECT-DEFINED (human-facing board label)
-mcu_family: nrf52840  # HW-FIXED (the silicon on the reference board)
+board_id: nrf52833dk  # PROJECT-DEFINED (our canonical board id for the attached Nordic dev board)
+display_name: "nRF52833 DK"  # PROJECT-DEFINED (human-facing board label)
+mcu_family: nrf52833  # HW-FIXED (the silicon on the reference board)
 probe_family: jlink  # HW-FIXED (the onboard debug probe family)
-pyocd_target: nrf52840  # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --targets`)
+pyocd_target: nrf52833  # VENDOR-FIXED, BENCH-VERIFIED (confirmed via `pyocd list --targets`)
 serial_baudrate: 115200  # PROJECT-DEFINED, UNVERIFIED (chosen reference-firmware UART default)
 test_read_address: 0x10000000  # HW-FIXED (nRF FICR base; safe readable smoke-test address)
-pack_name: nrf52840  # VENDOR-FIXED, UNVERIFIED (`pyocd pack install` search/install token)
+pack_name: nrf52833  # VENDOR-FIXED, BENCH-VERIFIED (`pyocd pack install` search/install token)
 silicon_id_address: 0x10000100  # HW-FIXED (nRF FICR INFO.PART register)
-silicon_id_expected: 0x00052840  # HW-FIXED (nRF52840 part code from FICR.INFO.PART)
+silicon_id_expected: 0x00052833  # HW-FIXED, BENCH-VERIFIED (nRF52833 part code from FICR.INFO.PART)
 silicon_id_label: "FICR.INFO.PART"  # PROJECT-DEFINED (human-facing identity check label)
-# This board remains pending real R3 bench validation for exact probe, UART, and recover behavior.
-probe_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side probe matching heuristics)
+# This board now has host-side Stage 0 connectivity and exact silicon identity validation on the Mac bench.
+probe_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED (host-side probe matching heuristics)
   - j-link
   - jlink
   - segger
   - nrf
-serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matching heuristics)
+  - 52833
+serial_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED (host-side serial-port matching heuristics)
   - j-link
   - jlink
   - segger
   - nrf
+  - 52833
   - virtual com
 requires_recover_validation: true  # PROJECT-DEFINED (Stage 0 policy for this board family)
 recover_command: "nrf recover"  # VENDOR-FIXED, UNVERIFIED (pyOCD command string for unlock/recover)

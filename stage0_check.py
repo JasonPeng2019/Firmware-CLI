@@ -76,6 +76,11 @@ class BoardConfig:
     probe_hint_terms: tuple[str, ...]
     serial_hint_terms: tuple[str, ...]
     test_addr: int
+    silicon_id_addr: int | None = None
+    silicon_id_expected: int | None = None
+    silicon_id_mask: int | None = None
+    silicon_id_width_bits: int = 32
+    silicon_id_label: str = ""
     default_baudrate: int = 115200
     uart_note: str = ""
     requires_recover_validation: bool = False
@@ -128,6 +133,18 @@ class SummaryItem:
     label: str
     status: str
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class ReadResult:
+    rc: int
+    stdout: str
+    stderr: str
+    value: int | None = None
+
+    @property
+    def combined(self) -> str:
+        return f"{self.stdout}\n{self.stderr}".lower()
 
 
 def run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
@@ -219,6 +236,12 @@ def parse_int(value: object, field_name: str) -> int:
     if isinstance(value, str):
         return int(value, 0)
     raise ConfigError(f"Field '{field_name}' must be an int or numeric string")
+
+
+def validate_width_bits(width_bits: int, field_name: str) -> int:
+    if width_bits not in {8, 16, 32}:
+        raise ConfigError(f"Field '{field_name}' must be one of: 8, 16, 32")
+    return width_bits
 
 
 def tokenize_hint_text(*values: str) -> set[str]:
@@ -332,6 +355,41 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         if patterns:
             expected_uart_substring = patterns[0]
 
+    silicon_fields_present = any(
+        field in raw
+        for field in (
+            "silicon_id_address",
+            "silicon_id_expected",
+            "silicon_id_mask",
+            "silicon_id_width_bits",
+            "silicon_id_label",
+        )
+    )
+    silicon_id_addr = None
+    silicon_id_expected = None
+    silicon_id_mask = None
+    silicon_id_width_bits = 32
+    silicon_id_label = ""
+
+    if silicon_fields_present:
+        if raw.get("silicon_id_address") is None or raw.get("silicon_id_expected") is None:
+            raise ConfigError(
+                "Board config silicon identity requires both 'silicon_id_address' and "
+                "'silicon_id_expected' when any silicon_id_* field is present"
+            )
+        silicon_id_addr = parse_int(raw["silicon_id_address"], "silicon_id_address")
+        silicon_id_expected = parse_int(raw["silicon_id_expected"], "silicon_id_expected")
+        silicon_id_width_bits = validate_width_bits(
+            parse_int(raw.get("silicon_id_width_bits", 32), "silicon_id_width_bits"),
+            "silicon_id_width_bits",
+        )
+        full_mask = (1 << silicon_id_width_bits) - 1
+        silicon_id_mask = (
+            parse_int(raw.get("silicon_id_mask", full_mask), "silicon_id_mask") & full_mask
+        )
+        silicon_id_expected &= full_mask
+        silicon_id_label = str(raw.get("silicon_id_label") or "silicon identity").strip()
+
     return BoardConfig(
         board_id=board_id,
         display_name=display_name,
@@ -343,6 +401,11 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         probe_hint_terms=tuple(sorted(term.lower() for term in probe_terms if term)),
         serial_hint_terms=tuple(sorted(term.lower() for term in serial_terms if term)),
         test_addr=test_addr,
+        silicon_id_addr=silicon_id_addr,
+        silicon_id_expected=silicon_id_expected,
+        silicon_id_mask=silicon_id_mask,
+        silicon_id_width_bits=silicon_id_width_bits,
+        silicon_id_label=silicon_id_label,
         default_baudrate=default_baudrate,
         uart_note=uart_note,
         requires_recover_validation=requires_recover_validation,
@@ -495,6 +558,37 @@ def list_target_names() -> set[str]:
     return names
 
 
+def read_memory_value(
+    board: BoardConfig,
+    probe: ProbeInfo | None,
+    address: int,
+    width_bits: int,
+) -> ReadResult:
+    if probe is None:
+        return ReadResult(rc=1, stdout="", stderr="probe not detected")
+
+    width_bits = validate_width_bits(width_bits, "width_bits")
+    read_len = width_bits // 8
+    cmd = pyocd_base("cmd", board, probe)
+    cmd.extend(["-c", f"read{width_bits} {hex(address)} {read_len}"])
+    last_result = ReadResult(rc=1, stdout="", stderr="unknown read failure")
+    for attempt in range(3):
+        rc, out, err = run(cmd)
+        last_result = ReadResult(rc=rc, stdout=out, stderr=err, value=None)
+        combined = last_result.combined
+        if rc == 0 and out.strip() and "error" not in combined:
+            match = re.search(r":\s+([0-9a-fA-F]+)", out)
+            if match:
+                return ReadResult(rc=rc, stdout=out, stderr=err, value=int(match.group(1), 16))
+        if attempt < 2 and (
+            "j-link is already open" in combined or "could not read j-link capabilities" in combined
+        ):
+            time.sleep(0.25)
+            continue
+        break
+    return last_result
+
+
 def pick_probe(
     board: BoardConfig, probes: list[ProbeInfo], allow_single_fallback: bool
 ) -> tuple[ProbeInfo | None, str]:
@@ -576,8 +670,7 @@ def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -
             log(INFO, f"Installing pack for {board.pack_name}...")
             rc, _, _ = run(["pyocd", "pack", "install", board.pack_name], capture=False)
             if rc == 0:
-                _, refreshed, _ = run(["pyocd", "list", "--targets"])
-                ok = board.pyocd_target.lower() in refreshed.lower()
+                ok = board.pyocd_target.lower() in list_target_names()
                 check(
                     ok,
                     f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}",
@@ -611,14 +704,17 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
     cmd = pyocd_base("cmd", board, probe)
     cmd.extend(["-c", f"read32 {hex(board.test_addr)} 4"])
     print(f"  Attempting: {' '.join(cmd)}")
-    rc, out, err = run(cmd)
-    combined = f"{out}\n{err}".lower()
+    result = read_memory_value(board, probe, board.test_addr, 32)
 
-    if rc == 0 and out.strip() and "error" not in combined:
-        check(True, f"Connected and read {hex(board.test_addr)}: {out.strip()}")
+    if result.value is not None:
+        check(True, f"Connected and read {hex(board.test_addr)}: {result.stdout.strip()}")
         return True
 
-    if "approtect" in combined or "access port" in combined or "locked" in combined:
+    if (
+        "approtect" in result.combined
+        or "access port" in result.combined
+        or "locked" in result.combined
+    ):
         log(WARN, f"{board.display_name} appears access-protected.")
         if board.recover_command:
             print(
@@ -626,7 +722,11 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
             )
         return False
 
-    if "no connected" in combined or "no target" in combined or "unable to connect" in combined:
+    if (
+        "no connected" in result.combined
+        or "no target" in result.combined
+        or "unable to connect" in result.combined
+    ):
         check(False, "pyOCD found the probe but could not connect to the target MCU")
         print("      - Is the board powered?")
         print("      - Is the USB cable a data cable (not charge-only)?")
@@ -634,12 +734,65 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
             print("      - J-Link firmware or drivers may need updating")
         return False
 
-    check(False, f"Unexpected error (rc={rc})")
-    if out.strip():
-        print(f"      stdout: {out.strip()[:300]}")
-    if err.strip():
-        print(f"      stderr: {err.strip()[:300]}")
+    check(False, f"Unexpected error (rc={result.rc})")
+    if result.stdout.strip():
+        print(f"      stdout: {result.stdout.strip()[:300]}")
+    if result.stderr.strip():
+        print(f"      stderr: {result.stderr.strip()[:300]}")
     return False
+
+
+def check_silicon_identity(
+    board: BoardConfig,
+    probe: ProbeInfo | None,
+    target_ok: bool,
+) -> bool | None:
+    if board.silicon_id_addr is None or board.silicon_id_expected is None:
+        return None
+
+    header(f"Silicon identity - {board.display_name}")
+
+    if probe is None:
+        check(False, "Skipped - probe not detected")
+        return False
+    if not target_ok:
+        check(False, "Skipped - target pack not installed")
+        return False
+
+    label = board.silicon_id_label or "silicon identity"
+    cmd = pyocd_base("cmd", board, probe)
+    cmd.extend(
+        [
+            "-c",
+            f"read{board.silicon_id_width_bits} {hex(board.silicon_id_addr)} {board.silicon_id_width_bits // 8}",
+        ]
+    )
+    print(f"  Attempting: {' '.join(cmd)}")
+    result = read_memory_value(board, probe, board.silicon_id_addr, board.silicon_id_width_bits)
+    if result.value is None:
+        check(False, f"Unable to read {label}")
+        if result.stdout.strip():
+            print(f"      stdout: {result.stdout.strip()[:300]}")
+        if result.stderr.strip():
+            print(f"      stderr: {result.stderr.strip()[:300]}")
+        return False
+
+    mask = (
+        board.silicon_id_mask
+        if board.silicon_id_mask is not None
+        else (1 << board.silicon_id_width_bits) - 1
+    )
+    actual_masked = result.value & mask
+    expected_masked = board.silicon_id_expected & mask
+    ok = actual_masked == expected_masked
+    check(
+        ok,
+        f"{label} {'matched' if ok else 'did not match'} "
+        f"(actual=0x{actual_masked:X}, expected=0x{expected_masked:X}, mask=0x{mask:X})",
+    )
+    if result.stdout.strip():
+        print(f"      Raw: {result.stdout.strip()[:300]}")
+    return ok
 
 
 def list_serial_ports() -> list[SerialPortInfo] | None:
@@ -754,6 +907,7 @@ def flash_reference_firmware(
     board: BoardConfig,
     probe: ProbeInfo | None,
     target_ok: bool,
+    identity_ok: bool | None,
     reference_firmware_path: Path | None,
 ) -> bool | None:
     header(f"Reference firmware flash - {board.display_name}")
@@ -769,6 +923,9 @@ def flash_reference_firmware(
         return False
     if not target_ok:
         check(False, "Skipped - target pack not installed")
+        return False
+    if board.silicon_id_expected is not None and identity_ok is False:
+        check(False, "Skipped - connected silicon identity does not match this board config")
         return False
 
     cmd = pyocd_base("load", board, probe)
@@ -839,7 +996,11 @@ def read_uart_output(
 
 
 def run_recover_test(
-    board: BoardConfig, probe: ProbeInfo | None, target_ok: bool, enabled: bool
+    board: BoardConfig,
+    probe: ProbeInfo | None,
+    target_ok: bool,
+    identity_ok: bool | None,
+    enabled: bool,
 ) -> bool | None:
     if not board.requires_recover_validation:
         return None
@@ -854,6 +1015,9 @@ def run_recover_test(
         return False
     if not target_ok:
         check(False, "Skipped - target pack not installed")
+        return False
+    if board.silicon_id_expected is not None and identity_ok is False:
+        check(False, "Skipped - connected silicon identity does not match this board config")
         return False
     if not board.recover_command:
         check(False, "Skipped - no recover command configured for this board")
@@ -1066,9 +1230,16 @@ def main():
         baudrate = baudrate_overrides.get(board.board_id, board.default_baudrate)
 
         conn_ok = check_connection(board, probe, target_available)
-        flash_ok = flash_reference_firmware(board, probe, target_available, reference_firmware_path)
+        identity_ok = check_silicon_identity(board, probe, target_available)
+        flash_ok = flash_reference_firmware(
+            board,
+            probe,
+            target_available,
+            identity_ok,
+            reference_firmware_path,
+        )
         uart_ok = None
-        if reference_firmware_path is not None:
+        if flash_ok is True:
             uart_ok = read_uart_output(
                 board,
                 port,
@@ -1080,6 +1251,7 @@ def main():
             board,
             probe,
             target_available,
+            identity_ok,
             board.board_id in recover_tests,
         )
 
@@ -1096,6 +1268,19 @@ def main():
                     f"{board.display_name}: connect + read register",
                     SUMMARY_PASS if conn_ok else SUMMARY_FAIL,
                 ),
+            ]
+        )
+
+        if board.silicon_id_expected is not None:
+            summary_items.append(
+                SummaryItem(
+                    f"{board.display_name}: exact silicon identity matches board config",
+                    SUMMARY_PASS if identity_ok else SUMMARY_FAIL,
+                )
+            )
+
+        summary_items.extend(
+            [
                 SummaryItem(
                     f"{board.display_name}: virtual COM port visible",
                     SUMMARY_PASS if port else SUMMARY_FAIL,
@@ -1132,6 +1317,13 @@ def main():
             )
             manual_items.append(
                 f"{board.display_name}: confirm the reference firmware prints over UART on the expected port and baudrate."
+            )
+        elif flash_ok is False:
+            summary_items.append(
+                SummaryItem(
+                    f"{board.display_name}: UART output observed",
+                    SUMMARY_FAIL,
+                )
             )
         else:
             summary_items.append(

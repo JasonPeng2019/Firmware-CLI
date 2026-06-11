@@ -408,8 +408,7 @@ def target_pack_summary(
             print(f"  Attempting: pyocd pack install {board.pack_name}")
             rc, _, _ = run(["pyocd", "pack", "install", board.pack_name], capture=False)
             if rc == 0:
-                _, refreshed, _ = run(["pyocd", "list", "--targets"])
-                ok = board.pyocd_target.lower() in refreshed.lower()
+                ok = board.pyocd_target.lower() in list_target_names()
                 log(
                     PASS if ok else FAIL,
                     f"{board.board_id}: pack install {'succeeded' if ok else 'did not expose target'}",
