@@ -5,8 +5,11 @@
 `src/pyocd_debug_mcp/`.
 
 This `README.md` is the canonical Phase A source for repo layout and naming
-rules. Detailed bootstrap steps live in [init.md](./init.md). Exact runnable
-script behavior lives in the script docs linked below.
+rules. Detailed bootstrap steps live in [init.md](./init.md). The bench/setup
+scripts are operated through the single guide [stage0_setup.md](./stage0_setup.md)
+(run a script with `--help` for its full flag list). The MCP server's runtime
+tools are described in the tool docstrings the MCP client reads over the
+protocol (`src/pyocd_debug_mcp/server.py`); there is no sidecar doc for them.
 
 ## What Phase A Delivers
 
@@ -39,13 +42,9 @@ Firmware-CLI/
 |-- init.md
 |-- setup_host.ps1
 |-- setup_host.sh
-|-- setup_host.md
 |-- host_bootstrap.py
-|-- host_bootstrap.md
 |-- stage0_check.py
-|-- stage0_check.md
 |-- stage0_setup.md
-|-- pyocd_debug_mcp.md
 |-- boards/
 |   |-- nrf52840dk.yaml
 |   `-- nucleo_l476rg.yaml
@@ -224,11 +223,8 @@ uv run pyocd-debug-mcp
 ## Docs
 
 - Setup and bootstrap: [init.md](./init.md)
-- Host setup script doc: [setup_host.md](./setup_host.md)
-- Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
-- Stage 0 check script doc: [stage0_check.md](./stage0_check.md)
-- Stage 0 operator guide: [stage0_setup.md](./stage0_setup.md)
-- MCP server script doc: [pyocd_debug_mcp.md](./pyocd_debug_mcp.md)
+- Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
+- MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
@@ -245,6 +241,5 @@ Verified:
 
 Pending verification:
 
-- The unattended Windows bootstrap path still needs a real Windows bench run.
-- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
-  bench work beyond the currently verified Nordic path.
+- hardware-backed confirmation that the documented bring-up flow is sufficient
+  on all supported board families

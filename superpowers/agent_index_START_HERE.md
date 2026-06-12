@@ -14,8 +14,10 @@
    work - code and docs move together.
 3. **Build for the absent stranger.** Everything ships self-hosted and self-installing; the user does
    nothing manual; never tell the user to "go download X."
-4. **The operating agent is blind to source.** Every runnable script carries a script-doc that fully
-   replaces reading its code, and every multi-script workflow carries an operator guide.
+4. **Document each thing where its reader looks.** An MCP client reads a tool's *description and handle
+   over the protocol* — its docstring in the code — never a sidecar `.md`; so MCP tools are documented in
+   their docstrings, and the human/terminal bench scripts share ONE operator guide rather than a separate
+   doc per file.
 5. **Verify, don't claim; never hardcode; tag every value's origin.** Honesty about what's verified vs.
    assumed is non-negotiable.
 
@@ -48,11 +50,12 @@ doc drift, bench-only setup, blind-agent operation, confident-but-wrong claims).
    everything installable goes in an OS-detecting, idempotent script; STOP and ask before any
    unautomatable install. *Read on any task touching setup, install, dependencies, config, paths, or
    first-run.*
-6. **`agent_script_doc_playbook.md`** - Defines BOTH doc types needed for blind operation:
-   script-docs for individual runnable scripts and operator guides for multi-script workflows. Script-docs
-   cover exact behavior, every input, every log/output/exit-code meaning, and every failure mapped
-   symptom->cause->fix->rerun; operator guides cover cross-script sequence and branching. *Read when
-   creating or changing any runnable script or any workflow doc that orchestrates multiple scripts.*
+6. **`agent_script_doc_playbook.md`** - Where documentation lives in an MCP product. MCP tools are
+   documented in their *docstrings* (the description + handle the client reads over the protocol, never a
+   sidecar `.md`); the human/terminal bench scripts share ONE operator guide (`stage0_setup.md`) covering
+   sequence, operator-facing flags, and a consolidated symptom->cause->fix->rerun table - not a separate
+   exhaustive doc per file. *Read when adding or changing any MCP tool, or any setup/bench script the
+   operator runs.*
 
 ---
 
@@ -62,8 +65,9 @@ doc drift, bench-only setup, blind-agent operation, confident-but-wrong claims).
 |---|---|---|
 | Any task at all | Index + Consistency + Build Plan | - |
 | Writing/editing code | + Coding Guidelines | + Doc-Sync (you're changing things) |
-| Writing/changing a runnable script | + Coding Guidelines + Script-Doc | + Doc-Sync + Portability (if it's setup) |
-| Writing/changing a multi-script workflow guide | + Script-Doc + Doc-Sync | + Portability (if setup/first-run) |
+| Adding/changing an MCP tool | + Coding Guidelines + Tool-Description/Operator (§1) | + Doc-Sync (docstring moves with the code) |
+| Writing/changing a bench/setup script | + Coding Guidelines + Tool-Description/Operator (§2) | + Doc-Sync + Portability (if it's setup) |
+| Updating the operator guide (`stage0_setup.md`) | + Tool-Description/Operator (§2) + Doc-Sync | + Portability (if setup/first-run) |
 | Setup / install / dependency / config / first-run | + Portability | + Coding Guidelines + Doc-Sync |
 | Fixing a bug / resolving an inconsistency | + Doc-Sync | + Coding Guidelines |
 | Writing/editing a `.md` doc | + Doc-Sync + Consistency | (Build Plan if it's a decision) |

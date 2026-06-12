@@ -188,11 +188,8 @@ uv run mypy src
 ## Related Docs
 
 - Repo layout and naming: [README.md](./README.md)
-- Host setup script doc: [setup_host.md](./setup_host.md)
-- Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
-- Stage 0 check script doc: [stage0_check.md](./stage0_check.md)
-- Stage 0 operator guide: [stage0_setup.md](./stage0_setup.md)
-- MCP server script doc: [pyocd_debug_mcp.md](./pyocd_debug_mcp.md)
+- Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
+- MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 
 ## Verification Status
