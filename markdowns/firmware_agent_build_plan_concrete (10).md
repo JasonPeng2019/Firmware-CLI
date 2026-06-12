@@ -805,5 +805,6 @@ Verified:
 Pending verification:
 
 - The unattended Windows bootstrap path still needs a real Windows bench run.
-- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
-  bench work.
+- The `nucleo_l476rg` reference baseline now exists and builds, but its
+  physical Stage 0 flash and UART proof still need a real `nucleo_l476rg`
+  bench run.

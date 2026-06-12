@@ -20,5 +20,7 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matchin
   - stm32
   - nucleo
   - virtual com
+reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (expected repo-owned reference-firmware UART signature; Stage 0 UART proof still needs the physical board)
+  - "boot ok"
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.
 # Those are runtime/session inputs supplied by the host, not board metadata.

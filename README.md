@@ -245,5 +245,6 @@ Verified:
 
 Pending verification:
 
-- hardware-backed confirmation that the documented bring-up flow is sufficient
-  on all supported board families
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
+  bench work beyond the currently verified Nordic path.
