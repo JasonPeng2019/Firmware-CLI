@@ -171,6 +171,23 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 > CMSIS-DAP would require explicitly switching the OB into CMSIS-DAP mode. This is the concrete reason
 > the routing decision above defaults to the native probe path and treats CMSIS-DAP as a fallback rather
 > than the forced default.
+>
+> **Implementation items this decision creates (build time — not yet coded):**
+>
+> 1. **Native-default-with-CMSIS-DAP-fallback routing in the SWD layer (Stage 1 adapter / `R7` backend).**
+>    Connection logic tries the board's native `probe_family` route first and, on failure, automatically
+>    retries over CMSIS-DAP — surfacing which route succeeded. Today the tooling only does native-default;
+>    the automatic fallback is documented intent, not working code.
+> 2. **J-Link open workaround in the J-Link backend (`R7`).** pyOCD calls pylink's
+>    `disable_dialog_boxes()` when `jlink.non_interactive` is True (its default); with current DLLs that
+>    clears the USB emulator selection and the subsequent open-by-serial fails with a "No emulator with
+>    serial number ... found" error. Set the pyOCD option `jlink.non_interactive=false` (or otherwise skip that
+>    call). VENDOR-FIXED, UNVERIFIED ACROSS VERSIONS — verified on the bench with pyOCD 0.44.1 + pylink
+>    1.7.0 + J-Link DLL V9.50; reconfirm if those versions change.
+> 3. **Automated/guided vendor-driver install for native-J-Link boards (host bootstrap / setup).** Native
+>    SEGGER routing puts a proprietary install on the happy path, which collides with the portability
+>    playbook (§3: a manual "go download SEGGER" step is a defect). The setup flow must detect the missing
+>    vendor software and run/guide its install, or STOP-and-ask the author — not emit a manual instruction.
 
 ---
 
@@ -293,8 +310,10 @@ fields. Board YAML stays hardware-focused; user and session paths stay out.
 **Add later, when its stage arrives (listed so the omission is intentional, not forgotten):**
 - `reference_uart_patterns` — **Stage 4** (test harness). What "success/failure" looks like over serial;
   you can't write good patterns until you've seen real output.
-- `recover_command` / `recover_mode` — **Stage 3.1b**. Likely just a flag, since the nRF unlock is
-  pyOCD's built-in `auto_unlock`/mass-erase, not a custom command string.
+- `recover_mode` — a typed selector, not a free-form command string. A lightweight `recover_mode`
+  dispatch is acceptable in Stage 0 for bench validation, but the real guarded semantics still belong
+  to **Stage 3.1b**. The nRF unlock remains pyOCD's built-in `auto_unlock`/mass-erase path rather than
+  custom project logic.
 - `register_aliases` — **Stage a / debug surface**. Convenience for the agent's register reads; you'll
   know which aliases matter only once it's actually reading registers.
 - `probe_discovery_hints` / `serial_discovery_hints` — **only if needed.** Given the mixed-OS team,
@@ -508,6 +527,9 @@ Code). **Design rule:** guardrails are deterministic code, not model judgment.
 - **Stage 0 verification (no code yet):** prove the recover cycle by hand in pyOCD Commander —
   `initdp` → `makeap 1` → `status` (Locked) → `unlock` → `status` (Unlocked) → `reinit`. Confirms the
   capability works on *your* board before you wrap it.
+- **Current repo-aligned Stage 0 shape:** if a Stage 0 helper script automates bench validation, it
+  should dispatch from a typed `recover_mode` selector in board data to an implementation in code. Do
+  not put arbitrary recover shell commands in tracked board YAML.
 - **Verify at build time:** the exact pyOCD Python entry point for programmatic unlock/mass-erase and
   the `auto_unlock` option name are version-specific — confirm against your installed pyOCD's API. The
   *capability* is solidly built in; the precise call is the part to check.

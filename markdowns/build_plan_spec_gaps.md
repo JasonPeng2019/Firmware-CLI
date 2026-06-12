@@ -65,7 +65,7 @@ What should be defined:
   - `serial_baudrate`
   - `flash_artifact_type`
   - `reference_uart_patterns`
-  - `recover_command`
+  - `recover_mode` as a typed selector, not a free-form recover command
   - `memory_protection_rules`
   - `register_aliases`
 

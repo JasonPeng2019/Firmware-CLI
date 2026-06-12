@@ -640,16 +640,26 @@ This is the manual validation package for the nRF board and its harder operation
   fallback — the onboard J-Link OB does not expose CMSIS-DAP unless explicitly switched into it)
 - verify the correct target name
 - verify connection and simple memory access
-- identify the correct UART endpoint
+- identify the correct UART endpoint and capture how it is selected on real hosts
+- prove vendor-assisted serial auto-detect where it is defensible:
+  `nrfjprog --com` for Nordic J-Link boards, `STM32_Programmer_CLI -l` for ST-LINK boards
+- define the fallback behavior when serial selection remains ambiguous:
+  interactive prompt on a real terminal, explicit `--port` rerun guidance otherwise
 - flash a known-good image manually
 - verify UART output manually
 - manually prove a recover/unlock cycle and document the exact behavior
+- keep recover policy typed in board data (`requires_recover_validation`, `recover_mode`) rather than
+  letting tracked YAML inject arbitrary recover commands
+- automate or guide the vendor (SEGGER J-Link) driver/software install for J-Link boards instead of
+  emitting a manual "go download it" step (portability playbook §3); detect the missing vendor software,
+  run/guide its install, or STOP-and-ask the author
 
 ### Concrete outputs
 
 - validated `pyocd_target` for the nRF board
 - documented J-Link path decision (native SEGGER default, CMSIS-DAP fallback)
-- known-good serial enumeration behavior for the nRF board
+- known-good serial enumeration behavior for the nRF board, including the dual-CDC case
+- a documented vendor-assisted serial-selection path with prompt/manual fallback rules
 - documented recover/unlock checklist and observed behavior
 
 ### Questions this item must answer
@@ -729,6 +739,8 @@ This item defines how the project represents board facts and how local machine a
 
 - define the YAML schema for tracked board config
 - implement one loader/validator
+- keep tracked board YAML hardware-focused and ban free-form recover command injection
+- model recover selection as typed board data such as `recover_mode`
 - define local override format for:
   - preferred probe UID
   - preferred serial-port override or matching hints
@@ -748,6 +760,7 @@ This item defines how the project represents board facts and how local machine a
 - Which fields are machine-local and must stay untracked?
 - How does the runtime merge defaults, board config, and local overrides?
 - How are invalid configs reported?
+- Which recovery semantics belong in tracked board data versus code and later server guardrails?
 
 ### Definition of done
 
@@ -774,6 +787,8 @@ This item creates the serial/UART code and its behavior contract.
 - define error handling for disappearing ports
 - implement serial-port discovery and selection using config, vendor-assisted
   helpers where proven, and local overrides
+- make ambiguity handling explicit: prompt in interactive runs, fail with a
+  `--port BOARD_ID=PORT` rerun hint in non-interactive runs
 - validate behavior on both macOS and Windows
 
 ### Concrete outputs
@@ -819,6 +834,12 @@ This item creates the abstract hardware control API and its pyOCD implementation
 - implement register reads
 - implement memory reads
 - implement board-specific locked-target detection
+- implement native-default-with-CMSIS-DAP-fallback routing: try the board's native `probe_family` route
+  first, automatically fall back to CMSIS-DAP on failure, and surface which route was used
+- handle the J-Link open quirk: set pyOCD `jlink.non_interactive=false` so pylink's
+  `disable_dialog_boxes()` does not clear the USB emulator selection (else open-by-serial fails with
+  "No emulator with serial number ... found"); verified with pyOCD 0.44.1 + pylink 1.7.0 + J-Link DLL
+  V9.50, reconfirm on version changes
 - keep the interface board-agnostic even if the backend has board quirks
 
 ### Concrete outputs

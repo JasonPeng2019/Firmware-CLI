@@ -17,6 +17,6 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (example host-side serial-port
 reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (example expected UART validation text)
   - "boot ok"
 requires_recover_validation: true  # PROJECT-DEFINED, UNVERIFIED (example Stage 0 recovery policy)
-recover_command: "nrf recover"  # VENDOR-FIXED, UNVERIFIED (pyOCD command string for unlock/recover)
+recover_mode: nrf_pyocd_unlock  # PROJECT-DEFINED, UNVERIFIED (example recover backend selection for a Nordic board)
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.
 # Those are runtime/session inputs supplied by the host, not board metadata.

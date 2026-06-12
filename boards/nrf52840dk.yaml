@@ -22,6 +22,6 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matchin
   - nrf
   - virtual com
 requires_recover_validation: true  # PROJECT-DEFINED (Stage 0 policy for this board family)
-recover_command: "unlock"  # VENDOR-FIXED, API-VERIFIED (valid pyOCD Commander command -> target.mass_erase(); clears APPROTECT). Pending hardware proof of the full recover cycle.
+recover_mode: nrf_pyocd_unlock  # PROJECT-DEFINED (selects the Stage 0 recover backend for Nordic APPROTECT boards)
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.
 # Those are runtime/session inputs supplied by the host, not board metadata.

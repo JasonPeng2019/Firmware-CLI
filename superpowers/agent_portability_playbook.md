@@ -1,9 +1,10 @@
 # Portability & Self-Setup Playbook — Build for the Absent Stranger
 
 > **Why this exists.** The agent keeps building for *this developer's bench* — assuming someone is
-> present to install tools, add config, or run manual steps. That is the wrong audience. This product
+> present to install tools, add config, or run endless manual steps. That is the wrong audience. This product
 > ships to **arbitrary users on arbitrary machines (macOS + Windows) with arbitrary supported boards**,
-> who install a CLI and expect it to **just work, unattended.** Every manual "now go download X" step
+> who install a CLI and expect it to **mostly self-pilot once the agent is running.** Every sprawling
+> manual "now go download X and keep debugging your machine forever" step
 > the agent emits is a defect, not a handoff.
 >
 > **Read this at the start of any task that touches setup, installation, dependencies, config, paths,
@@ -16,35 +17,37 @@
 You are **never** writing for the developer at this desk. You are writing for an **absent stranger**:
 - on a machine you've never seen (macOS or Windows, no Linux assumption either way),
 - with one of the supported boards plugged in,
-- who will **not** read a README, **not** run manual commands, and **not** debug your setup,
-- who installs the CLI and expects the guided agent to do the rest.
+- who may follow a short, explicit bootstrap checklist before the agent starts,
+- who will **not** keep manually debugging setup once the guided agent is running,
+- who installs the CLI and expects the guided agent to do the rest after the initial bootstrap.
 
-If a step requires that stranger to *do* something manually, it has failed — unless it's genuinely
-impossible to automate (see §3), in which case you STOP and tell the human author first.
+If a step requires that stranger to keep doing setup work manually after the initial bootstrap, it has
+failed — unless it's genuinely impossible to automate (see §3), in which case you STOP and tell the
+human author first.
 
 **Mental test before writing any setup/install/config code:** "If I handed this to someone who will
-never type a command I didn't put in a script, would it work on their machine, with their board, on
-first run?" If no, it's not done.
+follow a short, documented bootstrap and then expect the agent to take over, would it work on their
+machine, with their board, on first run?" If no, it's not done.
 
 ---
 
 ## 1. EVERYTHING that can live in a script, MUST live in a script
 
-- **Dependency installation → a setup script**, not a README instruction. If the product needs pyOCD,
-  a device pack, a udev/WinUSB association, a Python env — the script installs/sets it up, detecting the
-  OS and doing the right thing per platform. The user runs ONE entry point; the script handles the rest.
+- **Dependency installation should prefer a setup script**, not scattered README instructions. A short
+  `init.md` bootstrap is acceptable before the agent starts, but repetitive or vendor-specific setup
+  should be moved into a script whenever that can be done safely.
 - **First-run setup → automated bootstrap.** Board detection, port discovery, target-pack fetching,
   config scaffolding — all automatic on first run, not manual prerequisites.
-- **Per-OS differences → handled IN the script**, branching on detected OS. macOS and Windows paths
-  both covered. Never "on Mac do X, on Windows do Y" prose for the user — the script detects and does it.
+- **Per-OS differences → handled in code where practical.** macOS and Windows setup helpers are better
+  than prose-only guidance. A concise `init.md` fallback is acceptable before the agent starts.
 - **No manual config editing.** Config is generated/scaffolded by the tool with sane defaults and
   discovered values (ports via enumeration, board via detection). If the user must set something, the
   tool prompts for it interactively or accepts a flag — never "open this file and edit it."
 - **Idempotent + re-runnable.** Setup scripts must be safe to run twice (check-then-act), so a partial
   or repeated setup self-heals rather than breaking.
 
-**The bar:** install the CLI → run it → the guided agent and scripts handle environment, dependencies,
-board/port discovery, and config, with zero manual steps for the user.
+**The bar:** bootstrap the CLI with a short, explicit setup flow → run it → the guided agent and scripts
+handle environment drift, board/port discovery, and config with minimal further manual work.
 
 ---
 
@@ -72,19 +75,21 @@ board/port discovery, and config, with zero manual steps for the user.
 
 The one hard rule that fixes the "agent keeps telling me to download stuff" problem:
 
-- **You may NOT emit a manual "the user must install/download X" step as the solution.** Manual installs
-  are defects.
-- **If something must be installed, the agent writes a SCRIPT that installs it** (OS-detecting,
-  idempotent), so the user never installs anything by hand.
+- **You may NOT emit a vague manual "the user must install/download X somehow" step as the solution.**
+  If a manual bootstrap step remains, it must be explicit, bounded, and part of the documented first-run
+  path.
+- **If something must be installed, prefer a SCRIPT that installs it** (OS-detecting, idempotent), so the
+  user does as little as possible by hand before the agent takes over.
 - **If an install genuinely CANNOT be scripted/automated** (e.g. a proprietary tool with no silent
-  installer, a license click-through, an OS permission that requires user action), you **STOP BEFORE
-  WRITING CODE** and tell the human author:
+  installer, a license click-through, an OS permission that requires user action), either:
+  1. document it as a bounded pre-agent setup step, if that matches product expectations, or
+  2. **STOP BEFORE WRITING CODE** and tell the human author:
   > ⚠️ UNAUTOMATABLE SETUP: `<thing>` is required but cannot be installed by script because `<reason>`.
   > Options: (a) <bundle / alternative tool / scripted workaround>, (b) accept a one-time manual step.
   > How do you want to handle this before I build around it?
 - **Never silently bake in a manual step and move on.** The choice between "automate it," "bundle it,"
-  or "accept an unavoidable manual step" is the human author's to make — surface it, don't decide it by
-  emitting a download instruction.
+  or "accept an unavoidable pre-agent manual step" is the human author's to make — surface it, don't
+  hide it in vague download instructions.
 
 **Why STOP-first matters:** if the agent builds assuming a manual install, the whole setup flow is
 designed around a defect. Catching "this can't be automated" *before* writing code lets the author pick
@@ -107,9 +112,9 @@ a portable alternative (a different tool, a bundleable binary) instead of discov
 
 ## 5. Pre-commit portability check (run before any setup/install/config commit)
 - [ ] Wrote for the absent stranger on a fresh macOS/Windows box, not this bench (§0)
-- [ ] Every automatable install/setup/config step lives in an OS-detecting, idempotent script (§1)
+- [ ] Every high-friction or repeatable install/setup/config step lives in an OS-detecting, idempotent script where practical (§1)
 - [ ] No machine-specific paths/ports/assumptions; values discovered, not baked in (§2)
-- [ ] Did NOT emit a manual "user must download/install X" instruction as a solution (§3)
+- [ ] Did NOT emit a vague manual "user must download/install X" instruction as a solution (§3)
 - [ ] For anything unautomatable: STOPPED and asked the author before building around it (§3)
 - [ ] Destructive actions still gated; failures self-diagnose rather than dumping chores (§4)
 - [ ] Traced the flow mentally on a clean machine with nothing pre-installed (§2)
@@ -117,6 +122,6 @@ a portable alternative (a different tool, a bundleable binary) instead of discov
 ---
 
 ## The one-sentence version
-**Write for an absent stranger on a fresh machine: everything installable goes in an OS-detecting,
-idempotent script so the user does nothing by hand — and if something truly can't be automated, STOP
-and ask the author before building around it, never just tell the user to go download it.**
+**Write for an absent stranger on a fresh machine: keep pre-agent setup short and explicit, script the
+high-friction parts, and make the agent self-pilot after bootstrap instead of leaving the user to keep
+debugging their environment by hand.**

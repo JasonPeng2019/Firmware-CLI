@@ -117,7 +117,7 @@ Allowed examples:
 - `pyocd_target`
 - baudrate
 - probe and serial hint terms
-- recover policy
+- recover policy such as `requires_recover_validation` and `recover_mode`
 - UART expectation metadata
 
 Forbidden examples:
@@ -149,6 +149,16 @@ powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 That script can install Python/`uv` if needed, sync the repo, repair vendor
 tool `PATH`s, and automate the Nordic `nrfjprog` path for J-Link boards.
 
+On macOS, the preferred host bootstrap entry point is:
+
+```bash
+bash ./setup_host.sh --board-id nrf52840dk
+```
+
+That script can install `uv`, `libusb`, and the Nordic Homebrew casks needed
+for `nrfjprog`. ST-LINK boards may still require a one-time manual
+STM32CubeProgrammer install before the agent can fully self-pilot.
+
 Run host bootstrap for all tracked boards:
 
 ```bash
@@ -158,6 +168,12 @@ uv run python host_bootstrap.py
 Run Stage 0 validation for all tracked boards:
 
 ```bash
+uv run python stage0_check.py
+```
+
+On Windows PowerShell, run the same command from the repo root:
+
+```powershell
 uv run python stage0_check.py
 ```
 
@@ -172,6 +188,13 @@ uv run python host_bootstrap.py --board-id nrf52840dk
 uv run python stage0_check.py --board-id nrf52840dk
 ```
 
+Windows PowerShell:
+
+```powershell
+uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
 Vendor-assisted serial auto-detect is used when the helper CLI is available:
 
 - Nordic + J-Link boards: `nrfjprog --com`
@@ -180,6 +203,14 @@ Vendor-assisted serial auto-detect is used when the helper CLI is available:
 These CLIs improve auto-detect but are not required for every board. If they
 are missing or a board remains ambiguous, Stage 0 falls back to prompting or
 an explicit `--port` override.
+
+Tracked board YAML now uses a typed `recover_mode` selector rather than a
+free-form recover command string. Today `stage0_check.py` supports:
+
+- `nrf_pyocd_unlock` for Nordic APPROTECT recovery through pyOCD's built-in
+  unlock and mass-erase flow
+- `manual_only` for boards that need recover validation but do not yet have an
+  automated Stage 0 implementation
 
 Start the MCP server:
 

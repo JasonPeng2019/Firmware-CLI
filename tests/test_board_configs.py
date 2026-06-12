@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -9,7 +12,7 @@ BOARD_DIR = REPO_ROOT / "boards"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from stage0_check import load_board_configs_from_paths
+from stage0_check import ConfigError, load_board_configs_from_paths
 
 
 def test_all_tracked_board_configs_load() -> None:
@@ -41,6 +44,51 @@ def test_nrf52833_board_profile_has_exact_identity_check() -> None:
     assert board.board_id == "nrf52833dk"
     assert board.pyocd_target == "nrf52833"
     assert board.probe_family == "jlink"
+    assert board.recover_mode == "nrf_pyocd_unlock"
     assert board.silicon_id_addr == 0x10000100
     assert board.silicon_id_expected == 0x00052833
     assert board.silicon_id_label == "FICR.INFO.PART"
+
+
+def test_non_nrf_recover_validation_defaults_to_manual_only(tmp_path: Path) -> None:
+    board_path = tmp_path / "manual_only_board.json"
+    board_path.write_text(
+        json.dumps(
+            {
+                "board_id": "manual_only_board",
+                "display_name": "Manual Only Board",
+                "mcu_family": "stm32f4",
+                "probe_family": "stlink",
+                "pyocd_target": "stm32f4x",
+                "requires_recover_validation": True,
+                "test_read_address": 134217728,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    [board] = load_board_configs_from_paths([board_path])
+
+    assert board.requires_recover_validation is True
+    assert board.recover_mode == "manual_only"
+
+
+def test_invalid_recover_mode_is_rejected(tmp_path: Path) -> None:
+    board_path = tmp_path / "invalid_recover_mode.json"
+    board_path.write_text(
+        json.dumps(
+            {
+                "board_id": "invalid_recover_mode",
+                "display_name": "Invalid Recover Mode",
+                "mcu_family": "nrf52840",
+                "probe_family": "jlink",
+                "pyocd_target": "nrf52840",
+                "recover_mode": "run_anything",
+                "test_read_address": 268435456,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="recover_mode"):
+        load_board_configs_from_paths([board_path])

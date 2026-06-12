@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Protocol
 
 
@@ -75,8 +77,50 @@ class StlinkComEntry:
 RunCommand = Callable[[list[str]], tuple[int, str, str]]
 
 
+WINDOWS_KNOWN_COMMAND_PATHS: dict[str, tuple[str, ...]] = {
+    "nrfjprog": (
+        r"C:\Program Files\Nordic Semiconductor\nrf-command-line-tools\bin\nrfjprog.exe",
+        r"C:\Program Files (x86)\Nordic Semiconductor\nrf-command-line-tools\bin\nrfjprog.exe",
+    ),
+    "STM32_Programmer_CLI": (
+        r"C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe",
+        r"C:\Program Files (x86)\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe",
+    ),
+}
+
+
+MACOS_KNOWN_COMMAND_PATHS: dict[str, tuple[str, ...]] = {
+    "nrfjprog": (
+        "/opt/homebrew/bin/nrfjprog",
+        "/usr/local/bin/nrfjprog",
+    ),
+    "STM32_Programmer_CLI": (
+        "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
+        "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
+        "/Applications/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
+    ),
+}
+
+
+def resolve_command_path(name: str) -> str | None:
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+
+    candidates: tuple[str, ...] = ()
+    if os.name == "nt":
+        candidates = WINDOWS_KNOWN_COMMAND_PATHS.get(name, ())
+    elif sys.platform == "darwin":
+        candidates = MACOS_KNOWN_COMMAND_PATHS.get(name, ())
+
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 def command_exists(name: str) -> bool:
-    return shutil.which(name) is not None
+    return resolve_command_path(name) is not None
 
 
 def is_interactive_terminal() -> bool:
@@ -266,10 +310,11 @@ def _resolve_nordic_serial(
 ) -> SerialResolution | None:
     if not board.mcu_family.lower().startswith("nrf") or board.probe_family.lower() != "jlink":
         return None
-    if not command_exists("nrfjprog"):
+    nrfjprog_path = resolve_command_path("nrfjprog")
+    if nrfjprog_path is None:
         return None
 
-    rc, out, _ = run_cmd(["nrfjprog", "--com"])
+    rc, out, _ = run_cmd([nrfjprog_path, "--com"])
     if rc != 0:
         return None
 
@@ -302,10 +347,11 @@ def _resolve_stlink_serial(
 ) -> SerialResolution | None:
     if board.probe_family.lower() != "stlink":
         return None
-    if not command_exists("STM32_Programmer_CLI"):
+    stm32_cli_path = resolve_command_path("STM32_Programmer_CLI")
+    if stm32_cli_path is None:
         return None
 
-    rc, out, _ = run_cmd(["STM32_Programmer_CLI", "-l"])
+    rc, out, _ = run_cmd([stm32_cli_path, "-l"])
     if rc != 0:
         return None
 

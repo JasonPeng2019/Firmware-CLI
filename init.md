@@ -33,6 +33,31 @@ That script can install Python and `uv`, run `uv sync --locked`, repair common
 vendor-tool `PATH` issues, and automate Nordic `nrfjprog` setup for J-Link
 boards.
 
+If `nrfjprog` needs admin elevation and the script cannot complete that step on
+the host, do this one-time manual Windows fallback:
+
+```powershell
+winget install --id NordicSemiconductor.JLink --exact --accept-package-agreements --accept-source-agreements --silent
+Invoke-WebRequest -UseBasicParsing "https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/desktop-software/nrf-command-line-tools/sw/versions-10-x-x/10-24-2/nrf-command-line-tools-10.24.2-x64.exe" -OutFile "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
+Start-Process -Verb RunAs -FilePath "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
+```
+
+Then reopen the terminal and re-run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+On macOS, the preferred entry point is:
+
+```bash
+bash ./setup_host.sh --board-id nrf52840dk
+```
+
+That script can install `uv`, `libusb`, and the Nordic Homebrew casks used for
+`nrfjprog`. For ST-LINK boards, a one-time manual STM32CubeProgrammer install
+may still be required before the agent is fully self-piloting.
+
 ### 1. Install `uv`
 
 Windows (PowerShell):
@@ -156,6 +181,30 @@ uv run pytest
 uv run ruff check .
 uv run ruff format .
 uv run mypy src
+```
+
+## Stage 0 Commands By OS
+
+macOS / Linux:
+
+```bash
+uv run python stage0_check.py
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+Windows (PowerShell):
+
+```powershell
+uv run python stage0_check.py
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+Common follow-up examples on either OS:
+
+```bash
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=COM8
+uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
 ```
 
 ## Related Docs

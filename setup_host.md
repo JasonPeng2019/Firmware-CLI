@@ -53,6 +53,16 @@ That script can bootstrap Python/`uv`, sync the repo, repair common vendor-tool
 `PATH` issues, and automate the Nordic `nrfjprog` path used by Stage 0's
 vendor-assisted UART auto-detect.
 
+On macOS, the preferred setup path is:
+
+```bash
+bash ./setup_host.sh --board-id nrf52840dk
+```
+
+That script can install `uv`, `libusb`, and the Nordic tooling needed for the
+same auto-detect path. ST-LINK setups may still need a one-time manual
+STM32CubeProgrammer install before the agent can fully self-pilot.
+
 ## 3. Use A Tracked Board Config
 
 Board support is config-driven. Put one tracked config per board in `boards/`,
@@ -81,9 +91,13 @@ Useful optional fields:
 - `probe_hint_terms`
 - `serial_hint_terms`
 - `reference_uart_patterns`
-- `recover_command`
+- `recover_mode`
 - `requires_recover_validation`
 - `uart_note`
+
+`recover_mode` is a typed selector, not a free-form shell command. Tracked
+board YAML chooses the recover backend; `stage0_check.py` implements the actual
+recover behavior for supported modes.
 
 Tracked board YAML must not contain:
 
@@ -132,6 +146,12 @@ By default, the script loads all non-example board files in `boards/`:
 uv run python stage0_check.py
 ```
 
+Windows PowerShell:
+
+```powershell
+uv run python stage0_check.py
+```
+
 That default is for repo-wide validation across all tracked reference boards.
 For first-time bring-up on one physical bench, prefer `--board-id <board>` so
 an unrelated tracked board does not dominate the result.
@@ -139,6 +159,12 @@ an unrelated tracked board does not dominate the result.
 Run one tracked board:
 
 ```bash
+uv run python stage0_check.py --board-id my_board
+```
+
+Windows PowerShell:
+
+```powershell
 uv run python stage0_check.py --board-id my_board
 ```
 
@@ -184,6 +210,20 @@ uv run python stage0_check.py \
   --recover-test my_board
 ```
 
+For the tracked Nordic board on this repo, the concrete PowerShell command is:
+
+```powershell
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+```
+
+If the board passes only after recover and then fails again after a power cycle,
+the target firmware may be re-enabling APPROTECT on boot. In that case, rerun:
+
+```powershell
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
 ## 6. What The Script Checks
 
 Automated:
@@ -197,7 +237,14 @@ Automated:
 - virtual COM port visible
 - optional flash of known-good firmware
 - optional UART output capture
-- optional recover or unlock command
+- optional recover validation for supported families
+
+Current `recover_mode` values:
+
+- `nrf_pyocd_unlock` - use pyOCD's built-in Nordic unlock path, then fall back
+  to pyOCD mass erase if needed
+- `manual_only` - record that recover validation is required, but do not try to
+  automate it in Stage 0 yet
 
 Still manual:
 
@@ -217,11 +264,16 @@ Still manual:
 - probe not found: fix the OS and probe-driver path first
 - COM port ambiguous: respond to the prompt in an interactive run or rerun with
   `--port BOARD_ID=...`
+- nRF silicon identity fails after a power cycle with APPROTECT symptoms: rerun
+  `uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk`,
+  then rerun the normal board check. If this repeats every power cycle, the
+  currently flashed firmware is likely re-locking the chip.
 - wrong target: fix `pyocd_target` in the board config
 
 ## Verification Status
 
-- Non-hardware verification: this doc matches the current generic
-  `stage0_check.py` CLI shape.
+- Non-hardware verification: this doc matches the current `stage0_check.py`
+  CLI shape, `recover_mode` dispatch, and vendor-assisted serial-selection
+  behavior.
 - Pending hardware verification: flashing, UART capture, and recover flows still
   need to be run on real boards.

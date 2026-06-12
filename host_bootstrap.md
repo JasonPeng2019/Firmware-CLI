@@ -52,6 +52,12 @@ machine:
 powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 ```
 
+On macOS, run:
+
+```bash
+bash ./setup_host.sh --board-id nrf52840dk
+```
+
 That default run is repo-wide: it checks all non-example tracked boards.
 For first-time bring-up on one physical bench, prefer `--board-id <board>`.
 
@@ -83,6 +89,20 @@ available without manual shell export.
 Run Stage 0 board validation:
 
 ```bash
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+Windows PowerShell:
+
+```powershell
+uv run python stage0_check.py
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+macOS / Linux:
+
+```bash
+uv run python stage0_check.py
 uv run python stage0_check.py --board-id nrf52840dk
 ```
 

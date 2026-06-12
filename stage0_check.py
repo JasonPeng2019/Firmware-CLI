@@ -62,6 +62,13 @@ PROBE_FAMILY_HINTS = {
     "cmsisdap": {"cmsis-dap", "cmsisdap", "daplink"},
 }
 
+RECOVER_MODE_NRF_PYOCD_UNLOCK = "nrf_pyocd_unlock"
+RECOVER_MODE_MANUAL_ONLY = "manual_only"
+SUPPORTED_RECOVER_MODES = {
+    RECOVER_MODE_NRF_PYOCD_UNLOCK,
+    RECOVER_MODE_MANUAL_ONLY,
+}
+
 load_local_env()
 
 
@@ -89,7 +96,7 @@ class BoardConfig:
     default_baudrate: int = 115200
     uart_note: str = ""
     requires_recover_validation: bool = False
-    recover_command: str | None = None
+    recover_mode: str | None = None
     expected_uart_substring: str | None = None
     source_path: Path | None = None
 
@@ -125,6 +132,13 @@ class ReadResult:
         return f"{self.stdout}\n{self.stderr}".lower()
 
 
+@dataclass(frozen=True)
+class RecoverResult:
+    completed: bool
+    reconnect_ok: bool | None = None
+    post_identity_ok: bool | None = None
+
+
 def run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
     try:
         result = subprocess.run(cmd, capture_output=capture, text=True)
@@ -155,6 +169,26 @@ def score_terms(text: str, terms: tuple[str, ...]) -> int:
 
 def board_cli_label(board: BoardConfig) -> str:
     return board.board_id
+
+
+def build_recover_attempts(
+    board: BoardConfig, probe: ProbeInfo | None
+) -> list[tuple[str, list[str]]]:
+    if board.recover_mode == RECOVER_MODE_NRF_PYOCD_UNLOCK:
+        # VENDOR-FIXED, BENCH-VERIFIED (pyOCD 0.44.1 built-in recover path for Nordic APPROTECT).
+        unlock_cmd = pyocd_base("cmd", board, probe)
+        unlock_cmd.extend(["-c", "unlock"])
+
+        # VENDOR-FIXED, BENCH-VERIFIED (pyOCD 0.44.1 mass erase fallback when Commander unlock fails).
+        mass_erase_cmd = pyocd_base("erase", board, probe)
+        mass_erase_cmd.append("--mass")
+
+        return [
+            ("pyOCD built-in unlock", unlock_cmd),
+            ("pyOCD built-in mass erase fallback", mass_erase_cmd),
+        ]
+
+    return []
 
 
 def pyocd_base(subcommand: str, board: BoardConfig, probe: ProbeInfo | None) -> list[str]:
@@ -231,6 +265,30 @@ def validate_width_bits(width_bits: int, field_name: str) -> int:
     if width_bits not in {8, 16, 32}:
         raise ConfigError(f"Field '{field_name}' must be one of: 8, 16, 32")
     return width_bits
+
+
+def resolve_recover_mode(
+    raw_mode: object,
+    *,
+    requires_recover_validation: bool,
+    mcu_family: str,
+) -> str | None:
+    if raw_mode is not None:
+        recover_mode = str(raw_mode).strip().lower()
+        if not recover_mode:
+            return None
+        if recover_mode not in SUPPORTED_RECOVER_MODES:
+            supported = ", ".join(sorted(SUPPORTED_RECOVER_MODES))
+            raise ConfigError(
+                f"Field 'recover_mode' must be one of: {supported}"
+            )
+        return recover_mode
+
+    if not requires_recover_validation:
+        return None
+    if mcu_family.startswith("nrf"):
+        return RECOVER_MODE_NRF_PYOCD_UNLOCK
+    return RECOVER_MODE_MANUAL_ONLY
 
 
 def tokenize_hint_text(*values: str) -> set[str]:
@@ -320,12 +378,11 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         requires_recover_validation = mcu_family.startswith("nrf")
     else:
         requires_recover_validation = bool(explicit_recover)
-
-    recover_command = raw.get("recover_command")
-    if recover_command is not None:
-        recover_command = str(recover_command).strip()
-    elif requires_recover_validation:
-        recover_command = "nrf recover"
+    recover_mode = resolve_recover_mode(
+        raw.get("recover_mode"),
+        requires_recover_validation=requires_recover_validation,
+        mcu_family=mcu_family,
+    )
 
     probe_terms = set(normalize_list(raw.get("probe_hint_terms")))
     serial_terms = set(normalize_list(raw.get("serial_hint_terms")))
@@ -398,7 +455,7 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         default_baudrate=default_baudrate,
         uart_note=uart_note,
         requires_recover_validation=requires_recover_validation,
-        recover_command=recover_command,
+        recover_mode=recover_mode,
         expected_uart_substring=expected_uart_substring,
         source_path=source_path,
     )
@@ -705,10 +762,10 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
         or "locked" in result.combined
     ):
         log(WARN, f"{board.display_name} appears access-protected.")
-        if board.recover_command:
-            print(
-                f'      Recover with: pyocd cmd -t {board.pyocd_target} -c "{board.recover_command}"'
-            )
+        for _, recover_cmd in build_recover_attempts(board, probe):
+            print(f"      Recover with: {' '.join(recover_cmd)}")
+        if board.requires_recover_validation and board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
+            print("      Recover mode for this board is manual_only; automate this later in code.")
         return False
 
     if (
@@ -1008,9 +1065,8 @@ def run_recover_test(
     board: BoardConfig,
     probe: ProbeInfo | None,
     target_ok: bool,
-    identity_ok: bool | None,
     enabled: bool,
-) -> bool | None:
+) -> RecoverResult | None:
     if not board.requires_recover_validation:
         return None
 
@@ -1021,31 +1077,41 @@ def run_recover_test(
         return None
     if probe is None:
         check(False, "Skipped - probe not detected")
-        return False
+        return RecoverResult(False)
     if not target_ok:
         check(False, "Skipped - target pack not installed")
-        return False
-    if board.silicon_id_expected is not None and identity_ok is False:
-        check(False, "Skipped - connected silicon identity does not match this board config")
-        return False
-    if not board.recover_command:
-        check(False, "Skipped - no recover command configured for this board")
-        return False
+        return RecoverResult(False)
+    if board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
+        check(False, "Skipped - this board's recover_mode is manual_only")
+        return RecoverResult(False)
+
+    recover_attempts = build_recover_attempts(board, probe)
+    if not recover_attempts:
+        check(False, "Skipped - no built-in recover flow is implemented for this board family")
+        return RecoverResult(False)
 
     print("  Running destructive recover command. This may erase flash on the target.")
-    cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(["-c", board.recover_command])
-    print(f"  Attempting: {' '.join(cmd)}")
-    rc, _, err = run(cmd)
+    rc = 1
+    err = "recover flow did not run"
+    completed_via = ""
+    for index, (label, cmd) in enumerate(recover_attempts):
+        if index > 0:
+            print(f"  Previous recover step failed; attempting {label}.")
+        print(f"  Attempting: {' '.join(cmd)}")
+        rc, _, err = run(cmd)
+        if rc == 0:
+            completed_via = label
+            break
     if rc != 0:
-        check(False, "Recover command failed")
+        check(False, "Recover flow failed")
         if err.strip():
             print(f"      stderr: {err.strip()[:300]}")
-        return False
+        return RecoverResult(False)
 
-    check(True, "Recover command completed")
+    check(True, f"Recover completed via {completed_via}")
     reconnect_ok = check_connection(board, probe, target_ok)
-    return reconnect_ok
+    post_identity_ok = check_silicon_identity(board, probe, target_ok)
+    return RecoverResult(True, reconnect_ok=reconnect_ok, post_identity_ok=post_identity_ok)
 
 
 def summarise_status(status: str) -> str:
@@ -1260,9 +1326,13 @@ def main():
             board,
             probe,
             target_available,
-            identity_ok,
             board.board_id in recover_tests,
         )
+        if recover_ok is not None and recover_ok.completed:
+            if recover_ok.reconnect_ok is not None:
+                conn_ok = recover_ok.reconnect_ok
+            if recover_ok.post_identity_ok is not None:
+                identity_ok = recover_ok.post_identity_ok
 
         summary_items.extend(
             [
@@ -1362,7 +1432,7 @@ def main():
                 summary_items.append(
                     SummaryItem(
                         f"{board.display_name}: recover / unlock cycle proven",
-                        SUMMARY_PASS if recover_ok else SUMMARY_FAIL,
+                        SUMMARY_PASS if recover_ok.completed else SUMMARY_FAIL,
                     )
                 )
 

@@ -108,7 +108,11 @@ def test_nordic_dual_port_prefers_vcom0(monkeypatch) -> None:
         make_port("COM8", "JLink CDC UART Port", serial_number="001050263657", location="1-3:x.0"),
     ]
 
-    monkeypatch.setattr(serial_resolver, "command_exists", lambda name: name == "nrfjprog")
+    monkeypatch.setattr(
+        serial_resolver,
+        "resolve_command_path",
+        lambda name: "nrfjprog" if name == "nrfjprog" else None,
+    )
 
     result = resolve_serial_port(
         board=board,
@@ -150,7 +154,9 @@ Manufacturer: STMicroelectronics
 """
 
     monkeypatch.setattr(
-        serial_resolver, "command_exists", lambda name: name == "STM32_Programmer_CLI"
+        serial_resolver,
+        "resolve_command_path",
+        lambda name: "STM32_Programmer_CLI" if name == "STM32_Programmer_CLI" else None,
     )
 
     result = resolve_serial_port(
@@ -172,7 +178,7 @@ def test_vendor_tool_missing_falls_back_to_generic(monkeypatch) -> None:
     board = FakeBoard("nrf52840dk", "nRF52840-DK", "nrf52840", "jlink", ("segger", "uart"))
     ports = [make_port("COM7", "Segger UART Port")]
 
-    monkeypatch.setattr(serial_resolver, "command_exists", lambda name: False)
+    monkeypatch.setattr(serial_resolver, "resolve_command_path", lambda name: None)
 
     result = resolve_serial_port(
         board=board,
