@@ -30,7 +30,7 @@ and nowhere else.
 | Surface | Who reads it | Where its documentation MUST live |
 |---|---|---|
 | **MCP tools** (`@mcp.tool()` / resources in `server.py`) | the MCP **client agent**, over the protocol | the function **docstring** + type-hinted signature + typed return string |
-| **Bench/setup scripts** (`setup_host.*`, `host_bootstrap.py`, `stage0_check.py`, recover helpers) | a **human or terminal agent** at a shell, before/around the server | **one operator guide** (`stage0_setup.md`) covering sequence + troubleshooting |
+| **Bench/setup scripts / shell workflow** (`setup_host.*`, `host_bootstrap.py`, current `stage0_check.py` CLI wrapper) | a **human or terminal agent** at a shell for host bootstrap and today's Stage 0 path | **one operator guide** (`stage0_setup.md`) covering the shell sequence + troubleshooting; if board-validation capabilities are later exposed as MCP tools, those tool contracts move to code docstrings |
 
 The cardinal error this playbook now prevents is the inverse of the old one: **do not write a sidecar
 `.md` to document an MCP tool.** The client can't read it, and it will drift from the docstring the
@@ -82,25 +82,30 @@ into the docstring and delete it.
 
 ## 2. OPERATOR GUIDE — ONE doc for the bench/setup scripts (not one per file)
 
-`setup_host.*`, `host_bootstrap.py`, `stage0_check.py`, and recover helpers are **not** MCP tools. They
-run at a terminal during host bootstrap and Stage 0, before the server is even in play, driven by a human
-or a terminal-driving agent. These genuinely are "run it and read stdout" scripts — but they do **not**
-each need an exhaustive standalone doc. They need **one operator guide** that an operator follows to take
-a fresh machine to a Stage-0-ready bench.
+`setup_host.*` and `host_bootstrap.py` are pre-server shell scripts. `stage0_check.py` is the current
+shell/operator wrapper for Stage 0 board validation. Today these are run at a terminal by a human or a
+terminal-driving agent, so they do **not** each need an exhaustive standalone doc. They need **one
+operator guide** that an operator follows to take a fresh machine to a Stage-0-ready bench.
+
+This is a workflow boundary, not a permanent product boundary. Raw machine bootstrap still begins outside
+the server, but board-validation logic currently fronted by `stage0_check.py` may later be exposed through
+MCP tools. When that happens, the shell workflow remains documented in `stage0_setup.md`, while the new
+MCP tool contracts live in code docstrings per §1.
 
 **The single operator guide is `stage0_setup.md`.** It is the consolidated home for what used to be
 scattered across `setup_host.md` / `host_bootstrap.md` / `stage0_check.md`. It must contain:
 
 1. **Purpose & entry conditions** — when this bring-up flow is the right one.
-2. **Ordered sequence** — the exact commands, in order: `setup_host.{ps1,sh}` → `host_bootstrap.py` →
-   `stage0_check.py` → `uv run pyocd-debug-mcp`. State what each step is for in a sentence or two; do not
-   reproduce every flag.
+2. **Ordered sequence** — the exact commands, in order, for the current shell path:
+   `setup_host.{ps1,sh}` → `host_bootstrap.py` → `stage0_check.py` → `uv run pyocd-debug-mcp`. State what
+   each step is for in a sentence or two; do not reproduce every flag.
 3. **Per-script essentials** — for each script, a short block: its one-line purpose, the handful of flags
    an operator actually chooses (`--board-id`, `--install-packs`, `--reference-firmware`, `--recover-test`,
    …), and what "done/ready" looks like. The script's `--help` carries the exhaustive flag list; the guide
    carries the *decisions*.
 4. **Branch points & handoffs** — "if probes aren't visible, fix host visibility before Stage 0"; what each
-   step must produce for the next (a probe UID for `.env`, a passing host check before board checks).
+   step must produce for the next (a probe UID for `.env`, a passing host check before board checks), and
+   which parts are expected to remain shell-first vs. become MCP-callable later.
 5. **Consolidated troubleshooting table** — symptom (visible in output) → cause → fix → what to rerun,
    merged across the scripts. This is the salvaged value of the old per-script failure tables; keep it
    rigorous and symptom-first, because the operator diagnoses from output alone.

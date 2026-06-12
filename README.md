@@ -10,6 +10,9 @@ scripts are operated through the single guide [stage0_setup.md](./stage0_setup.m
 (run a script with `--help` for its full flag list). The MCP server's runtime
 tools are described in the tool docstrings the MCP client reads over the
 protocol (`src/pyocd_debug_mcp/server.py`); there is no sidecar doc for them.
+Today the Stage 0 flow is shell-first, but the intended product direction is
+shared board-validation logic that is callable both from `stage0_check.py` and
+future MCP tools; only raw host bootstrap remains pre-server.
 
 ## What Phase A Delivers
 

@@ -53,6 +53,13 @@ Per the Consistency Playbook's authority order — update at the RIGHT level, do
 - **A changed/!new architectural decision, stage, tool, board, layout, or schema → update
   `markdowns/firmware_agent_build_plan_concrete (10).md` ITSELF.** It is the source of truth; the change lives there, not in a side note.
 - **A how-we-write-code rule → update `superpowers/agent_coding_playbook.md`.**
+- **A change to an MCP tool's behavior, inputs, returns, or guard/error text → update that tool's
+  docstring in `src/pyocd_debug_mcp/server.py`.** For an MCP tool the docstring IS the doc — it is the
+  description the client reads over the protocol; there is no sidecar `.md` (see
+  `superpowers/agent_script_doc_playbook.md` §1).
+- **A change to a bench/setup script's sequence, operator-facing flag, "ready" signal, or failure
+  mode → update the single operator guide `stage0_setup.md`** (not a per-script doc — see
+  `superpowers/agent_script_doc_playbook.md` §2).
 - **A setup/portability change → update the relevant playbook.**
 - **NEVER record a decision only in a separate roadmap/side doc that then silently overrides the plan.**
   That recreates the original fragmentation. Decisions amend the source of truth in place.

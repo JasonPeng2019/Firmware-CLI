@@ -16,13 +16,13 @@
    nothing manual; never tell the user to "go download X."
 4. **Document each thing where its reader looks.** An MCP client reads a tool's *description and handle
    over the protocol* — its docstring in the code — never a sidecar `.md`; so MCP tools are documented in
-   their docstrings, and the human/terminal bench scripts share ONE operator guide rather than a separate
-   doc per file.
+   their docstrings, and the current human/terminal shell workflow shares ONE operator guide rather than a
+   separate doc per file.
 5. **Verify, don't claim; never hardcode; tag every value's origin.** Honesty about what's verified vs.
    assumed is non-negotiable.
 
 If you internalize only these five, you will avoid the project's known failure modes (fragmentation,
-doc drift, bench-only setup, blind-agent operation, confident-but-wrong claims).
+doc drift, bench-only setup, documenting a tool where its reader never looks, confident-but-wrong claims).
 
 ---
 
@@ -52,10 +52,10 @@ doc drift, bench-only setup, blind-agent operation, confident-but-wrong claims).
    first-run.*
 6. **`agent_script_doc_playbook.md`** - Where documentation lives in an MCP product. MCP tools are
    documented in their *docstrings* (the description + handle the client reads over the protocol, never a
-   sidecar `.md`); the human/terminal bench scripts share ONE operator guide (`stage0_setup.md`) covering
-   sequence, operator-facing flags, and a consolidated symptom->cause->fix->rerun table - not a separate
-   exhaustive doc per file. *Read when adding or changing any MCP tool, or any setup/bench script the
-   operator runs.*
+   sidecar `.md`); the current shell-based bring-up workflow shares ONE operator guide (`stage0_setup.md`)
+   covering sequence, operator-facing flags, and a consolidated symptom->cause->fix->rerun table - not a
+   separate exhaustive doc per file. *Read when adding or changing any MCP tool, or any setup/bench script
+   the operator runs.*
 
 ---
 
@@ -100,5 +100,6 @@ prohibited.
 ## The one-sentence version
 **Read this index first, then the consistency playbook and build plan, then whatever your task touches;
 reconcile against the plan before writing; keep code and docs moving together; build self-installing for
-a stranger's machine; document every script for an agent that can't see code, plus every multi-script
-workflow it must navigate; and never claim what you didn't verify.**
+a stranger's machine; document each thing where its reader looks — MCP tools in their docstrings (the
+description the client reads over the protocol), the current shell workflow in one operator guide; and never
+claim what you didn't verify.**

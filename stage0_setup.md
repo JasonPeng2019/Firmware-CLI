@@ -1,14 +1,17 @@
 # Stage 0 Setup — The Bench Bring-Up Operator Guide
 
-This is the single operator guide for the bench/setup scripts. It takes a fresh machine from "repo
-cloned" to a Stage-0-ready board and then to the MCP server. It covers the cross-script sequence, the
-operator-facing flags you actually choose, and a consolidated troubleshooting table.
+This is the single operator guide for the current bench/setup CLI flow. It takes a fresh machine from
+"repo cloned" to a Stage-0-ready board and then to the MCP server. It covers the cross-script sequence,
+the operator-facing flags you actually choose, and a consolidated troubleshooting table.
 
-These scripts are **not** MCP tools — they run at a terminal, before/around the server. They do not each
-carry a standalone doc; this guide is their consolidated home (per
-`superpowers/agent_script_doc_playbook.md` §2). For a script's exhaustive flag list, run it with
-`--help`. For the MCP server's runtime tools, the descriptions live in the tool docstrings in
-`src/pyocd_debug_mcp/server.py` (the MCP client reads those over the protocol; there is no sidecar doc).
+Today these steps are run at a terminal. `setup_host.*` and `host_bootstrap.py` are still pre-server host
+bootstrap checks. `stage0_check.py` is the current CLI/operator wrapper for board validation, but that
+validation logic is intended to become callable through MCP tools as well so an external agent can run the
+same checks without shelling the whole script. These scripts do not each carry a standalone doc; this guide
+is their consolidated home (per `superpowers/agent_script_doc_playbook.md` §2). For a script's exhaustive
+flag list, run it with `--help`. For the MCP server's runtime tools, the descriptions live in the tool
+docstrings in `src/pyocd_debug_mcp/server.py` (the MCP client reads those over the protocol; there is no
+sidecar doc).
 
 Related docs, each with one home:
 
@@ -137,10 +140,12 @@ session.** Safe to rerun.
 
 ### `stage0_check.py` — board-level Stage 0 validation
 
-Proves probe + target + SWD read + silicon identity + virtual COM are present for the selected boards,
-and can optionally flash a reference image, read UART, and run a destructive recover cycle. Data-driven:
-all board facts come from `boards/<board>.yaml`. Non-destructive **unless** `--reference-firmware` or
-`--recover-test` is passed.
+The current CLI/operator surface for Stage 0 board validation. It proves probe + target + SWD read +
+silicon identity + virtual COM are present for the selected boards, and can optionally flash a reference
+image, read UART, and run a destructive recover cycle. Data-driven: all board facts come from
+`boards/<board>.yaml`. Non-destructive **unless** `--reference-firmware` or `--recover-test` is passed.
+Treat the board-validation behavior here as shared product logic rather than a permanent CLI-only boundary;
+the intended direction is for the same validation operations to become callable through MCP tools too.
 
 - Operator-facing flags: `--board-id` (scope); `--install-packs`; `--port BOARD_ID=PORT` (authoritative
   serial override); `--reference-firmware BOARD_ID=PATH` (flash this artifact); `--expect BOARD_ID=TEXT`
@@ -154,10 +159,12 @@ all board facts come from `boards/<board>.yaml`. Non-destructive **unless** `--r
 
 ### `uv run pyocd-debug-mcp` — the MCP server
 
-The runtime entrypoint backing `server.py`. Start it only after Stage 0 is acceptable. Its per-tool
-behavior (`connect`, `halt`, `read_memory`, …) is documented in the tool docstrings the MCP client reads
-over the protocol — there is no sidecar doc. Operating note: it holds **one** live debug session; call
-`connect` before any target tool, and `disconnect` before switching probes.
+The runtime entrypoint backing `server.py`. In today's shell-first workflow, start it after Stage 0 is
+acceptable. Its per-tool behavior (`connect`, `halt`, `read_memory`, …) is documented in the tool
+docstrings the MCP client reads over the protocol — there is no sidecar doc. Long-term, board-validation
+operations that currently sit behind `stage0_check.py` should also be exposed here as MCP tools, but raw
+machine bootstrap still begins outside the server. Operating note: it holds **one** live debug session;
+call `connect` before any target tool, and `disconnect` before switching probes.
 
 ## 4. Branch Points
 
