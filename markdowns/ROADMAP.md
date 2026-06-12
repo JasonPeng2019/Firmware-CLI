@@ -63,6 +63,21 @@ What this means:
 - The SWD interface must describe product-level behavior, not pyOCD internals.
 - The UART interface must describe stable read/reconnect semantics, not "whatever pyserial happened to do."
 - The MCP server must expose a stable contract, not a thin wrapper over unstable local implementation details.
+- Flash, UART, recover, and board-validation behavior live in shared internal
+  services below both frontends. This is now a settled build-plan decision
+  (Step 1.0): the MCP tools and the turnkey CLI / local programmer flow are
+  BOTH thin wrappers over those same stable services, and neither owns the
+  logic. `stage0_check.py` is the CLI frontend in embryo — a wrapper over the
+  shared board-validation code, not a parallel implementation — so behavior
+  proven there is reused by the MCP tools, never rebuilt. The structural reason
+  a capability can surface as a shell command today and an MCP tool later with
+  no duplicated logic: same service underneath, different wrapper on top.
+- Documentation follows the same split (see the Doc-Sync and Tool-Description
+  playbooks): an MCP tool's contract lives in its **docstring** — the
+  description the client reads over the protocol, never a sidecar `.md`; the
+  shell bring-up workflow lives in the single operator guide
+  (`stage0_setup.md`); the shared service is plain code below both. Do not
+  document an MCP tool in a `.md` the client can never read.
 
 Why this matters later:
 
@@ -291,7 +306,9 @@ Early quality bars this item must enforce:
 ### `R9` stdio FastMCP Server, Tool/Resource Schema, And Inspector Validation
 
 Simple English:
-This package wraps the Stage 1 adapters in a local MCP server. It defines the exact tool/resource surface and validates it in the MCP Inspector.
+This package turns the shared board-control operations built on the Stage 1
+adapters into a local MCP server surface. It defines the exact tool/resource
+contract and validates it in the MCP Inspector.
 
 Why it exists:
 This is the interface between the board-control substrate and any external agent client.
@@ -785,6 +802,8 @@ This item creates the serial/UART code and its behavior contract.
 - define buffering and newline handling
 - define reopen behavior after reset/reflash
 - define error handling for disappearing ports
+- implement shared UART helper/service behavior above the raw adapter so local
+  flows and MCP tools do not fork their own capture/wait/reopen logic
 - implement serial-port discovery and selection using config, vendor-assisted
   helpers where proven, and local overrides
 - make ambiguity handling explicit: prompt in interactive runs, fail with a
@@ -834,6 +853,8 @@ This item creates the abstract hardware control API and its pyOCD implementation
 - implement register reads
 - implement memory reads
 - implement board-specific locked-target detection
+- expose those capabilities through shared internal operations that later MCP
+  handlers and local programmers both call
 - implement native-default-with-CMSIS-DAP-fallback routing: try the board's native `probe_family` route
   first, automatically fall back to CMSIS-DAP on failure, and surface which route was used
 - handle the J-Link open quirk: set pyOCD `jlink.non_interactive=false` so pylink's
@@ -878,6 +899,8 @@ This item proves the Stage 1 substrate works as a whole.
 - add ELF pairing support to the SWD side
 - implement symbol resolution
 - define one or more known symbols in the reference firmware
+- build the first shared board-validation operations that compose SWD + UART
+  behavior instead of leaving that composition trapped inside one script
 - write a repeatable smoke harness that:
   - connects
   - flashes
@@ -919,6 +942,7 @@ This item turns the direct adapters into an agent-consumable protocol surface.
 
 - define exact server startup shape
 - wire the adapters into a FastMCP server
+- make MCP handlers thin wrappers over shared board-control operations
 - choose the tool/resource split
 - define response schema conventions
 - define board-selection/config flow
@@ -960,6 +984,8 @@ This item implements the server-side safety system.
 - define and implement image validation before flash
 - define and implement explicit gated unlock/recover behavior
 - disable unsafe silent unlock paths in normal server operation
+- keep those flash/unlock guardrails in shared internal code so every mutation
+  path, not just MCP wrappers, inherits the same policy
 - define and implement structured log schema
 - define and implement session-state storage abstraction
 - implement deterministic convergence-thrash detection

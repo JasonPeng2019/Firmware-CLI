@@ -6,12 +6,14 @@ the operator-facing flags you actually choose, and a consolidated troubleshootin
 
 Today these steps are run at a terminal. `setup_host.*` and `host_bootstrap.py` are still pre-server host
 bootstrap checks. `stage0_check.py` is the current CLI/operator wrapper for board validation, but that
-validation logic is intended to become callable through MCP tools as well so an external agent can run the
-same checks without shelling the whole script. These scripts do not each carry a standalone doc; this guide
-is their consolidated home (per `superpowers/agent_script_doc_playbook.md` §2). For a script's exhaustive
-flag list, run it with `--help`. For the MCP server's runtime tools, the descriptions live in the tool
-docstrings in `src/pyocd_debug_mcp/server.py` (the MCP client reads those over the protocol; there is no
-sidecar doc).
+validation logic is intended to become callable through MCP tools and other
+local programmer flows as well so an external agent or local orchestrator can
+run the same checks without shelling the whole script. These scripts do not
+each carry a standalone doc; this guide is their consolidated home (per
+`superpowers/agent_script_doc_playbook.md` §2). For a script's exhaustive flag
+list, run it with `--help`. For the MCP server's runtime tools, the descriptions
+live in the tool docstrings in `src/pyocd_debug_mcp/server.py` (the MCP client
+reads those over the protocol; there is no sidecar doc).
 
 Related docs, each with one home:
 
@@ -145,7 +147,8 @@ silicon identity + virtual COM are present for the selected boards, and can opti
 image, read UART, and run a destructive recover cycle. Data-driven: all board facts come from
 `boards/<board>.yaml`. Non-destructive **unless** `--reference-firmware` or `--recover-test` is passed.
 Treat the board-validation behavior here as shared product logic rather than a permanent CLI-only boundary;
-the intended direction is for the same validation operations to become callable through MCP tools too.
+the intended direction is for the same validation operations to become callable through MCP tools and other
+local programmer flows too.
 
 - Operator-facing flags: `--board-id` (scope); `--install-packs`; `--port BOARD_ID=PORT` (authoritative
   serial override); `--reference-firmware BOARD_ID=PATH` (flash this artifact); `--expect BOARD_ID=TEXT`
@@ -164,7 +167,10 @@ acceptable. Its per-tool behavior (`connect`, `halt`, `read_memory`, …) is doc
 docstrings the MCP client reads over the protocol — there is no sidecar doc. Long-term, board-validation
 operations that currently sit behind `stage0_check.py` should also be exposed here as MCP tools, but raw
 machine bootstrap still begins outside the server. Operating note: it holds **one** live debug session;
-call `connect` before any target tool, and `disconnect` before switching probes.
+call `connect` before any target tool, and `disconnect` before switching probes. `connect` accepts an
+optional `board_id` (or `PYOCD_BOARD_ID` env; plus `board_config`/`PYOCD_BOARD_CONFIG` for a custom board
+file) to load that board's facts from `boards/<board>.yaml` through the **same shared loader the Stage 0
+scripts use** — then it needs no raw `target`, and `get_board_info` reports the loaded facts.
 
 ## 4. Branch Points
 

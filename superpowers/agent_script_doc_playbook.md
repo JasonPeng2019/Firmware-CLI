@@ -90,7 +90,8 @@ operator guide** that an operator follows to take a fresh machine to a Stage-0-r
 This is a workflow boundary, not a permanent product boundary. Raw machine bootstrap still begins outside
 the server, but board-validation logic currently fronted by `stage0_check.py` may later be exposed through
 MCP tools. When that happens, the shell workflow remains documented in `stage0_setup.md`, while the new
-MCP tool contracts live in code docstrings per §1.
+MCP tool contracts live in code docstrings per §1. The underlying implementation should live in shared
+internal services that both those MCP tools and any local programmer flows call.
 
 **The single operator guide is `stage0_setup.md`.** It is the consolidated home for what used to be
 scattered across `setup_host.md` / `host_bootstrap.md` / `stage0_check.md`. It must contain:

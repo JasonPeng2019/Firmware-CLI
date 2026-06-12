@@ -18,12 +18,18 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from pyocd.core.helpers import ConnectHelper
 from pyocd.core.session import Session
 from pyocd.core.target import Target
 
+from pyocd_debug_mcp.board_config import (
+    DEFAULT_BOARD_CONFIG_DIR,
+    BoardConfig,
+    load_selected_board_configs,
+)
 from pyocd_debug_mcp.local_env import load_local_env
 
 load_local_env()
@@ -34,11 +40,65 @@ mcp = FastMCP("pyocd-debug")
 _lock = threading.Lock()
 # The single live session, or None when disconnected.
 _session: Session | None = None
+# The board definition the active session was opened with, or None in raw-target
+# mode (connect called without a board_id). Lets tools read board-config facts.
+_active_board: BoardConfig | None = None
 
 
 def _parse_int(text: str) -> int:
     """Parse an int from a string, accepting hex (0x...), binary, or decimal."""
     return int(text, 0)
+
+
+def resolve_board_config(board_id: str | None, board_config: str | None) -> BoardConfig | None:
+    """Load one board definition through the shared loader, or None if unselected.
+
+    This is the server's single path to ``boards/<board>.yaml`` — the same loader
+    the Stage 0 CLI uses — so a custom ST/nRF board's facts (pyOCD target, recover
+    policy, silicon id, baud) reach the MCP tools, not just the CLI.
+
+    ``board_id``/``board_config`` fall back to the ``PYOCD_BOARD_ID`` /
+    ``PYOCD_BOARD_CONFIG`` environment variables (the stdio-launch config
+    channel). Returns ``None`` when no board is named, so ``connect`` still works
+    with a raw target. Raises ``ConfigError`` if a named board cannot be found or
+    a config file is malformed.
+    """
+    bid = (board_id or os.environ.get("PYOCD_BOARD_ID") or "").strip()
+    if not bid:
+        return None
+    extra = board_config or os.environ.get("PYOCD_BOARD_CONFIG") or None
+    extra_paths = [Path(extra)] if extra else []
+    boards = load_selected_board_configs(
+        DEFAULT_BOARD_CONFIG_DIR,
+        extra_paths=extra_paths,
+        requested_ids=[bid],
+    )
+    return boards[0]
+
+
+def format_board_info(b: BoardConfig) -> str:
+    """Render a loaded board definition's facts as a stable text block."""
+    lines = [
+        f"board_id: {b.board_id}",
+        f"display_name: {b.display_name}",
+        f"mcu_family: {b.mcu_family}",
+        f"probe_family: {b.probe_family}",
+        f"pyocd_target: {b.pyocd_target}",
+        f"default_baudrate: {b.default_baudrate}",
+        f"test_read_address: 0x{b.test_addr:08X}",
+        f"requires_recover_validation: {b.requires_recover_validation}",
+        f"recover_mode: {b.recover_mode or '(none)'}",
+    ]
+    if b.silicon_id_addr is not None and b.silicon_id_expected is not None:
+        width_nibbles = b.silicon_id_width_bits // 4
+        lines.append(
+            f"silicon_id: addr=0x{b.silicon_id_addr:08X} "
+            f"expected=0x{b.silicon_id_expected:0{width_nibbles}X} "
+            f"({b.silicon_id_label or 'silicon identity'})"
+        )
+    if b.uart_note:
+        lines.append(f"uart_note: {b.uart_note}")
+    return "\n".join(lines)
 
 
 def _target() -> Target:
@@ -49,24 +109,44 @@ def _target() -> Target:
 
 
 @mcp.tool()
-def connect(unique_id: str | None = None, target: str | None = None) -> str:
+def connect(
+    unique_id: str | None = None,
+    target: str | None = None,
+    board_id: str | None = None,
+    board_config: str | None = None,
+) -> str:
     """Open a debug session to a connected probe.
 
     Args:
         unique_id: Whole or partial probe serial/unique ID to select a specific
             probe. Omit when exactly one probe is attached. Defaults to the
             ``PYOCD_PROBE_UID`` environment variable if unset.
-        target: Target type override, e.g. "stm32f407vg" or "nrf52833". Omit to
-            use auto-detection or a pyocd.yaml config. Defaults to the
-            ``PYOCD_TARGET`` environment variable if unset.
+        target: Target type override, e.g. "stm32f407vg" or "nrf52833". Takes
+            precedence over a board config. Omit to use the selected board's
+            target (when ``board_id`` is given), else the ``PYOCD_TARGET``
+            environment variable, else pyOCD auto-detection.
+        board_id: Load facts from ``boards/<board_id>.yaml`` through the shared
+            board-config loader — pyOCD target, recover policy, silicon id, baud.
+            Lets a custom ST/nRF board connect by id with no hand-passed target;
+            call ``get_board_info`` to see the loaded facts. Defaults to the
+            ``PYOCD_BOARD_ID`` environment variable.
+        board_config: Path to an extra board-config file outside the tracked
+            ``boards/`` directory, for a custom board. Defaults to the
+            ``PYOCD_BOARD_CONFIG`` environment variable.
     """
-    global _session
+    global _session, _active_board
     with _lock:
         if _session is not None:
             return "Already connected. Call `disconnect` first to switch probes."
 
+        board = resolve_board_config(board_id, board_config)
         uid = unique_id or os.environ.get("PYOCD_PROBE_UID") or None
-        tgt = target or os.environ.get("PYOCD_TARGET") or None
+        tgt = (
+            target
+            or (board.pyocd_target if board else None)
+            or os.environ.get("PYOCD_TARGET")
+            or None
+        )
         options = {"target_override": tgt} if tgt else None
 
         # auto_open=False so we control the open() explicitly for a long-lived
@@ -83,19 +163,45 @@ def connect(unique_id: str | None = None, target: str | None = None) -> str:
 
         session.open()
         _session = session
-        return f"Connected to board '{session.board.name}' via probe {session.probe.unique_id}."
+        _active_board = board
+        suffix = f" [board config: {board.board_id}]" if board else ""
+        return (
+            f"Connected to board '{session.board.name}' via probe "
+            f"{session.probe.unique_id}.{suffix}"
+        )
 
 
 @mcp.tool()
 def disconnect() -> str:
     """Close the active debug session and release the probe."""
-    global _session
+    global _session, _active_board
     with _lock:
         if _session is None:
             return "Not connected."
         _session.close()
         _session = None
+        _active_board = None
         return "Disconnected."
+
+
+@mcp.tool()
+def get_board_info() -> str:
+    """Return the facts from the board config the session was opened with.
+
+    Reports the ``boards/<board>.yaml`` definition active for this session —
+    pyOCD target, MCU and probe family, recover policy, silicon-id expectation,
+    default UART baud, and the smoke-test read address. Returns a notice when
+    ``connect`` was called without a ``board_id`` (raw-target mode), where these
+    facts were not loaded.
+    """
+    with _lock:
+        b = _active_board
+        if b is None:
+            return (
+                "No board config loaded for this session. Pass `board_id` to "
+                "`connect` (or set PYOCD_BOARD_ID) to load boards/<board>.yaml facts."
+            )
+        return format_board_info(b)
 
 
 @mcp.tool()

@@ -36,8 +36,15 @@ Canonical naming rules:
 - bug variants:
   `firmware/<board>/bugs/<id>__<slug>/`
 
-Stage 0 still takes reference firmware as a runtime input. Until the canonical
-baseline artifact for a board actually exists, pass the path explicitly with
-`--reference-firmware BOARD_ID=PATH`.
+The current Stage 0 CLI flow still takes reference firmware as a runtime input.
+Until the canonical baseline artifact for a board actually exists, pass the
+path explicitly with `--reference-firmware BOARD_ID=PATH`.
+
+Architecture note:
+
+- today the common operator surface is `stage0_check.py`
+- the intended direction is that the same reference artifacts are consumed by
+  shared internal validation/flash logic callable from CLI flows, MCP tools,
+  and local programmer flows
 
 See the root [README.md](../README.md) for the repo-wide naming standard.

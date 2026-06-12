@@ -54,8 +54,9 @@ doc drift, bench-only setup, documenting a tool where its reader never looks, co
    documented in their *docstrings* (the description + handle the client reads over the protocol, never a
    sidecar `.md`); the current shell-based bring-up workflow shares ONE operator guide (`stage0_setup.md`)
    covering sequence, operator-facing flags, and a consolidated symptom->cause->fix->rerun table - not a
-   separate exhaustive doc per file. *Read when adding or changing any MCP tool, or any setup/bench script
-   the operator runs.*
+   separate exhaustive doc per file. Shared internal services sit underneath both MCP tools and local
+   programmer flows. *Read when adding or changing any MCP tool, or any setup/bench script the operator
+   runs.*
 
 ---
 

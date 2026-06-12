@@ -11,8 +11,9 @@ scripts are operated through the single guide [stage0_setup.md](./stage0_setup.m
 tools are described in the tool docstrings the MCP client reads over the
 protocol (`src/pyocd_debug_mcp/server.py`); there is no sidecar doc for them.
 Today the Stage 0 flow is shell-first, but the intended product direction is
-shared board-validation logic that is callable both from `stage0_check.py` and
-future MCP tools; only raw host bootstrap remains pre-server.
+shared board-validation logic that is callable from `stage0_check.py`, future
+MCP tools, and local programmer flows; only raw host bootstrap remains
+pre-server.
 
 ## What Phase A Delivers
 
@@ -109,7 +110,11 @@ Firmware-CLI/
 - Use `uv run ...` for repo commands so they always run inside the pinned env.
 - `.env` is optional, gitignored, and auto-loaded by the MCP server and the
   Phase A host scripts when present.
-- `.env` currently carries `PYOCD_PROBE_UID` and `PYOCD_TARGET`.
+- `.env` currently carries `PYOCD_PROBE_UID` and `PYOCD_TARGET`, and optionally
+  `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG`. With a board id set, the MCP server
+  resolves that board's facts (target, recover policy, silicon id, baud) from
+  `boards/<board>.yaml` through the shared loader, so `connect` needs no raw
+  target and the `get_board_info` tool reports the loaded facts.
 - `pyocd.local.yaml` is an optional per-developer pyOCD override file and is
   gitignored.
 - `pyocd.yaml` is optional and only belongs in the repo once the team has a

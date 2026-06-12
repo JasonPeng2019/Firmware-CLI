@@ -6,6 +6,10 @@ point where the repo scripts can mostly self-pilot.
 The root [README.md](./README.md) is the canonical layout and naming reference.
 This file goes deeper on first-run setup, local overrides, and the command
 sequence that gets you from a raw machine to Stage 0 and the MCP server.
+Today that flow is shell-first, but the intended architecture is that
+board-validation behavior lives in shared internal code that can be called both
+from `stage0_check.py`, from MCP tools, and from local programmer flows; only
+raw host bootstrap remains pre-server.
 
 ## Prerequisites
 
@@ -158,7 +162,10 @@ Use these override layers:
 
 - `.env`
   Optional, gitignored, auto-loaded by the MCP server and the Phase A host
-  scripts. Use it for `PYOCD_PROBE_UID` and `PYOCD_TARGET`.
+  scripts. Use it for `PYOCD_PROBE_UID` and `PYOCD_TARGET`, and optionally
+  `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG` to have the server resolve a board's
+  facts from `boards/<board>.yaml` through the shared loader (then `connect`
+  needs no raw target; the `get_board_info` tool reports the loaded facts).
 - `pyocd.local.yaml`
   Optional, gitignored, for per-developer pyOCD tweaks once needed.
 - `pyocd.yaml`
@@ -168,8 +175,10 @@ Use these override layers:
 Tracked board YAML remains hardware-focused and must not store user paths,
 build commands, or artifact output locations.
 
-The `connect` tool still accepts `unique_id` and `target` arguments directly,
-which override `.env` defaults at runtime.
+The `connect` tool still accepts `unique_id`, `target`, `board_id`, and
+`board_config` arguments directly, which override the matching `.env` defaults
+at runtime. An explicit `target` takes precedence over a board config's
+`pyocd_target`.
 
 ## Main Developer Commands
 

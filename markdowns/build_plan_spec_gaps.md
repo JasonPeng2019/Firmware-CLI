@@ -207,14 +207,20 @@ What code becomes easier once this is defined:
 
 ### 0.E Exit criteria for Stage 0
 What is still underspecified:
-- whether Stage 0 proof is manual only or partly automated
 - exactly what evidence counts as "reference firmware flashes and prints by hand"
 - whether nRF recover proof must be demonstrated every time or only once per bench setup
+
+Architecture decision now fixed:
+- Stage 0 proof is **partly automated**. The current operator surface is
+  `stage0_check.py`, but it should be treated as a CLI wrapper over shared
+  board-validation logic rather than the only implementation.
+- That same validation logic should be callable later through MCP tools, while
+  raw host bootstrap remains outside the server.
 
 What should be clarified:
 - a repeatable Stage 0 checklist
 - what outputs to capture
-- whether `stage0_check.py` is advisory, required, or just a convenience
+- what parts of the Stage 0 flow remain manual versus covered by shared code
 
 ## Stage 1: Adapters, Hand-Tested In Isolation
 
@@ -238,6 +244,9 @@ What should be clarified:
   - "collect for N seconds"
 - the retry/backoff policy for `reopen()`
 - whether UART reads return raw bytes, decoded strings, or structured line objects
+- that the adapter is only the low-level transport layer, while higher-level
+  UART behaviors used by CLI flows and MCP tools live in shared services above
+  it
 
 What code becomes easier once this is defined:
 - MCP `read_serial`
@@ -267,6 +276,8 @@ What should be clarified:
 - whether `reset_and_halt()` means hardware reset, software reset, or best available
 - whether `read_register()` accepts architecture names like `pc`, `sp`, `lr`, raw indices, or both
 - whether the adapter returns board-neutral data structures or pyOCD-shaped objects
+- that adapter methods are shared internal primitives consumed by both MCP tool
+  wrappers and non-MCP local flows
 
 What code becomes easier once this is defined:
 - backend swapping
@@ -278,14 +289,15 @@ What code becomes easier once this is defined:
 What is still underspecified:
 - whether lock detection happens during `connect()`, `flash()`, or any access failure
 - how a locked nRF is surfaced distinctly from a disconnected target
-- whether `recover` is an adapter method, an out-of-band utility, or part of `flash()`
+
+Architecture decision now fixed:
+- `recover` should be a separate explicit shared method/path. It should not be
+  an out-of-band utility and should not be an implicit part of `flash()`.
 
 What should be clarified:
 - one dedicated locked-chip error category
-- whether recover is:
-  - manual only
-  - separate explicit adapter method
-  - optional helper behind an explicit flag
+- recover should be a **separate explicit shared method/path**, not a silent
+  side effect of `flash()` and not an out-of-band one-off utility
 
 What code becomes easier once this is defined:
 - Stage 0 recover proof
@@ -354,6 +366,11 @@ What code becomes easier once this is defined:
 - launch scripts
 - Claude Code registration
 - local bench workflows
+
+Architecture decision now fixed:
+- MCP handlers should be thin wrappers over shared internal services. Flash,
+  UART capture, recover, and board validation should not be reimplemented in
+  the tool layer.
 
 ### 2.1 Primitive split: tools versus resources
 What is still underspecified:

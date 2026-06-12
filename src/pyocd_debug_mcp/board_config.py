@@ -25,6 +25,15 @@ PROBE_FAMILY_HINTS = {
     "cmsisdap": {"cmsis-dap", "cmsisdap", "daplink"},
 }
 
+# Typed recover-mode selector — board YAML names a backend, never a raw shell command.
+# PROJECT-DEFINED (the recover policy vocabulary for board configs).
+RECOVER_MODE_NRF_PYOCD_UNLOCK = "nrf_pyocd_unlock"
+RECOVER_MODE_MANUAL_ONLY = "manual_only"
+SUPPORTED_RECOVER_MODES = {
+    RECOVER_MODE_NRF_PYOCD_UNLOCK,
+    RECOVER_MODE_MANUAL_ONLY,
+}
+
 
 class ConfigError(Exception):
     """Raised when a tracked board-config file is malformed."""
@@ -50,7 +59,7 @@ class BoardConfig:
     default_baudrate: int = 115200
     uart_note: str = ""
     requires_recover_validation: bool = False
-    recover_command: str | None = None
+    recover_mode: str | None = None
     expected_uart_substring: str | None = None
     source_path: Path | None = None
 
@@ -88,6 +97,36 @@ def validate_width_bits(width_bits: int, field_name: str) -> int:
     if width_bits not in {8, 16, 32}:
         raise ConfigError(f"Field '{field_name}' must be one of: 8, 16, 32")
     return width_bits
+
+
+def resolve_recover_mode(
+    raw_mode: object,
+    *,
+    requires_recover_validation: bool,
+    mcu_family: str,
+) -> str | None:
+    """Resolve the typed recover-mode selector for a board.
+
+    An explicit ``recover_mode`` is honored and validated against
+    ``SUPPORTED_RECOVER_MODES``. When absent, default by policy: boards that do
+    not require recover validation get ``None``; Nordic-family boards that do get
+    the built-in pyOCD unlock/mass-erase path; any other family that requires
+    recover validation falls back to ``manual_only`` (no automated backend yet).
+    """
+    if raw_mode is not None:
+        recover_mode = str(raw_mode).strip().lower()
+        if not recover_mode:
+            return None
+        if recover_mode not in SUPPORTED_RECOVER_MODES:
+            supported = ", ".join(sorted(SUPPORTED_RECOVER_MODES))
+            raise ConfigError(f"Field 'recover_mode' must be one of: {supported}")
+        return recover_mode
+
+    if not requires_recover_validation:
+        return None
+    if mcu_family.startswith("nrf"):
+        return RECOVER_MODE_NRF_PYOCD_UNLOCK
+    return RECOVER_MODE_MANUAL_ONLY
 
 
 def tokenize_hint_text(*values: str) -> set[str]:
@@ -181,11 +220,11 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
     else:
         requires_recover_validation = bool(explicit_recover)
 
-    recover_command = raw.get("recover_command")
-    if recover_command is not None:
-        recover_command = str(recover_command).strip()
-    elif requires_recover_validation:
-        recover_command = "nrf recover"
+    recover_mode = resolve_recover_mode(
+        raw.get("recover_mode"),
+        requires_recover_validation=requires_recover_validation,
+        mcu_family=mcu_family,
+    )
 
     probe_terms = set(normalize_list(raw.get("probe_hint_terms")))
     serial_terms = set(normalize_list(raw.get("serial_hint_terms")))
@@ -258,7 +297,7 @@ def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
         default_baudrate=default_baudrate,
         uart_note=uart_note,
         requires_recover_validation=requires_recover_validation,
-        recover_command=recover_command,
+        recover_mode=recover_mode,
         expected_uart_substring=expected_uart_substring,
         source_path=source_path,
     )

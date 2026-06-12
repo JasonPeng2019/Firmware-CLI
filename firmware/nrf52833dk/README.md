@@ -7,7 +7,8 @@ The intent is narrow:
 
 - keep one tiny, deterministic baseline app in-repo
 - build it into the canonical artifact name `reference/build/firmware.elf`
-- flash that artifact through `stage0_check.py`
+- use that artifact through the current `stage0_check.py` flow and later shared
+  validation/flash logic
 - prove that the board prints `boot ok` over the virtual COM port
 
 Source of truth for the app:

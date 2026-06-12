@@ -22,6 +22,9 @@
 - **Stage 0 must consume external board definitions.** The validation script should run the same
   probe/serial/flash/UART flow against built-in boards and newly added board files, so adding support
   for another board is a config exercise first, not a code fork.
+- **Board-control behavior must live in reusable internal code, not only in wrappers.** Probe detect,
+  flash, UART capture, recover, and validation logic should be implemented once in shared services that
+  both MCP tools and local CLI/operator flows can call.
 
 ## 0. The shape of the whole product (one server, two clients)
 
@@ -47,7 +50,8 @@
    BYO-agent mode you build **no CLI and no GUI**; the user's Claude Code is the frontend.
 2. **Your turnkey product is just another MCP client** of your own server. *It* is the only thing
    that needs a frontend, and that frontend is the CLI. → **The CLI belongs to the turnkey/own-brain
-   product, not the MCP server.**
+   product, not the MCP server as a frontend surface.** But the hardware-control implementation it uses
+   should still be the same shared internal service layer the MCP tools call.
 
 The durable guarantees (safety, convergence-watching, logging) live **in the server, below the
 brain**, so they protect every client identically — yours or theirs.
@@ -59,6 +63,7 @@ brain**, so they protect every client identically — yours or theirs.
 | Component | Build it? | Notes |
 | Headless MCP server (tools + guardrails + watcher + logging) | **Yes — this is the core** | Closed source; ships as a running process, not source |
 | Hardware adapters (UART, SWD-with-backends) | **Yes** | Same as before; they sit inside the server |
+| Shared board-control services / operations | **Yes** | The reusable layer above adapters and below wrappers; called by MCP tools, Stage 0 flows, and your turnkey client |
 | Frontend for BYO-agent mode | **No** | The user's agent app IS the frontend |
 | CLI | **Only for turnkey mode** | It's the frontend for *your* brain-client |
 | Your turnkey brain (loop, skills, orchestration) | **Yes — the premium tier** | An MCP client of your own server; can run server-side to stay closed |
@@ -113,7 +118,10 @@ brain**, so they protect every client identically — yours or theirs.
 
 ## 3. Tools the server exposes (MCP "tools" primitive)
 
-Each is a `@mcp.tool()` wrapping an adapter method. Note MCP's primitive split:
+Each is a `@mcp.tool()` wrapping a shared internal service method, which in turn
+uses adapters/guardrails as needed. The same service methods should also be
+callable by non-MCP local flows such as `stage0_check.py` or the turnkey
+programmer. Note MCP's primitive split:
 - **Tools** = actions with side effects → flash, reset, halt, resume, apply_patch.
 - **Resources** = read-only data → current serial buffer, last register dump, memory read.
   Modeling reads as *resources* and actions as *tools* matches MCP's security model and makes the
@@ -121,12 +129,12 @@ Each is a `@mcp.tool()` wrapping an adapter method. Note MCP's primitive split:
 
 | Name | Primitive | Wraps |
 |---|---|---|
-| `flash_firmware` | tool (gated) | SWD backend flash |
-| `reset_and_halt` / `halt` / `resume` | tool | SWD backend control |
-| `apply_patch` | tool | source edit (full-file v1, diffs later) |
-| `read_register` / `read_memory` | resource | SWD backend reads |
-| `read_serial` | resource | UART adapter |
-| `resolve_symbol` | resource | ELF symbol provider |
+| `flash_firmware` | tool (gated) | shared flash service over the SWD backend |
+| `reset_and_halt` / `halt` / `resume` | tool | shared control service over the SWD backend |
+| `apply_patch` | tool | source edit service (full-file v1, diffs later) |
+| `read_register` / `read_memory` | resource | shared read services over the SWD backend |
+| `read_serial` | resource | shared UART capture/read service |
+| `resolve_symbol` | resource | shared symbol-resolution service |
 
 ---
 
