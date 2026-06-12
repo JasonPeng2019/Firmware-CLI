@@ -7,11 +7,14 @@
 > code at once is where errors creep in, so this stays at the plan level.
 >
 > **Hardware — TWO co-primary boards (build and prove the loop on both):**
-> - **Nordic nRF52840-DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
+> - **Nordic nRF52833 DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
 >   USB. Radio-relevant (BLE/802.15.4). *Wrinkle to plan around:* J-Link's native protocol isn't
 >   pyOCD's native CMSIS-DAP, and nRF52 **APPROTECT** can lock the chip (needs a `recover`/unlock).
 > - **STM32 Nucleo-L476RG** — onboard **ST-Link/V2-1**; UART on **USART2 @115200 8N1**; SWD + UART on
 >   one USB. Cleanest open-stack path (pyOCD/OpenOCD support ST-Link out of the box).
+>
+> The repo may still retain related Nordic board profiles outside this scoped pair; those are support-
+> in-progress references, not part of the validated Phase A contract.
 >
 > Supporting two probe families (J-Link **and** ST-Link) from the start is deliberate: it forces the
 > probe abstraction to be real on day one instead of being retrofitted — which is exactly the
@@ -74,13 +77,13 @@ Stage 4+ and are recorded here only so it's clear their omission is intentional,
 ## STAGE 0 — Foundations (do before anything else), on BOTH boards
 
 **Goal:** two known-good boards + toolchains, so later failures are *your* bugs, not setup bugs.
-**Do every step for the nRF52840-DK AND the L476RG.**
+**Do every step for the nRF52833 DK AND the L476RG.**
 
 1. **Confirm each board's pyOCD target name** (`pyocd list`, `pyocd list --targets`; install the
-   CMSIS-Pack if prompted). Expect roughly `nrf52840` and an `stm32l476`-family target. *Why first:*
+   CMSIS-Pack if prompted). Expect roughly `nrf52833` and an `stm32l476`-family target. *Why first:*
    the generic `cortex_m` type debugs but **cannot program flash** — the "connects but won't flash" trap.
 2. **Probe-specific setup:**
-   - **nRF52840-DK (J-Link):** install SEGGER J-Link software (drivers). Route decision is made: use the
+   - **nRF52833 DK (J-Link):** install SEGGER J-Link software (drivers). Route decision is made: use the
      **native SEGGER J-Link path by default** (the OB does not expose CMSIS-DAP without being explicitly
      switched into it — see the driver sidebar), with CMSIS-DAP as the fallback. **Test a flash + a
      recover/unlock cycle** — confirm you can recover the chip if APPROTECT locks it. This is the nRF's
@@ -165,7 +168,7 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 > **whether the DK's onboard J-Link presents cleanly as CMSIS-DAP without any SEGGER component present**
 > (onboard probes can behave differently from standalone CMSIS-DAP probes).
 >
-> **ANSWERED (2026-06-11, nRF52840-DK on Windows bench):** the Nordic DK's onboard SEGGER J-Link OB does
+> **ANSWERED (2026-06-11, Nordic DK J-Link OB bench path):** the Nordic DK's onboard SEGGER J-Link OB does
 > **not** present as CMSIS-DAP without a SEGGER component — its USB interface is the SEGGER bulk/WinUSB
 > debug channel, driven through SEGGER's J-Link DLL, not a generic CMSIS-DAP class. Reaching it over
 > CMSIS-DAP would require explicitly switching the OB into CMSIS-DAP mode. This is the concrete reason
@@ -204,17 +207,17 @@ pyocd-debug-mcp/
 │   ├── server/                      # FastMCP server wiring
 │   └── brain/                       # turnkey client + skills loader (Stage 5)
 ├── boards/                          # ONE config file per board (board definitions)
-│   ├── nrf52840dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
+│   ├── nrf52833dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
 │   └── nucleo_l476rg.yaml           #   (USART2, 115200, stm32l476 target, …)
 ├── firmware/                        # YOUR OWN test firmware ONLY — never the user's (see note below)
-│   ├── nrf52840dk/
+│   ├── nrf52833dk/
 │   │   ├── reference/src/           #   reference firmware SOURCE tree (known-good, builds clean)
 │   │   ├── reference/build/         #   compiled known-good ARTIFACT (the baseline binary)
 │   │   ├── recovery/                #   known-good RECOVERY image the safety/unlock gates require
 │   │   └── bugs/                    #   injected-bug VARIANTS (see naming below)
 │   └── nucleo_l476rg/               #   (same shape)
 ├── skills/                          # per-chip/peripheral knowledge data files (Stage 5)
-│   ├── nrf52840/
+│   ├── nrf52833/
 │   └── stm32l476/
 ├── runs/                            # all runtime OUTPUT, keyed by session id
 │   └── <session_id>/                #   logs/, captured-serial/, applied-patches/, run-metadata
@@ -222,7 +225,7 @@ pyocd-debug-mcp/
 ```
 
 **Naming conventions (the part that's more than "pick a folder"):**
-- **Boards:** lowercase board id used everywhere — `nrf52840dk`, `nucleo_l476rg`. Every per-board path
+- **Boards:** lowercase board id used everywhere — `nrf52833dk`, `nucleo_l476rg`. Every per-board path
   and config keys off this exact string. One board id, used identically across `boards/`, `firmware/`,
   `skills/`.
 - **Firmware artifacts:** `reference/` = the known-good baseline (one canonical name per board, e.g.
@@ -273,11 +276,11 @@ exists** — otherwise you formalize guesses your later stages will correct.
 **Required v1 core (needed by Stage 2; every field traces to a decision already made).** Note each
 field carries an **origin tag** (see Coding Guidelines §1b) so a reader knows its authority/changeability:
 ```yaml
-board_id:            nrf52840dk          # PROJECT-DEFINED — canonical id (Step 1.0); keys all per-board paths
-display_name:        "Nordic nRF52840-DK" # PROJECT-DEFINED
-mcu_family:          nrf52840            # HW-FIXED — the silicon; selects skills/ dir (Stage 5)
+board_id:            nrf52833dk          # PROJECT-DEFINED — canonical id (Step 1.0); keys all per-board paths
+display_name:        "Nordic nRF52833 DK" # PROJECT-DEFINED
+mcu_family:          nrf52833            # HW-FIXED — the silicon; selects skills/ dir (Stage 5)
 probe_family:        jlink               # HW-FIXED — onboard probe; selects SWD backend (Stage 7)
-pyocd_target:        nrf52840            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
+pyocd_target:        nrf52833            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
 serial_baudrate:     115200             # PROJECT-DEFINED — chosen default; must match reference firmware
 ```
 
@@ -334,7 +337,7 @@ the project's isolated Python environment with [uv](https://docs.astral.sh/uv/):
 **Boilerplate / local-override files — per-developer, never load-bearing for anyone else.** These are
 the machine-specific values the no-hardcoding rule (§1) keeps out of code and out of shared config:
 - **`.env`** — copy from `.env.example`; sets `PYOCD_PROBE_UID` (your probe's unique id, from
-  `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52840`, `stm32l476`). These are the
+  `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52833`, `stm32l476`). These are the
   per-machine defaults for `connect`/`flash`; **gitignored** (`.env` ignored, `.env.example` committed).
   The Phase A MCP server and host scripts auto-load `.env` when present. The `connect` path still
   accepts `unique_id`/`target` as runtime args that override these.
@@ -768,3 +771,17 @@ skills); that's yours to build in Python. A repo that's functionally close but a
 (e.g. stm32-mcp) is *more* hazardous as a live reference than an irrelevant one, because a build can
 absorb its contradicting patterns — which is exactly why its one good idea is lifted into R.1 and the
 repo itself is off the list.
+
+## Verification Status
+
+Verified:
+
+- The current checked-in repo now uses `src/pyocd_debug_mcp/` as the canonical
+  product-code path and `nrf52833dk` as the current scoped Nordic bench board
+  in the Phase A docs.
+
+Pending verification:
+
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
+  bench work.

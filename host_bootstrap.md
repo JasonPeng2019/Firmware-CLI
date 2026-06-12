@@ -49,7 +49,7 @@ On Windows, run the unattended setup helper first when bootstrapping a fresh
 machine:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 That default run is repo-wide: it checks all non-example tracked boards.
@@ -64,7 +64,7 @@ uv run python host_bootstrap.py --install-missing --install-packs
 Run for one specific tracked board:
 
 ```bash
-uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
 ```
 
 Include an extra board config:
@@ -83,7 +83,7 @@ available without manual shell export.
 Run Stage 0 board validation:
 
 ```bash
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52833dk
 ```
 
 ## Reading The Result
@@ -107,5 +107,5 @@ uv run python stage0_check.py --board-id nrf52840dk
 
 - Non-hardware verification: this document matches the current
   `host_bootstrap.py` CLI shape.
-- Pending hardware verification: probe enumeration, serial enumeration, and
-  target-pack flows still need confirmation on real supported hosts.
+- Pending hardware verification: the unattended Windows bootstrap path and the
+  STM32 host path still need confirmation on real supported hosts.

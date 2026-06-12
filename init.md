@@ -26,7 +26,7 @@ If this is a fresh machine, do these steps first.
 On Windows, the preferred unattended entry point is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 That script can install Python and `uv`, run `uv sync --locked`, repair common
@@ -135,7 +135,7 @@ Notes:
 - The MCP Inspector entrypoint is:
 
 ```bash
-uv run python host_bootstrap.py --board-id my_board
+uv run mcp dev src/pyocd_debug_mcp/server.py
 ```
 
 What `host_bootstrap.py` checks:
@@ -216,8 +216,8 @@ which override `.env` defaults at runtime.
 ```bash
 uv run python host_bootstrap.py
 uv run python stage0_check.py
-uv run python host_bootstrap.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk
 uv run pyocd-debug-mcp
 uv run pytest
 uv run ruff check .
@@ -231,3 +231,16 @@ uv run mypy src
 - Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
 - Stage 0 validation flow: [stage0_setup.md](./stage0_setup.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
+
+## Verification Status
+
+Verified:
+
+- The command surface documented here matches the current checked-in repo.
+- The `nrf52833dk` bootstrap plus Stage 0 flow is bench-verified on this Mac
+  host.
+
+Pending verification:
+
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The STM32 board path remains later bench work.

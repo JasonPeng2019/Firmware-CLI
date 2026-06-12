@@ -46,7 +46,7 @@ serial interface.
 On Windows, the preferred unattended host setup path is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 That script can bootstrap Python/`uv`, sync the repo, repair common vendor-tool
@@ -96,6 +96,7 @@ Tracked board YAML must not contain:
 
 Examples:
 
+- `boards/nrf52833dk.yaml`
 - `boards/nrf52840dk.yaml`
 - `boards/nucleo_l476rg.yaml`
 - `boards/example_custom_nrf52_board.yaml`
@@ -184,6 +185,15 @@ uv run python stage0_check.py \
   --recover-test my_board
 ```
 
+If you already performed the human bench check that the visible debug probe and
+visible COM port come from the same physical board, record that in the run:
+
+```bash
+uv run python stage0_check.py \
+  --board-id my_board \
+  --confirm-shared-usb my_board
+```
+
 ## 6. What The Script Checks
 
 Automated:
@@ -221,7 +231,15 @@ Still manual:
 
 ## Verification Status
 
-- Non-hardware verification: this doc matches the current generic
-  `stage0_check.py` CLI shape.
-- Pending hardware verification: flashing, UART capture, and recover flows still
-  need to be run on real boards.
+Verified:
+
+- This flow matches the current `stage0_check.py` CLI shape and shared board
+  loader behavior.
+- The `nrf52833dk` flash, UART, and recover path is bench-verified on this Mac
+  host when a reference artifact is supplied.
+
+Pending verification:
+
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
+  bench work.

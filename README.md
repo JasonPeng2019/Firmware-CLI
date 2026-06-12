@@ -22,6 +22,11 @@ Today that means:
 - test and harness scaffolding in `tests/`
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 
+The current scoped board pair for the real Phase A bench path is
+`nrf52833dk` plus `nucleo_l476rg`.
+The repo still carries a related `nrf52840dk` profile, but it is not the
+current primary Nordic board for the validated Stage 0 path.
+
 ## Canonical Tree
 
 ```text
@@ -33,13 +38,20 @@ Firmware-CLI/
 ├── init.md
 ├── host_bootstrap.py
 ├── host_bootstrap.md
+├── setup_host.ps1
 ├── stage0_check.py
 ├── stage0_setup.md
 ├── boards/
+│   ├── nrf52833dk.yaml
 │   ├── nrf52840dk.yaml
 │   └── nucleo_l476rg.yaml
 ├── firmware/
 │   ├── README.md
+│   ├── nrf52833dk/
+│   │   ├── reference/src/
+│   │   ├── reference/build/
+│   │   ├── recovery/
+│   │   └── bugs/
 │   ├── nrf52840dk/
 │   │   ├── reference/src/
 │   │   ├── reference/build/
@@ -60,7 +72,9 @@ Firmware-CLI/
 ├── src/
 │   └── pyocd_debug_mcp/
 │       ├── __init__.py
+│       ├── board_config.py
 │       ├── local_env.py
+│       ├── serial_resolver.py
 │       └── server.py
 └── markdowns/
     ├── ROADMAP.md
@@ -143,7 +157,7 @@ uv sync
 On Windows, the preferred unattended host bootstrap entry point is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 That script can install Python/`uv` if needed, sync the repo, repair vendor
@@ -168,8 +182,8 @@ interactive terminal. In non-interactive runs, re-run with
 Run host bootstrap and Stage 0 for one board on your bench:
 
 ```bash
-uv run python host_bootstrap.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk
 ```
 
 Vendor-assisted serial auto-detect is used when the helper CLI is available:
@@ -198,3 +212,18 @@ uv run pyocd-debug-mcp
 
 Until later roadmap items intentionally revise it, this `README.md` is the
 canonical repo-layout and naming reference for Phase A.
+
+## Verification Status
+
+Verified:
+
+- The tree and command surface documented here match the current checked-in repo
+  layout.
+- The `nrf52833dk` Stage 0 path is bench-verified on this Mac host, including
+  flash, UART, and recover validation.
+
+Pending verification:
+
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
+  bench work beyond the currently verified Nordic path.
