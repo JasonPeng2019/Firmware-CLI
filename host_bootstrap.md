@@ -54,6 +54,8 @@ powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 
 That default run is repo-wide: it checks all non-example tracked boards.
 For first-time bring-up on one physical bench, prefer `--board-id <board>`.
+After `uv sync`, `setup_host.ps1` resolves the selected boards through the same
+validated loader used by `host_bootstrap.py` and `stage0_check.py`.
 
 Install missing Python deps and missing target packs:
 

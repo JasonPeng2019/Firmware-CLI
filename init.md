@@ -30,8 +30,9 @@ powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 That script can install Python and `uv`, run `uv sync --locked`, repair common
-vendor-tool `PATH` issues, and automate Nordic `nrfjprog` setup for J-Link
-boards.
+vendor-tool `PATH` issues, automate Nordic `nrfjprog` setup for J-Link
+boards, and then resolve board selection through the same validated loader used
+by the Python Phase A tools.
 
 ### 1. Install `uv`
 

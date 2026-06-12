@@ -73,6 +73,7 @@ Firmware-CLI/
 │   └── pyocd_debug_mcp/
 │       ├── __init__.py
 │       ├── board_config.py
+│       ├── board_config_cli.py
 │       ├── local_env.py
 │       ├── serial_resolver.py
 │       └── server.py
@@ -225,5 +226,6 @@ Verified:
 Pending verification:
 
 - The unattended Windows bootstrap path still needs a real Windows bench run.
-- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
-  bench work beyond the currently verified Nordic path.
+- The `nucleo_l476rg` reference baseline now builds on this Mac host, but its
+  physical Stage 0 flash and UART proof still need a real `nucleo_l476rg`
+  bench run.

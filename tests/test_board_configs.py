@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -48,6 +49,16 @@ def test_nrf52833_board_profile_has_exact_identity_check() -> None:
     assert board.silicon_id_label == "FICR.INFO.PART"
 
 
+def test_nucleo_l476rg_profile_has_expected_stage0_defaults() -> None:
+    [board] = load_board_configs_from_paths([BOARD_DIR / "nucleo_l476rg.yaml"])
+
+    assert board.board_id == "nucleo_l476rg"
+    assert board.pyocd_target == "stm32l476rgtx"
+    assert board.probe_family == "stlink"
+    assert board.default_baudrate == 115200
+    assert board.expected_uart_substring == "boot ok"
+
+
 def test_default_board_selection_uses_non_example_profiles_only() -> None:
     boards = load_selected_board_configs(BOARD_DIR)
 
@@ -56,3 +67,23 @@ def test_default_board_selection_uses_non_example_profiles_only() -> None:
         "nrf52840dk",
         "nucleo_l476rg",
     }
+
+
+def test_board_config_cli_emits_selected_board_summary(capsys) -> None:
+    from pyocd_debug_mcp.board_config_cli import main
+
+    exit_code = main(["--board-id", "nrf52833dk"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    data = json.loads(captured.out)
+    assert data == [
+        {
+            "board_id": "nrf52833dk",
+            "display_name": "nRF52833 DK",
+            "mcu_family": "nrf52833",
+            "probe_family": "jlink",
+            "pyocd_target": "nrf52833",
+            "source_path": str(BOARD_DIR / "nrf52833dk.yaml"),
+        }
+    ]
