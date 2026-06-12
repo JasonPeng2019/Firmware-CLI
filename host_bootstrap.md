@@ -91,7 +91,7 @@ Examples:
 
 ```bash
 uv run python host_bootstrap.py
-uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
 uv run python host_bootstrap.py --install-missing --install-packs
 uv run python host_bootstrap.py --board-config path/to/my_board.yaml --board-id my_board
 ```

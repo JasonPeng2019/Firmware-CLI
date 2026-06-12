@@ -56,7 +56,7 @@ def connect(unique_id: str | None = None, target: str | None = None) -> str:
         unique_id: Whole or partial probe serial/unique ID to select a specific
             probe. Omit when exactly one probe is attached. Defaults to the
             ``PYOCD_PROBE_UID`` environment variable if unset.
-        target: Target type override, e.g. "stm32f407vg" or "nrf52840". Omit to
+        target: Target type override, e.g. "stm32f407vg" or "nrf52833". Omit to
             use auto-detection or a pyocd.yaml config. Defaults to the
             ``PYOCD_TARGET`` environment variable if unset.
     """

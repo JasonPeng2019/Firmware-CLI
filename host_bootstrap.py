@@ -28,6 +28,13 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
+from pyocd_debug_mcp.board_config import (
+    DEFAULT_BOARD_CONFIG_DIR,
+    BoardConfig,
+    ConfigError,
+    load_selected_board_configs,
+    preview_board_config_paths,
+)
 from pyocd_debug_mcp.local_env import load_local_env
 from pyocd_debug_mcp.serial_resolver import command_exists
 
@@ -36,16 +43,7 @@ FAIL = "FAIL"
 WARN = "WARN"
 INFO = "INFO"
 
-DEFAULT_BOARD_CONFIG_DIR = (
-    Path(__file__).resolve().parent / "boards"
-)  # PROJECT-DEFINED (repo layout)
-BOARD_CONFIG_SUFFIXES = {".json", ".yaml", ".yml"}  # PROJECT-DEFINED (supported config formats)
-
 load_local_env()
-
-
-class ConfigError(Exception):
-    pass
 
 
 @dataclass(frozen=True)
@@ -54,17 +52,6 @@ class DependencySpec:
     import_name: str
     required: bool
     reason: str
-
-
-@dataclass(frozen=True)
-class BoardHostSpec:
-    board_id: str
-    display_name: str
-    mcu_family: str
-    probe_family: str
-    pyocd_target: str
-    pack_name: str
-    source_path: Path
 
 
 @dataclass(frozen=True)
@@ -288,93 +275,7 @@ def pyocd_summary(pyocd_ok: bool) -> int | None:
         return 0
 
 
-def load_board_config_document(path: Path) -> dict:
-    suffix = path.suffix.lower()
-    if suffix == ".json":
-        data = json.loads(path.read_text(encoding="utf-8"))
-    elif suffix in {".yaml", ".yml"}:
-        try:
-            import yaml
-        except ImportError as exc:
-            raise ConfigError(
-                f"PyYAML is required to load {path.name}. Run 'uv sync' from the repo root or use JSON."
-            ) from exc
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    else:
-        raise ConfigError(f"Unsupported board config format for {path}. Use .json, .yaml, or .yml.")
-
-    if not isinstance(data, dict):
-        raise ConfigError(f"{path} must contain a single object")
-    return data
-
-
-def iter_board_config_paths(board_config_dir: Path) -> list[Path]:
-    if not board_config_dir.exists():
-        raise ConfigError(f"Board config directory not found: {board_config_dir}")
-    if not board_config_dir.is_dir():
-        raise ConfigError(f"Board config path is not a directory: {board_config_dir}")
-
-    return [
-        path.resolve()
-        for path in sorted(board_config_dir.iterdir())
-        if path.is_file() and path.suffix.lower() in BOARD_CONFIG_SUFFIXES
-    ]
-
-
-def preview_board_config_paths(board_config_dir: Path) -> list[Path]:
-    if not board_config_dir.exists() or not board_config_dir.is_dir():
-        return []
-    return [
-        path.resolve()
-        for path in sorted(board_config_dir.iterdir())
-        if path.is_file() and path.suffix.lower() in BOARD_CONFIG_SUFFIXES
-    ]
-
-
-def load_board_specs(
-    board_config_dir: Path, extra_paths: list[Path], selected_ids: list[str]
-) -> list[BoardHostSpec]:
-    default_paths = [
-        path
-        for path in iter_board_config_paths(board_config_dir)
-        if not path.stem.startswith("example_")
-    ]
-    merged_paths = default_paths + extra_paths
-
-    boards: list[BoardHostSpec] = []
-    seen_ids: set[str] = set()
-    for path in merged_paths:
-        data = load_board_config_document(path)
-        for field in ("board_id", "display_name", "pyocd_target"):
-            if not data.get(field):
-                raise ConfigError(f"{path} is missing required field '{field}'")
-        board_id = str(data["board_id"]).strip().lower()
-        if board_id in seen_ids:
-            raise ConfigError(f"Duplicate board_id detected: {board_id}")
-        seen_ids.add(board_id)
-        boards.append(
-            BoardHostSpec(
-                board_id=board_id,
-                display_name=str(data["display_name"]).strip(),
-                mcu_family=str(data.get("mcu_family") or "").strip(),
-                probe_family=str(data.get("probe_family") or "").strip().lower(),
-                pyocd_target=str(data["pyocd_target"]).strip(),
-                pack_name=str(data.get("pack_name") or data["pyocd_target"]).strip(),
-                source_path=path,
-            )
-        )
-
-    if selected_ids:
-        requested = [board_id.strip().lower() for board_id in selected_ids if board_id.strip()]
-        boards = [board for board in boards if board.board_id in requested]
-        missing = sorted(set(requested) - {board.board_id for board in boards})
-        if missing:
-            raise ConfigError(f"Requested board_id values not found: {', '.join(missing)}")
-
-    return boards
-
-
-def board_config_summary(boards: list[BoardHostSpec]):
+def board_config_summary(boards: list[BoardConfig]):
     header("Board configs")
     if not boards:
         log(WARN, "No board configs selected")
@@ -388,7 +289,7 @@ def board_config_summary(boards: list[BoardHostSpec]):
 
 
 def target_pack_summary(
-    boards: list[BoardHostSpec], pyocd_ok: bool, install_packs: bool
+    boards: list[BoardConfig], pyocd_ok: bool, install_packs: bool
 ) -> dict[str, bool]:
     header("Target packs")
     if not boards:
@@ -429,7 +330,7 @@ def target_pack_summary(
     return results
 
 
-def vendor_serial_tool_summary(boards: list[BoardHostSpec]):
+def vendor_serial_tool_summary(boards: list[BoardConfig]):
     header("Serial auto-detect helpers")
     if not boards:
         log(WARN, "No board configs selected - skipping vendor serial-tool hints")
@@ -522,10 +423,14 @@ def main():
     probe_count = pyocd_summary(pyocd_ok)
     serial_count = serial_summary(pyserial_ok)
 
-    boards: list[BoardHostSpec] = []
+    boards: list[BoardConfig] = []
     board_config_ok = True
     try:
-        boards = load_board_specs(board_config_dir, extra_paths, args.board_id)
+        boards = load_selected_board_configs(
+            board_config_dir,
+            extra_paths=extra_paths,
+            requested_ids=args.board_id,
+        )
     except ConfigError as exc:
         board_config_ok = False
         header("Board configs")

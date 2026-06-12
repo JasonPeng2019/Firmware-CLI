@@ -23,6 +23,11 @@ Today that means:
 - test and harness scaffolding in `tests/`
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 
+The current scoped board pair for the real Phase A bench path is
+`nrf52833dk` plus `nucleo_l476rg`.
+The repo still carries a related `nrf52840dk` profile, but it is not the
+current primary Nordic board for the validated Stage 0 path.
+
 ## Canonical Tree
 
 ```text
@@ -149,7 +154,7 @@ uv sync
 On Windows, the preferred unattended host bootstrap entry point is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 On macOS, the preferred host bootstrap entry point is:

@@ -30,9 +30,19 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
+from pyocd_debug_mcp.board_config import (
+    DEFAULT_BOARD_CONFIG_DIR,
+    PROBE_FAMILY_HINTS,
+    BoardConfig,
+    ConfigError,
+    load_selected_board_configs,
+    parse_int,
+    validate_width_bits,
+)
 from pyocd_debug_mcp.local_env import load_local_env
 from pyocd_debug_mcp.serial_resolver import (
     SerialPortInfo,
+    command_exists,
     is_interactive_terminal,
     resolve_serial_port,
 )
@@ -994,6 +1004,50 @@ def flash_reference_firmware(
         check(False, "Skipped - connected silicon identity does not match this board config")
         return False
 
+    def try_nrfjprog_fallback() -> bool:
+        if not (board.mcu_family.startswith("nrf") and board.probe_family == "jlink"):
+            return False
+        if not command_exists("nrfjprog"):
+            return False
+
+        flash_image_path = reference_firmware_path
+        if reference_firmware_path.suffix.lower() != ".hex":
+            hex_candidate = reference_firmware_path.with_suffix(".hex")
+            if not hex_candidate.exists():
+                print(
+                    "      pyOCD flash failed and no sibling .hex artifact exists for the nrfjprog fallback"
+                )
+                return False
+            flash_image_path = hex_candidate
+
+        flash_cmd = ["nrfjprog", "--program", str(flash_image_path), "--sectorerase", "--verify", "-f", "NRF52"]
+        reset_cmd = ["nrfjprog", "--reset", "-f", "NRF52"]
+        print(f"  Attempting fallback: {' '.join(flash_cmd)}")
+        flash_rc, flash_out, flash_err = run(flash_cmd)
+        if flash_rc != 0:
+            if flash_err.strip():
+                print(f"      fallback stderr: {flash_err.strip()[:300]}")
+            return False
+
+        print(f"  Attempting fallback reset: {' '.join(reset_cmd)}")
+        reset_rc, reset_out, reset_err = run(reset_cmd)
+        if reset_rc != 0:
+            if reset_err.strip():
+                print(f"      reset stderr: {reset_err.strip()[:300]}")
+            return False
+
+        check(
+            True,
+            f"Flashed reference firmware with nrfjprog fallback: {reference_firmware_path}",
+        )
+        trimmed_flash_out = flash_out.strip()[:300]
+        trimmed_reset_out = reset_out.strip()[:300]
+        if trimmed_flash_out:
+            print(f"      flash output: {trimmed_flash_out}")
+        if trimmed_reset_out:
+            print(f"      reset output: {trimmed_reset_out}")
+        return True
+
     cmd = pyocd_base("load", board, probe)
     cmd.append(str(reference_firmware_path))
     print(f"  Attempting: {' '.join(cmd)}")
@@ -1007,7 +1061,7 @@ def flash_reference_firmware(
     check(False, f"Flash failed for {reference_firmware_path}")
     if err.strip():
         print(f"      stderr: {err.strip()[:300]}")
-    return False
+    return True if try_nrfjprog_fallback() else False
 
 
 def read_uart_output(
@@ -1219,6 +1273,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the destructive recover validation for the given board_id. Repeat for multiple boards.",
     )
     parser.add_argument(
+        "--confirm-shared-usb",
+        action="append",
+        default=[],
+        metavar="BOARD_ID",
+        help="Record that a human confirmed the visible debug probe and COM port come from the same physical board.",
+    )
+    parser.add_argument(
         "--serial-read-seconds",
         type=float,
         default=3.0,
@@ -1229,7 +1290,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def collect_overrides(
     args: argparse.Namespace,
-) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str]]:
+) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str], set[str]]:
     port_overrides = parse_key_value(args.port, "--port")
     reference_firmware_overrides = {
         board_id: resolve_firmware_path(path_text)
@@ -1243,6 +1304,9 @@ def collect_overrides(
         for board_id, value in parse_key_value(args.baudrate, "--baudrate").items()
     }
     recover_tests = {board_id.strip().lower() for board_id in args.recover_test if board_id.strip()}
+    confirmed_shared_usb = {
+        board_id.strip().lower() for board_id in args.confirm_shared_usb if board_id.strip()
+    }
 
     return (
         port_overrides,
@@ -1250,6 +1314,7 @@ def collect_overrides(
         expect_overrides,
         baudrate_overrides,
         recover_tests,
+        confirmed_shared_usb,
     )
 
 
@@ -1259,13 +1324,14 @@ def main():
 
     try:
         board_config_dir = Path(args.board_config_dir).expanduser().resolve()
-        default_boards = load_default_board_configs(board_config_dir)
         custom_board_paths = [
             Path(raw_path).expanduser().resolve() for raw_path in args.board_config
         ]
-        custom_boards = load_board_configs_from_paths(custom_board_paths)
-        boards_to_check = merge_board_lists(default_boards, custom_boards)
-        boards_to_check = select_boards_by_id(boards_to_check, args.board_id)
+        boards_to_check = load_selected_board_configs(
+            board_config_dir,
+            extra_paths=custom_board_paths,
+            requested_ids=args.board_id,
+        )
         if not boards_to_check:
             raise ConfigError(
                 "No boards selected. Add board configs or pass --board-id for an existing board."
@@ -1276,6 +1342,7 @@ def main():
             expect_overrides,
             baudrate_overrides,
             recover_tests,
+            confirmed_shared_usb,
         ) = collect_overrides(args)
     except ConfigError as exc:
         parser.error(str(exc))
@@ -1436,9 +1503,10 @@ def main():
                     )
                 )
 
-        manual_items.append(
-            f"{board.display_name}: confirm the visible debug probe and COM port are exposed by the same physical USB connection."
-        )
+        if board.board_id not in confirmed_shared_usb:
+            manual_items.append(
+                f"{board.display_name}: confirm the visible debug probe and COM port are exposed by the same physical USB connection."
+            )
 
     automated_ok = print_summary(summary_items, manual_items)
     sys.exit(0 if automated_ok else 1)

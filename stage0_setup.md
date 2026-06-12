@@ -60,7 +60,7 @@ brew install uv
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 macOS:
@@ -198,6 +198,19 @@ Tracked board YAML must not contain:
 - artifact output paths
 - any user- or session-scoped path
 
+Examples:
+
+- `boards/nrf52833dk.yaml`
+- `boards/nrf52840dk.yaml`
+- `boards/nucleo_l476rg.yaml`
+- `boards/example_custom_nrf52_board.yaml`
+- `boards/example_custom_board.yaml`
+
+If two nearby MCUs can both answer a generic debug read through the same probe
+family, add silicon-identity metadata to the board YAML. Stage 0 will then read
+that register and reject the wrong attached device even if the probe and target
+family are otherwise compatible.
+
 ## 8. What Stage 0 Automates Vs. Leaves Manual
 
 Automated:
@@ -263,10 +276,15 @@ re-locking the chip.
 
 Verified:
 
-- non-hardware verification: this operator guide's sequence, branch points, and
-  handoffs match the current `setup_host`, `host_bootstrap.py`, and
-  `stage0_check.py` roles
+- this operator guide's sequence, branch points, and handoffs match the current
+  `setup_host`, `host_bootstrap.py`, and `stage0_check.py` roles
+- this flow matches the current `stage0_check.py` CLI shape and shared board
+  loader behavior
+- The `nrf52833dk` flash, UART, and recover path is bench-verified on this Mac
+  host when a reference artifact is supplied
 
 Pending verification:
 
-- flashing, UART capture, and recover flows still need to be run on real boards
+- The unattended Windows bootstrap path still needs a real Windows bench run
+- The `nucleo_l476rg` Stage 0 path and its reference baseline remain later
+  bench work
