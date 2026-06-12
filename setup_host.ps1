@@ -339,34 +339,42 @@ function Run-HostBootstrap {
     }
 }
 
-Write-Section 'Windows host setup'
-if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-    throw 'setup_host.ps1 currently supports Windows host automation only.'
+try {
+    Write-Section 'Windows host setup'
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        throw 'setup_host.ps1 currently supports Windows host automation only.'
+    }
+
+    $boards = @(Get-SelectedBoards)
+    if (-not $boards -or @($boards).Count -eq 0) {
+        throw 'No board configs were selected.'
+    }
+
+    Write-Status 'INFO' ("Selected boards: " + (($boards | ForEach-Object { $_.board_id }) -join ', '))
+
+    $pythonCommand = Ensure-Python
+    Ensure-Uv -PythonCommand $pythonCommand
+    Ensure-UvSync
+
+    $needsNordicJlink = $boards | Where-Object { $_.mcu_family.StartsWith('nrf') -and $_.probe_family -eq 'jlink' }
+    $needsStlink = $boards | Where-Object { $_.probe_family -eq 'stlink' }
+
+    if ($needsNordicJlink) {
+        Ensure-Nrfjprog
+    }
+
+    if ($needsStlink) {
+        [void](Ensure-Stm32CubeProgrammerPath)
+    }
+
+    Run-HostBootstrap -Boards $boards
+
+    Write-Section 'Done'
+    Write-Status 'PASS' 'Windows host setup script completed.'
+    exit 0
 }
-
-$boards = @(Get-SelectedBoards)
-if (-not $boards -or @($boards).Count -eq 0) {
-    throw 'No board configs were selected.'
+catch {
+    Write-Section 'Failed'
+    Write-Status 'FAIL' $_.Exception.Message
+    exit 1
 }
-
-Write-Status 'INFO' ("Selected boards: " + (($boards | ForEach-Object { $_.board_id }) -join ', '))
-
-$pythonCommand = Ensure-Python
-Ensure-Uv -PythonCommand $pythonCommand
-Ensure-UvSync
-
-$needsNordicJlink = $boards | Where-Object { $_.mcu_family.StartsWith('nrf') -and $_.probe_family -eq 'jlink' }
-$needsStlink = $boards | Where-Object { $_.probe_family -eq 'stlink' }
-
-if ($needsNordicJlink) {
-    Ensure-Nrfjprog
-}
-
-if ($needsStlink) {
-    [void](Ensure-Stm32CubeProgrammerPath)
-}
-
-Run-HostBootstrap -Boards $boards
-
-Write-Section 'Done'
-Write-Status 'PASS' 'Windows host setup script completed.'

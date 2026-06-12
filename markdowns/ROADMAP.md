@@ -2,7 +2,7 @@
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
-It is based on the current build plan in [firmware_agent_build_plan_concrete (7).md](./firmware_agent_build_plan_concrete%20%287%29.md), but it is organized for implementation instead of product narration.
+It is based on the current build plan in [firmware_agent_build_plan_concrete (10).md](./firmware_agent_build_plan_concrete%20%2810%29.md), but it is organized for implementation instead of product narration.
 
 The goal is to answer three questions clearly:
 

@@ -1,72 +1,166 @@
 # Stage 0 Setup
 
-This note describes the shortest path to getting `stage0_check.py` working for
-any supported board under the frozen Phase A repo standard.
+This is the Stage 0 operator guide. It describes the multi-script workflow from
+host bootstrap through board-level Stage 0 validation. It is not the script doc
+for any single executable.
 
-It assumes:
+Exact script interfaces live in:
 
-- the canonical repo layout from [README.md](./README.md)
-- the `uv`-managed environment from [init.md](./init.md)
-- board definitions in `boards/`
+- [setup_host.md](./setup_host.md)
+- [host_bootstrap.md](./host_bootstrap.md)
+- [stage0_check.md](./stage0_check.md)
 
-Important distinction:
+## 1. Purpose Of This Workflow
 
-- board YAML stays hardware-focused
-- canonical artifact locations live in the repo tree and naming rules
-- Stage 0 still receives a reference firmware path as a runtime argument
+Use this guide when the repo is cloned and you need the shortest correct path
+to:
 
-That runtime path may point at the canonical repo-owned baseline location later,
-for example `firmware/<board>/reference/build/firmware.elf`, but it is not
-stored in tracked board YAML.
+- get a fresh machine ready
+- validate one attached board or all tracked boards at Stage 0
+- know which script to run next based on the current runtime state
 
-The canonical firmware tree may still be scaffolding before `R4` baselines are
-actually populated. Until those baseline artifacts exist, flash and UART
-validation still require an explicit runtime `--reference-firmware` path.
+Do not use this guide as the only reference when operating one script directly.
+Switch to that script's own doc for exact flags, logs, outputs, failure
+symptoms, and rerun guidance.
 
-## 1. Bootstrap The Canonical Environment
+## 2. Entry Conditions
 
-```bash
-uv sync
+This workflow is the right one when:
+
+- the repo exists locally
+- you want to move from raw machine or uncertain host state into Stage 0
+- you need board bring-up, not just the MCP server
+
+This workflow is not the right one when:
+
+- you only need the canonical repo tree and naming rules; use [README.md](./README.md)
+- you only need exact bootstrap commands and local override policy; use [init.md](./init.md)
+- you only need one script's exact contract; use that script doc directly
+
+## 3. Ordered Sequence
+
+Run these steps in order from the repo root.
+
+### Step 1: Install `uv`
+
+Windows PowerShell:
+
+```powershell
+pip install uv
 ```
 
-That installs the Phase A tooling, including `pyocd`, `pyserial`, `pyyaml`, and
-`python-dotenv`.
+macOS:
 
-## 2. Make Sure Probe Support Exists On The Host
+```bash
+brew install uv
+```
 
-The script does not install probe drivers for you.
+### Step 2: Run the OS bootstrap script
 
-- `J-Link` boards may need SEGGER tooling or a pyOCD-compatible path
-- `ST-Link` boards may need ST driver or firmware support
-- other probes must already be visible to the OS and usable by `pyocd`
-
-Stage 0 only works after the host can see both the debug probe and the USB
-serial interface.
-
-On Windows, the preferred unattended host setup path is:
+Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 ```
 
-That script can bootstrap Python/`uv`, sync the repo, repair common vendor-tool
-`PATH` issues, and automate the Nordic `nrfjprog` path used by Stage 0's
-vendor-assisted UART auto-detect.
-
-On macOS, the preferred setup path is:
+macOS:
 
 ```bash
 bash ./setup_host.sh --board-id nrf52840dk
 ```
 
-That script can install `uv`, `libusb`, and the Nordic tooling needed for the
-same auto-detect path. ST-LINK setups may still need a one-time manual
-STM32CubeProgrammer install before the agent can fully self-pilot.
+Use `--board-id <board>` or `-BoardId <board>` when only one physical bench
+board is attached and you do not want unrelated tracked boards to dominate the
+result.
 
-## 3. Use A Tracked Board Config
+### Step 3: Run host readiness checks
 
-Board support is config-driven. Put one tracked config per board in `boards/`,
-or pass extra board files with `--board-config`.
+```bash
+uv run python host_bootstrap.py
+```
+
+For one board:
+
+```bash
+uv run python host_bootstrap.py --board-id nrf52840dk
+```
+
+### Step 4: Run Stage 0 board validation
+
+```bash
+uv run python stage0_check.py
+```
+
+For one board:
+
+```bash
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+### Step 5: Start the MCP server after Stage 0 is acceptable
+
+```bash
+uv run pyocd-debug-mcp
+```
+
+## 4. Branch Points
+
+- If the machine is fresh or host tooling is uncertain, start with `setup_host`
+  rather than `host_bootstrap.py`.
+- If `setup_host` was intentionally run with `--skip-host-bootstrap` or
+  `-SkipHostBootstrap`, run `uv run python host_bootstrap.py` next.
+- If `host_bootstrap.py` reports missing packs, rerun it or `stage0_check.py`
+  with pack installation enabled rather than moving directly to the MCP server.
+- If `stage0_check.py` reports ambiguous UART selection:
+  interactive run -> choose from the prompt
+  non-interactive run -> rerun with `--port BOARD_ID=PORT`
+- If `stage0_check.py` reports APPROTECT or access-protected symptoms on a
+  Nordic board and destructive recovery is acceptable, rerun with
+  `--recover-test <board>`.
+- If a run ends with only manual items, treat it as partial Stage 0 completion,
+  not a full bring-up pass.
+
+## 5. Handoffs Between Steps
+
+- From `setup_host` to `host_bootstrap.py`
+  Carry forward the board selection. If you bootstrapped only one board family,
+  keep the same `--board-id` / `-BoardId` focus in later steps.
+- From `host_bootstrap.py` to `stage0_check.py`
+  Carry forward any unresolved warnings:
+  - missing vendor helper CLI
+  - missing target pack
+  - no probes detected
+  - no serial ports detected
+- From `stage0_check.py` back to itself on rerun
+  Carry forward the concrete override that solved the failure:
+  - `--port BOARD_ID=PORT`
+  - `--reference-firmware BOARD_ID=PATH`
+  - `--expect BOARD_ID=TEXT`
+  - `--baudrate BOARD_ID=BAUD`
+  - `--recover-test BOARD_ID`
+- From Stage 0 to `pyocd-debug-mcp`
+  Carry forward the known-good board target, probe path, and any `.env`
+  defaults such as `PYOCD_PROBE_UID` or `PYOCD_TARGET`.
+
+## 6. Cross-Script Troubleshooting
+
+- `setup_host` succeeds but `host_bootstrap.py` still fails
+  Read [host_bootstrap.md](./host_bootstrap.md) and fix the exact blocker it
+  reported. Do not keep rerunning setup blindly.
+- `host_bootstrap.py` passes enough to continue, but `stage0_check.py` fails on
+  connection or identity
+  Read [stage0_check.md](./stage0_check.md). This usually means target-specific
+  Stage 0 state rather than raw host bootstrap state.
+- `stage0_check.py` fails only on flash, UART, or recover
+  Stay in Stage 0. Do not start the MCP server yet.
+- `stage0_check.py` passes automated checks but leaves manual items
+  Treat the remaining manual list as an operator checklist. The board is not
+  fully Stage 0 complete until those items are resolved.
+
+## 7. Board Config Expectations
+
+Use a tracked board config from `boards/`, or pass extra board files with
+`--board-config`.
 
 Minimum useful fields:
 
@@ -95,10 +189,6 @@ Useful optional fields:
 - `requires_recover_validation`
 - `uart_note`
 
-`recover_mode` is a typed selector, not a free-form shell command. Tracked
-board YAML chooses the recover backend; `stage0_check.py` implements the actual
-recover behavior for supported modes.
-
 Tracked board YAML must not contain:
 
 - `reference_firmware_path`
@@ -108,123 +198,7 @@ Tracked board YAML must not contain:
 - artifact output paths
 - any user- or session-scoped path
 
-Examples:
-
-- `boards/nrf52840dk.yaml`
-- `boards/nucleo_l476rg.yaml`
-- `boards/example_custom_nrf52_board.yaml`
-- `boards/example_custom_board.yaml`
-
-If two nearby MCUs can both answer a generic debug read through the same probe
-family, add silicon-identity metadata to the board YAML. Stage 0 will then read
-that register and reject the wrong attached device even if the probe and target
-family are otherwise compatible.
-
-## 4. Run Host Bootstrap First
-
-```bash
-uv run python host_bootstrap.py
-```
-
-If you want it to install missing Python packages and missing target packs:
-
-```bash
-uv run python host_bootstrap.py --install-missing --install-packs
-```
-
-`--install-missing` reconciles the canonical repo environment with
-`uv sync --locked`; it does not do ad hoc per-package installs.
-
-The script auto-loads `.env` if present, so repo-local `PYOCD_*` defaults are
-available without manual shell export.
-
-## 5. Run Stage 0 Validation
-
-By default, the script loads all non-example board files in `boards/`:
-
-```bash
-uv run python stage0_check.py
-```
-
-Windows PowerShell:
-
-```powershell
-uv run python stage0_check.py
-```
-
-That default is for repo-wide validation across all tracked reference boards.
-For first-time bring-up on one physical bench, prefer `--board-id <board>` so
-an unrelated tracked board does not dominate the result.
-
-Run one tracked board:
-
-```bash
-uv run python stage0_check.py --board-id my_board
-```
-
-Windows PowerShell:
-
-```powershell
-uv run python stage0_check.py --board-id my_board
-```
-
-Add a board file outside the default `boards/` directory:
-
-```bash
-uv run python stage0_check.py \
-  --board-config path/to/my_board.yaml \
-  --board-id my_board
-```
-
-If serial detection is ambiguous:
-
-```bash
-uv run python stage0_check.py \
-  --board-id my_board \
-  --port my_board=<serial-port>
-```
-
-When available, Stage 0 now tries vendor-assisted UART auto-detect first:
-
-- Nordic J-Link boards: `nrfjprog --com`
-- ST-LINK boards: `STM32_Programmer_CLI -l`
-
-If ambiguity remains in an interactive terminal, the script prompts you to pick
-one of the candidate ports. In non-interactive runs, it fails with an explicit
-`--port BOARD_ID=PORT` rerun hint.
-
-If you want flash plus UART validation:
-
-```bash
-uv run python stage0_check.py \
-  --board-id my_board \
-  --reference-firmware my_board=path/to/firmware.elf \
-  --expect my_board="boot ok"
-```
-
-If the board needs a destructive recover test:
-
-```bash
-uv run python stage0_check.py \
-  --board-id my_board \
-  --recover-test my_board
-```
-
-For the tracked Nordic board on this repo, the concrete PowerShell command is:
-
-```powershell
-uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
-```
-
-If the board passes only after recover and then fails again after a power cycle,
-the target firmware may be re-enabling APPROTECT on boot. In that case, rerun:
-
-```powershell
-uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
-```
-
-## 6. What The Script Checks
+## 8. What Stage 0 Automates Vs. Leaves Manual
 
 Automated:
 
@@ -239,13 +213,6 @@ Automated:
 - optional UART output capture
 - optional recover validation for supported families
 
-Current `recover_mode` values:
-
-- `nrf_pyocd_unlock` - use pyOCD's built-in Nordic unlock path, then fall back
-  to pyOCD mass erase if needed
-- `manual_only` - record that recover validation is required, but do not try to
-  automate it in Stage 0 yet
-
 Still manual:
 
 - confirm the probe and COM port come from the same physical USB connection
@@ -255,25 +222,51 @@ Still manual:
 - confirm destructive recover behavior is acceptable before using
   `--recover-test`
 
-## 7. Typical Failure Cases
+Current `recover_mode` values:
 
-- `pyOCD not found`: run `uv sync`
-- `pyserial not found`: run `uv sync`
-- target missing: run with `--install-packs` or install the pack manually
-- wrong nearby board attached: add or fix the board config's silicon-id fields
-- probe not found: fix the OS and probe-driver path first
-- COM port ambiguous: respond to the prompt in an interactive run or rerun with
-  `--port BOARD_ID=...`
-- nRF silicon identity fails after a power cycle with APPROTECT symptoms: rerun
-  `uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk`,
-  then rerun the normal board check. If this repeats every power cycle, the
-  currently flashed firmware is likely re-locking the chip.
-- wrong target: fix `pyocd_target` in the board config
+- `nrf_pyocd_unlock`
+- `manual_only`
+
+## 9. Common Workflow Failures
+
+- `pyOCD not found` or `pyserial not found`
+  Fix the repo environment with `uv sync`, then rerun `host_bootstrap.py` or
+  `stage0_check.py`.
+- missing target pack
+  Rerun with pack installation enabled.
+- wrong nearby board attached
+  Add or fix the board config's silicon-identity fields.
+- probe not found
+  Go back to `setup_host` or `host_bootstrap.py`; do not guess inside Stage 0.
+- COM port ambiguous
+  Respond to the interactive prompt or rerun with `--port BOARD_ID=...`.
+- nRF board fails identity or connection after a power cycle with APPROTECT
+  symptoms
+  Rerun:
+
+```powershell
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
+```
+
+If this repeats every power cycle, the currently flashed firmware is likely
+re-locking the chip.
+
+## 10. Linked Script Docs
+
+- Host setup automation: [setup_host.md](./setup_host.md)
+- Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
+- Board-level Stage 0 validation: [stage0_check.md](./stage0_check.md)
+- MCP server runtime: [pyocd_debug_mcp.md](./pyocd_debug_mcp.md)
 
 ## Verification Status
 
-- Non-hardware verification: this doc matches the current `stage0_check.py`
-  CLI shape, `recover_mode` dispatch, and vendor-assisted serial-selection
-  behavior.
-- Pending hardware verification: flashing, UART capture, and recover flows still
-  need to be run on real boards.
+Verified:
+
+- non-hardware verification: this operator guide's sequence, branch points, and
+  handoffs match the current `setup_host`, `host_bootstrap.py`, and
+  `stage0_check.py` roles
+
+Pending verification:
+
+- flashing, UART capture, and recover flows still need to be run on real boards

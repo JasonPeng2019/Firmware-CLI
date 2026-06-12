@@ -51,8 +51,8 @@ If any trigger fires and you do not sync, you have created drift — the exact f
 Per the Consistency Playbook's authority order — update at the RIGHT level, don't scatter:
 
 - **A changed/!new architectural decision, stage, tool, board, layout, or schema → update
-  `build_plan_concrete` ITSELF.** It is the source of truth; the change lives there, not in a side note.
-- **A how-we-write-code rule → update `agent_coding_guidelines`.**
+  `markdowns/firmware_agent_build_plan_concrete (10).md` ITSELF.** It is the source of truth; the change lives there, not in a side note.
+- **A how-we-write-code rule → update `superpowers/agent_coding_playbook.md`.**
 - **A setup/portability change → update the relevant playbook.**
 - **NEVER record a decision only in a separate roadmap/side doc that then silently overrides the plan.**
   That recreates the original fragmentation. Decisions amend the source of truth in place.

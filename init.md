@@ -1,66 +1,27 @@
 # Environment Bootstrap
 
-This document is the detailed setup guide for the Phase A repo standard.
+This is the operator-facing bootstrap guide for getting a fresh machine to the
+point where the repo scripts can mostly self-pilot.
 
 The root [README.md](./README.md) is the canonical layout and naming reference.
-This file goes deeper on environment bootstrap, local overrides, and the main
-developer command surface.
+This file goes deeper on first-run setup, local overrides, and the command
+sequence that gets you from a raw machine to Stage 0 and the MCP server.
 
 ## Prerequisites
 
-- **[uv](https://docs.astral.sh/uv/)** — the canonical environment manager for
-  this repo
-- **A debug probe** — CMSIS-DAP, ST-Link, J-Link, or equivalent, attached to a
-  supported Cortex-M target
-- **Platform USB support for the probe** — libusb, vendor drivers, or vendor
-  tooling as needed by the probe family
+- `uv` as the canonical environment manager for this repo
+- a supported debug probe and target board
+- host USB support for the probe family in use
 
 The team-standard interpreter is pinned in `.python-version` as `3.12`.
-`pyproject.toml` still declares the broader package floor, but development and
-validation should use the pinned Phase A environment.
 
 ## Raw Machine Setup
 
 If this is a fresh machine, do these steps first.
 
-On Windows, the preferred unattended entry point is:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
-```
-
-That script can install Python and `uv`, run `uv sync --locked`, repair common
-vendor-tool `PATH` issues, and automate Nordic `nrfjprog` setup for J-Link
-boards.
-
-If `nrfjprog` needs admin elevation and the script cannot complete that step on
-the host, do this one-time manual Windows fallback:
-
-```powershell
-winget install --id NordicSemiconductor.JLink --exact --accept-package-agreements --accept-source-agreements --silent
-Invoke-WebRequest -UseBasicParsing "https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/desktop-software/nrf-command-line-tools/sw/versions-10-x-x/10-24-2/nrf-command-line-tools-10.24.2-x64.exe" -OutFile "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
-Start-Process -Verb RunAs -FilePath "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
-```
-
-Then reopen the terminal and re-run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
-```
-
-On macOS, the preferred entry point is:
-
-```bash
-bash ./setup_host.sh --board-id nrf52840dk
-```
-
-That script can install `uv`, `libusb`, and the Nordic Homebrew casks used for
-`nrfjprog`. For ST-LINK boards, a one-time manual STM32CubeProgrammer install
-may still be required before the agent is fully self-piloting.
-
 ### 1. Install `uv`
 
-Windows (PowerShell):
+Windows PowerShell:
 
 ```powershell
 pip install uv
@@ -72,81 +33,122 @@ macOS:
 brew install uv
 ```
 
-Then open a new shell so `uv` is on `PATH`.
+Open a new shell after install so `uv` is on `PATH`.
 
-If `uv` is not installed yet, nothing else in this repo will work.
+### 2. Use the setup script for your OS
 
-### 2. Do not create a venv manually
+Windows PowerShell:
 
-You do not need to run `python -m venv ...` and you do not need to activate a
-virtual environment yourself.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+macOS:
+
+```bash
+bash ./setup_host.sh --board-id nrf52840dk
+```
+
+These scripts can:
+
+- repair or install the canonical repo environment
+- install or repair vendor helper tooling where automation exists
+- run `host_bootstrap.py --install-packs`
+
+If the selected board needs Nordic `nrfjprog` and the Windows script cannot
+complete that installer because the host requires admin approval, do the
+one-time manual Windows fallback:
+
+```powershell
+winget install --id NordicSemiconductor.JLink --exact --accept-package-agreements --accept-source-agreements --silent
+Invoke-WebRequest -UseBasicParsing "https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/desktop-software/nrf-command-line-tools/sw/versions-10-x-x/10-24-2/nrf-command-line-tools-10.24.2-x64.exe" -OutFile "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
+Start-Process -Verb RunAs -FilePath "$env:TEMP\nrf-command-line-tools-10.24.2-x64.exe"
+```
+
+Then reopen the terminal and rerun:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+```
+
+### 3. Do not create or activate a venv manually
+
+You do not need to run `python -m venv ...`, activate `.venv`, or deactivate it
+later for repo commands.
 
 This repo uses `uv` as the canonical environment manager. The first `uv sync`
 creates `.venv/` automatically and installs the locked dependency set.
-
-### 3. Bootstrap the repo environment
-
-From the repo root:
-
-```bash
-uv sync
-```
-
-After that, use `uv run ...` for repo commands.
-
-## Native Probe Dependencies
-
-If probe enumeration fails, install the missing host-level dependency first.
-
-- **macOS:** `brew install libusb`
-- **Debian / Ubuntu:** `sudo apt install libusb-1.0-0`
-- **Windows:** install the probe’s required USB driver path or vendor tooling
-
-Linux users may also need pyOCD’s udev rules from the upstream pyOCD repo.
 
 ## Canonical Bootstrap Flow
 
 Run all commands from the repo root.
 
-### macOS / Linux
+### Shared command sequence
 
 ```bash
 uv sync
 uv run pyocd list
 uv run python host_bootstrap.py
+uv run python stage0_check.py --board-id nrf52840dk
 uv run pyocd-debug-mcp
 ```
 
-### Windows (PowerShell)
+Windows PowerShell uses the same `uv run ...` commands from the repo root.
+
+### What each step does
+
+- `uv sync`
+  Creates `.venv/` and installs the locked dependency set.
+- `uv run pyocd list`
+  Quick probe-enumeration smoke test.
+- `uv run python host_bootstrap.py`
+  Host readiness check for dependencies, probe visibility, serial visibility,
+  board configs, and target packs.
+- `uv run python stage0_check.py --board-id <board>`
+  Board-level Stage 0 validation.
+- `uv run pyocd-debug-mcp`
+  Starts the MCP server after Stage 0 is acceptable.
+
+## Native Probe Dependencies
+
+If probe enumeration fails, install or repair the host-level dependency first.
+
+- macOS: `brew install libusb`
+- Debian / Ubuntu: `sudo apt install libusb-1.0-0`
+- Windows: install the probe's required USB driver path or vendor tooling
+
+Linux users may also need pyOCD's udev rules from the upstream pyOCD repo.
+
+## Stage 0 Commands By OS
+
+macOS / Linux:
+
+```bash
+uv run python stage0_check.py
+uv run python stage0_check.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=/dev/tty.usbmodemXXXX
+uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
+```
+
+Windows PowerShell:
 
 ```powershell
-uv sync
-uv run pyocd list
-uv run python host_bootstrap.py
-uv run pyocd-debug-mcp
+uv run python stage0_check.py
+uv run python stage0_check.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=COM8
+uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
 ```
 
-Notes:
+When UART auto-detect is supported, `stage0_check.py` tries:
 
-- `uv sync` creates `.venv/`, installs runtime and dev dependencies, and honors
-  the committed `uv.lock`.
-- `uv sync` is the step that creates the repo venv; there is no separate
-  manual venv creation step.
-- Use `uv sync --no-dev` if you intentionally want a runtime-only install.
-- Use `uv run ...` for repo commands so they always run inside the pinned env.
-- `host_bootstrap.py` and `stage0_check.py` default to all non-example tracked
-  boards. For first-time bring-up on one physical bench, prefer
-  `--board-id <board>`.
-- `stage0_check.py` now tries vendor-assisted UART auto-detect where supported:
-  `nrfjprog --com` for Nordic J-Link boards and
-  `STM32_Programmer_CLI -l` for ST-LINK boards.
-- If UART auto-detect remains ambiguous, the script prompts in an interactive
-  terminal. In non-interactive runs, re-run with `--port BOARD_ID=PORT`.
-- The MCP Inspector entrypoint is:
+- `nrfjprog --com` for Nordic J-Link boards
+- `STM32_Programmer_CLI -l` for ST-LINK boards
 
-```bash
-uv run mcp dev src/pyocd_debug_mcp/server.py
-```
+If that still leaves the port ambiguous, interactive runs prompt you to pick a
+port. Non-interactive runs fail with an explicit `--port BOARD_ID=PORT` rerun
+hint.
 
 ## Local Override Policy
 
@@ -154,14 +156,14 @@ Machine-local values must not be committed as tracked repo state.
 
 Use these override layers:
 
-- **`.env`** — optional, gitignored, auto-loaded by the MCP server and the
-  Phase A host scripts. Use it for:
-  - `PYOCD_PROBE_UID`
-  - `PYOCD_TARGET`
-- **`pyocd.local.yaml`** — optional, gitignored, for per-developer pyOCD
-  tweaks once needed
-- **`pyocd.yaml`** — optional and committed only when the team has a real
-  shared pyOCD option to standardize
+- `.env`
+  Optional, gitignored, auto-loaded by the MCP server and the Phase A host
+  scripts. Use it for `PYOCD_PROBE_UID` and `PYOCD_TARGET`.
+- `pyocd.local.yaml`
+  Optional, gitignored, for per-developer pyOCD tweaks once needed.
+- `pyocd.yaml`
+  Optional and committed only when the team has a real shared pyOCD option to
+  standardize.
 
 Tracked board YAML remains hardware-focused and must not store user paths,
 build commands, or artifact output locations.
@@ -183,33 +185,24 @@ uv run ruff format .
 uv run mypy src
 ```
 
-## Stage 0 Commands By OS
-
-macOS / Linux:
-
-```bash
-uv run python stage0_check.py
-uv run python stage0_check.py --board-id nrf52840dk
-```
-
-Windows (PowerShell):
-
-```powershell
-uv run python stage0_check.py
-uv run python stage0_check.py --board-id nrf52840dk
-```
-
-Common follow-up examples on either OS:
-
-```bash
-uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=COM8
-uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
-```
-
 ## Related Docs
 
 - Repo layout and naming: [README.md](./README.md)
+- Host setup script doc: [setup_host.md](./setup_host.md)
 - Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
-- Stage 0 validation flow: [stage0_setup.md](./stage0_setup.md)
+- Stage 0 check script doc: [stage0_check.md](./stage0_check.md)
+- Stage 0 operator guide: [stage0_setup.md](./stage0_setup.md)
+- MCP server script doc: [pyocd_debug_mcp.md](./pyocd_debug_mcp.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
+
+## Verification Status
+
+Verified:
+
+- non-hardware verification: this document's command sequence and related-doc
+  links match the current repo layout and root scripts
+
+Pending verification:
+
+- first-run bootstrap behavior on a truly fresh Windows host
+- first-run bootstrap behavior on a truly fresh macOS host

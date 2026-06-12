@@ -5,7 +5,8 @@
 `src/pyocd_debug_mcp/`.
 
 This `README.md` is the canonical Phase A source for repo layout and naming
-rules. More detailed setup and workflow notes live in the linked docs below.
+rules. Detailed bootstrap steps live in [init.md](./init.md). Exact runnable
+script behavior lives in the script docs linked below.
 
 ## What Phase A Delivers
 
@@ -26,47 +27,52 @@ Today that means:
 
 ```text
 Firmware-CLI/
-├── .python-version
-├── pyproject.toml
-├── uv.lock
-├── README.md
-├── init.md
-├── host_bootstrap.py
-├── host_bootstrap.md
-├── stage0_check.py
-├── stage0_setup.md
-├── boards/
-│   ├── nrf52840dk.yaml
-│   └── nucleo_l476rg.yaml
-├── firmware/
-│   ├── README.md
-│   ├── nrf52840dk/
-│   │   ├── reference/src/
-│   │   ├── reference/build/
-│   │   ├── recovery/
-│   │   └── bugs/
-│   └── nucleo_l476rg/
-│       ├── reference/src/
-│       ├── reference/build/
-│       ├── recovery/
-│       └── bugs/
-├── runs/
-│   └── README.md
-├── tests/
-│   ├── README.md
-│   ├── fixtures/
-│   ├── cases/
-│   └── harness/
-├── src/
-│   └── pyocd_debug_mcp/
-│       ├── __init__.py
-│       ├── local_env.py
-│       └── server.py
-└── markdowns/
-    ├── ROADMAP.md
-    ├── firmware_agent_build_plan_concrete (10).md
-    ├── firmware_agent_mcp_architecture.md
-    └── build_plan_spec_gaps.md
+|-- .python-version
+|-- pyproject.toml
+|-- uv.lock
+|-- README.md
+|-- init.md
+|-- setup_host.ps1
+|-- setup_host.sh
+|-- setup_host.md
+|-- host_bootstrap.py
+|-- host_bootstrap.md
+|-- stage0_check.py
+|-- stage0_check.md
+|-- stage0_setup.md
+|-- pyocd_debug_mcp.md
+|-- boards/
+|   |-- nrf52840dk.yaml
+|   `-- nucleo_l476rg.yaml
+|-- firmware/
+|   |-- README.md
+|   |-- nrf52840dk/
+|   |   |-- reference/src/
+|   |   |-- reference/build/
+|   |   |-- recovery/
+|   |   `-- bugs/
+|   `-- nucleo_l476rg/
+|       |-- reference/src/
+|       |-- reference/build/
+|       |-- recovery/
+|       `-- bugs/
+|-- runs/
+|   `-- README.md
+|-- tests/
+|   |-- README.md
+|   |-- fixtures/
+|   |-- cases/
+|   `-- harness/
+|-- src/
+|   `-- pyocd_debug_mcp/
+|       |-- __init__.py
+|       |-- local_env.py
+|       `-- server.py
+`-- markdowns/
+    |-- ROADMAP.md
+    |-- firmware_agent_build_plan_concrete (10).md
+    |-- firmware_agent_mcp_architecture.md
+    `-- build_plan_spec_gaps.md
 ```
 
 ## Naming Rules
@@ -146,18 +152,11 @@ On Windows, the preferred unattended host bootstrap entry point is:
 powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 ```
 
-That script can install Python/`uv` if needed, sync the repo, repair vendor
-tool `PATH`s, and automate the Nordic `nrfjprog` path for J-Link boards.
-
 On macOS, the preferred host bootstrap entry point is:
 
 ```bash
 bash ./setup_host.sh --board-id nrf52840dk
 ```
-
-That script can install `uv`, `libusb`, and the Nordic Homebrew casks needed
-for `nrfjprog`. ST-LINK boards may still require a one-time manual
-STM32CubeProgrammer install before the agent can fully self-pilot.
 
 Run host bootstrap for all tracked boards:
 
@@ -171,15 +170,14 @@ Run Stage 0 validation for all tracked boards:
 uv run python stage0_check.py
 ```
 
-On Windows PowerShell, run the same command from the repo root:
+Windows PowerShell:
 
 ```powershell
 uv run python stage0_check.py
 ```
 
-If Stage 0 cannot auto-resolve the UART endpoint, it now prompts in an
-interactive terminal. In non-interactive runs, re-run with
-`--port BOARD_ID=PORT`.
+If Stage 0 cannot auto-resolve the UART endpoint, it prompts in an interactive
+terminal. In non-interactive runs, rerun with `--port BOARD_ID=PORT`.
 
 Run host bootstrap and Stage 0 for one board on your bench:
 
@@ -221,11 +219,26 @@ uv run pyocd-debug-mcp
 ## Docs
 
 - Setup and bootstrap: [init.md](./init.md)
+- Host setup script doc: [setup_host.md](./setup_host.md)
 - Host readiness checks: [host_bootstrap.md](./host_bootstrap.md)
-- Stage 0 validation flow: [stage0_setup.md](./stage0_setup.md)
+- Stage 0 check script doc: [stage0_check.md](./stage0_check.md)
+- Stage 0 operator guide: [stage0_setup.md](./stage0_setup.md)
+- MCP server script doc: [pyocd_debug_mcp.md](./pyocd_debug_mcp.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
 Until later roadmap items intentionally revise it, this `README.md` is the
 canonical repo-layout and naming reference for Phase A.
+
+## Verification Status
+
+Verified:
+
+- non-hardware verification: this document's tree, command surface, and doc
+  links match the current root-level scripts and docs
+
+Pending verification:
+
+- hardware-backed confirmation that the documented bring-up flow is sufficient
+  on all supported board families
