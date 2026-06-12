@@ -512,7 +512,7 @@ This item defines the rules that every developer machine must follow.
 - a short developer protocol document
 - a pinned dependency file
 - a standard local environment bootstrap command sequence
-- a local config convention such as `.firmware-agent.local.yaml`
+- a local override convention such as `.env` plus optional `pyocd.local.yaml`
 
 ### Questions this item must answer
 
@@ -544,7 +544,7 @@ This item creates the initial project structure and makes the repo legible.
 
 ### Included work
 
-- create `src/firmware_agent/`
+- create `src/pyocd_debug_mcp/`
 - create `boards/`
 - create `firmware/`
 - create `runs/`
@@ -636,7 +636,8 @@ This is the manual validation package for the nRF board and its harder operation
 ### Included work
 
 - verify J-Link visibility through pyOCD
-- choose and document the actual J-Link route used in development
+- document the J-Link route (DECIDED: native SEGGER J-Link path is the default; CMSIS-DAP is the
+  fallback — the onboard J-Link OB does not expose CMSIS-DAP unless explicitly switched into it)
 - verify the correct target name
 - verify connection and simple memory access
 - identify the correct UART endpoint
@@ -647,13 +648,14 @@ This is the manual validation package for the nRF board and its harder operation
 ### Concrete outputs
 
 - validated `pyocd_target` for the nRF board
-- documented J-Link path decision
+- documented J-Link path decision (native SEGGER default, CMSIS-DAP fallback)
 - known-good serial enumeration behavior for the nRF board
 - documented recover/unlock checklist and observed behavior
 
 ### Questions this item must answer
 
-- What exact pyOCD path is used for J-Link on the team bench?
+- What exact pyOCD path is used for J-Link on the team bench? (ANSWERED: native SEGGER J-Link path by
+  default, CMSIS-DAP as fallback)
 - Does the onboard J-Link behave consistently on the chosen hosts?
 - What does a real unlock/recover cycle look like on this board?
 - What evidence distinguishes a locked board from a dead connection?
@@ -683,6 +685,8 @@ This item makes "known-good firmware" concrete and shareable.
 - ensure debug-symbol-bearing artifacts exist
 - define where recovery artifacts live
 - define the initial expected UART behavior of the reference image
+- keep tracked board YAML hardware-focused while the reference firmware path is
+  still supplied to Stage 0 as a runtime argument
 
 ### Concrete outputs
 
@@ -690,6 +694,8 @@ This item makes "known-good firmware" concrete and shareable.
 - one repeatable build path per board
 - canonical ELF and flashable artifact locations
 - initial UART expectations documented
+- a documented runtime handoff from Stage 0 to the selected reference artifact,
+  without moving artifact paths into tracked board YAML
 
 ### Questions this item must answer
 
@@ -698,6 +704,8 @@ This item makes "known-good firmware" concrete and shareable.
 - Which artifact is flashed?
 - Which artifact is used for symbol resolution?
 - What is the recovery image and where does it live?
+- How does Stage 0 receive the chosen reference artifact without turning
+  artifact paths into tracked board-config fields?
 
 ### Definition of done
 
@@ -707,6 +715,7 @@ This item makes "known-good firmware" concrete and shareable.
 
 - bug variants beyond the baseline setup
 - agent evaluation yet
+- storing reference firmware paths in tracked board YAML
 
 ---
 
@@ -730,7 +739,8 @@ This item defines how the project represents board facts and how local machine a
 
 - board YAML files for both boards
 - one config loader module
-- one local override format and example
+- one local override convention such as `.env` plus optional
+  `pyocd.local.yaml`, with documented precedence
 
 ### Questions this item must answer
 
@@ -762,7 +772,8 @@ This item creates the serial/UART code and its behavior contract.
 - define buffering and newline handling
 - define reopen behavior after reset/reflash
 - define error handling for disappearing ports
-- implement serial-port discovery and selection using config plus local overrides
+- implement serial-port discovery and selection using config, vendor-assisted
+  helpers where proven, and local overrides
 - validate behavior on both macOS and Windows
 
 ### Concrete outputs
@@ -779,6 +790,7 @@ This item creates the serial/UART code and its behavior contract.
 - What happens to partial lines?
 - What happens if the board disconnects and re-enumerates?
 - How do we pick the correct port on a machine with many ports?
+- When should the runtime prompt for human port selection instead of guessing?
 
 ### Definition of done
 

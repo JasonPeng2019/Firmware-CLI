@@ -24,6 +24,10 @@ from pyocd.core.helpers import ConnectHelper
 from pyocd.core.session import Session
 from pyocd.core.target import Target
 
+from pyocd_debug_mcp.local_env import load_local_env
+
+load_local_env()
+
 mcp = FastMCP("pyocd-debug")
 
 # pyOCD is not thread-safe: serialize all probe access.
