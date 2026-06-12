@@ -65,6 +65,21 @@ From the repo root:
 
 ```bash
 uv sync
+uv run pyocd list
+uv run python host_bootstrap.py
+uv run pyocd-debug-mcp
+```
+
+- `uv run pyocd list` proves pyOCD can see at least one probe.
+- `uv run pyocd list` also shows the probe UID you may later want in `.env` as
+  `PYOCD_PROBE_UID`.
+- `uv run python host_bootstrap.py` checks host readiness only.
+- `uv run pyocd-debug-mcp` starts the MCP stdio server that MCP clients connect
+  to.
+- MCP Inspector entrypoint:
+
+```bash
+uv run mcp dev src/pyocd_debug_mcp/server.py
 ```
 
 After that, use `uv run ...` for repo commands.
@@ -120,7 +135,59 @@ Notes:
 - The MCP Inspector entrypoint is:
 
 ```bash
-uv run mcp dev src/pyocd_debug_mcp/server.py
+uv run python host_bootstrap.py --board-id my_board
+```
+
+What `host_bootstrap.py` checks:
+
+- Python dependencies
+- pyOCD CLI visibility
+- probe enumeration
+- serial-port enumeration
+- board-config loading
+- pyOCD target-pack availability
+
+If the target pack is missing:
+
+```bash
+uv run python host_bootstrap.py --install-packs --board-id my_board
+```
+
+or:
+
+```bash
+uv run pyocd pack install <pack_name>
+```
+
+Board-level Stage 0 validation:
+
+- If the file is outside `boards/`:
+
+```bash
+uv run python stage0_check.py \
+  --board-config path/to/my_board.yaml \
+  --board-id my_board
+```
+
+- If the file is already tracked in `boards/`:
+
+```bash
+uv run python stage0_check.py --board-id my_board
+```
+
+- This is the minimum correct one-board Stage 0 bring-up path.
+- Do not use the bare no-argument `stage0_check.py` command unless you really
+  intend to validate every tracked non-example board.
+
+## Flash, UART, And Recover Validation
+
+Base flash + UART validation:
+
+```bash
+uv run python stage0_check.py \
+  --board-id my_board \
+  --reference-firmware my_board=path/to/firmware.elf \
+  --expect my_board="boot ok"
 ```
 
 ## Local Override Policy
