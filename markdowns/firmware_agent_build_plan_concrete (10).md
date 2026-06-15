@@ -400,6 +400,75 @@ Windows; `.env.example` exists; `pyocd.local.yaml` is the gitignored per-develop
 committed `pyocd.yaml` exists only if the team has real shared pyOCD options to standardize; `uv run
 pyocd list` sees each board's probe.
 
+## Future Fix: after Step 1.0d is completed, since its not relevant to the ROADMAP or TO DO after it has been fixed, should be replaced with something that describes how the codebase has been formatted / what has been done, not what NEEDS to be done. In particular, the ROAMAP and the build_plan should detail how the codebase is now setup (server + script is a thin wrapper, another file contains the actual tools), and should detail what should be done, and how it should be formatted in the future; the future steps in ROADMAP and build_plan should also be edited to follow the codebase structure & mechanistic operations of how this step specifies it.
+
+### Step 1.0d — Validate the pyOCD Python-API path and stand up the shared service layer (do FIRST, before any adapter)
+**Why this is the first code step in Stage 1 (current-state reality, not a hypothetical).** The
+repo already has TWO independent pyOCD callers, and together they are exactly the duplication
+Step 1.0 was written to prevent:
+- `stage0_check.py` drives pyOCD by **subprocess** (`pyocd cmd -c "read32 …"`, `pyocd load`,
+  `pyocd erase --mass`) and scrapes stdout with regex. This is the **only** target-control
+  path validated on real hardware to date.
+- `src/pyocd_debug_mcp/server.py` drives pyOCD via the **Python API** (`ConnectHelper`,
+  `session.target.read_memory`). This path is **NOT yet validated on hardware.**
+
+Neither calls the other; the J-Link `jlink.non_interactive=false` workaround lives only in the
+subprocess path; the shared service layer the rest of the plan assumes (Step 1.0, `adapters/` +
+`services/`) does not exist yet. **This gates every adapter step below:** Step 1.2's SWD
+interface cannot be built on a pyOCD access path that hasn't been proven, and Steps 1.1, 1.2,
+and 1.3 must all be written *as services in the layer this step stands up*, not as logic inside
+a frontend. Doing this after the adapters would mean writing a third parallel implementation and
+then unwinding it.
+
+**The discipline — ordered, do NOT reorder:**
+
+1. **Prove the API path at the smallest surface (de-risk first).** Before writing any
+   adapter/service, reproduce stage0's proven target-control operations through the pyOCD
+   **Python API** in a throwaway script — `connect → read silicon-ID` first, then the riskier
+   `flash` and `recover`. Oracle every result against what the subprocess path already
+   returns (stage0 is the reference of record). Do the **STM32 (ST-Link) first**: it has no
+   J-Link open quirk, so a failure points at the API approach itself rather than the probe
+   wrinkle. Carry the known workaround across — the API path must set pyOCD option
+   `jlink.non_interactive=false` (mirroring `stage0_check.py:pyocd_base`) or open-by-serial
+   fails on the nRF.
+2. **Fix before migrate — never migrate red code.** If the API calls are wrong, fix them at
+   the smallest reproduction and get them green on the bench FIRST. Fixing the calls
+   `server.py` *already has* (connect/read) in place is fine when the bug is trivial; drop to
+   the throwaway script when it is not, so you are not debugging through FastMCP + the lock +
+   stdio. Migration is a behavior-preserving refactor — it needs passing behavior to preserve,
+   so there must be nothing red crossing into the new layer.
+3. **Stand up the service layer and write the proven calls into it — not into a frontend.**
+   Create the `src/pyocd_debug_mcp/adapters/` + `services/` layout (the Step 1.0 layout, which
+   does not exist yet) and land the corrected operations there. Hand-test each service in a
+   REPL/small harness, oracle'd against the subprocess output. Do NOT grow `server.py` to full
+   capability and then relocate it — that writes the logic twice. (Distinction that resolves the
+   apparent fix-here-vs-there conflict: the calls `server.py` *already has* may be fixed in
+   place before extraction; the operations it does *not* have yet — `flash`, `recover`,
+   `read_serial` — are written straight into services, never built into `server.py` first.)
+4. **Thin the wrappers onto the services (this swap IS the migration).** `server.py`'s tools
+   become thin calls into the services, gaining the operations it lacks (`flash_firmware`,
+   `read_serial`, `unlock_recover`); `stage0_check.py`'s target-control calls swap from
+   subprocess to the same services. When done, the J-Link workaround exists in exactly one place.
+
+**Ordering note:** steps 1-3 (prove the API, create the layout, adopt the wrapper discipline)
+happen up front and gate the adapter work — that is why this is Step 1.0d and not a later step.
+Step 4 (thinning `server.py` and `stage0_check.py`) completes *incrementally as each service
+lands* through Steps 1.1-1.3 and the Stage 1 close; it is stated here so the discipline is owned
+from the first keystroke, not deferred. UART (Step 1.1) does not touch the pyOCD API and can be
+built in parallel with steps 1-2, but it still lands in the service layer this step creates.
+
+**Scope — only target-control operations are in scope for the API de-risk.** Probe enumeration
+(`pyocd list`), serial discovery (pyserial), and CMSIS-Pack checks do not touch the pyOCD
+target API and stay as they are. The operations to validate-then-extract are exactly:
+`connect`, `read_memory`/silicon-ID, `flash`, `recover` (unlock/mass-erase),
+`halt`/`reset`/`resume`.
+
+**Exit:** the `adapters/`/`services/` layout exists; the in-scope pyOCD target-control
+primitives are proven on hardware **through the Python API** (not just subprocess) and live in
+services; the wrapper-discipline is adopted so Steps 1.1-1.3 write into the service layer; the
+thinning of `server.py`/`stage0_check.py` is underway. This is the precondition for Step 1.2's
+SWD interface and for all of Stage 2.
+
 ### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
 - **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both
   boards — UART is the same; only the COM port differs.

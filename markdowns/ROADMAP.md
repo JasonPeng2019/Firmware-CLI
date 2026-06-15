@@ -72,6 +72,14 @@ What this means:
   proven there is reused by the MCP tools, never rebuilt. The structural reason
   a capability can surface as a shell command today and an MCP tool later with
   no duplicated logic: same service underneath, different wrapper on top.
+- **Current-state caveat (this constraint is not yet satisfied).** The shared service does not
+  exist yet. Today `stage0_check.py` drives pyOCD by subprocess (the only hardware-validated path)
+  and `server.py` drives it via the pyOCD Python API (unvalidated) — two parallel implementations,
+  exactly what the bullet above forbids. Closing this gap is concrete early work, not just a
+  principle: prove the API path on the bench, stand up `adapters/`/`services/`, and thin both
+  callers onto it. It is scheduled as the front of Stage 1 code work (build-plan Step 1.0d, ROADMAP
+  `R7` "Current-state reconciliation") and pulled forward as a Phase-B preparation task because the
+  de-risk is cheap and only needs Stage-0 hardware truth.
 - Documentation follows the same split (see the Doc-Sync and Tool-Description
   playbooks): an MCP tool's contract lives in its **docstring** — the
   description the client reads over the protocol, never a sidecar `.md`; the
@@ -562,6 +570,12 @@ This item creates the initial project structure and makes the repo legible.
 ### Included work
 
 - create `src/pyocd_debug_mcp/`
+- **create the internal package layout — `adapters/`, `services/`, `tools/`, `guardrails/`,
+  `server/`, `brain/`.** These are part of the canonical layout but do NOT exist in the repo yet;
+  today `src/pyocd_debug_mcp/` holds flat modules plus a `server.py`. The `adapters/` + `services/`
+  split is the spine the whole architecture wraps (see Cross-Cutting Constraint §1), so standing it
+  up is an `R1` concern, and creating those two dirs is the first keystroke of the service-layer
+  work proven in `R7` (the API-validation gate, build-plan Step 1.0d).
 - create `boards/`
 - create `firmware/`
 - create `runs/`
@@ -863,11 +877,42 @@ This item creates the abstract hardware control API and its pyOCD implementation
   V9.50, reconfirm on version changes
 - keep the interface board-agnostic even if the backend has board quirks
 
+### Current-state reconciliation (do this before adapter coding)
+
+The repo today has TWO independent pyOCD callers, which is the duplication this item must
+collapse, not extend:
+
+- `stage0_check.py` drives pyOCD by **subprocess** (`pyocd cmd`, `pyocd load`,
+  `pyocd erase --mass`) and is the **only** target-control path validated on real hardware.
+- `src/pyocd_debug_mcp/server.py` drives pyOCD via the **Python API** and is **not yet
+  validated on hardware**.
+
+The ordered work that turns this into one validated service layer (full detail in build-plan
+Step 1.0d):
+
+1. **Prove the Python-API path on hardware first (de-risk).** Reproduce stage0's proven
+   target-control ops through the pyOCD API in a throwaway script — connect → read silicon-ID,
+   then flash and recover — oracle'd against the subprocess output. STM32 first (no J-Link open
+   quirk); carry the `jlink.non_interactive=false` workaround onto the API path for the nRF.
+2. **Fix before migrate — never migrate red code.** Fix the calls `server.py` already has
+   (connect/read) in place when trivial, in the script when not; get green on the bench first.
+3. **Write the proven calls directly as services** in `adapters/` + `services/` (the Step 1.0
+   layout, created here), hand-tested per-operation. Do not build new ops into `server.py` and
+   relocate them — write `flash`/`recover`/`read_serial` straight into services.
+4. **Thin both wrappers onto the services (the migration).** `server.py` tools and
+   `stage0_check.py` target-control calls become thin callers; the J-Link workaround ends up in
+   exactly one place. Incremental and per-operation, not a single phase after parity.
+
+Scope: only target-control ops (`connect`, `read_memory`/silicon-ID, `flash`, `recover`,
+`halt`/`reset`/`resume`) need this. Probe enumeration, serial discovery, and pack checks stay.
+
 ### Concrete outputs
 
 - abstract SWD interface module
 - pyOCD backend module
 - per-board backend configuration through board data, not branches
+- a throwaway API-validation reproduction (oracle'd against the subprocess path), then deleted
+- `stage0_check.py` and `server.py` reduced to thin wrappers over the shared services
 
 ### Questions this item must answer
 
@@ -943,6 +988,12 @@ This item turns the direct adapters into an agent-consumable protocol surface.
 - define exact server startup shape
 - wire the adapters into a FastMCP server
 - make MCP handlers thin wrappers over shared board-control operations
+- **thin the existing `server.py` spike onto the R7 services, do not extend it in place.**
+  `server.py` already exists as a working FastMCP server built directly on the pyOCD Python API,
+  ahead of the R6-R8 substrate. Its tools (connect/halt/resume/step/reset/read*/breakpoints) are
+  rewired to call the shared services, and the operations it lacks (`flash_firmware`,
+  `read_serial`, `unlock_recover`) are added as thin wrappers over services written in R7/R8 —
+  never reimplemented in the handler.
 - choose the tool/resource split
 - define response schema conventions
 - define board-selection/config flow
@@ -1324,20 +1375,44 @@ Prove the boards and toolchains are real.
 - `Person 1`: `R2` STM32 bring-up
 - `Person 2`: `R3` nRF bring-up
 - `Person 3`: finish the `R5` loader and local-override model using real findings as they arrive, keep improving `stage0_check.py`, and curate the reference firmware artifacts and build instructions for `R4`
+- **Pull-forward prep (whoever has slack, or a board-bring-up lead who stalls): the pyOCD
+  Python-API de-risk.** As soon as a board is up on the bench (the first half of Phase B), prove
+  the pyOCD *Python API* can do what stage0's subprocess path already does — connect → read →
+  flash → recover — via a throwaway reproduction, STM32 first, oracle'd against the subprocess
+  output (build-plan Step 1.0d). This is the "next dependency that can already be prepared": it
+  needs only Stage-0 hardware truth (which Phase B is establishing) plus the existing `server.py`,
+  and it removes the single biggest unknown blocking `R7`. If it passes, Phase C starts the SWD
+  service on known-good substrate; if it fails, the team learns it now instead of mid-`R7`.
 
 Why this works:
 
 - two people attack the biggest uncertainty directly
 - the third person converts raw bench discoveries into shared structure and tooling
 - if one board path stalls, that person can temporarily help the other bench path or refine automation
+- the API de-risk is cheap and only needs a working bench, so pulling it into Phase B means the
+  `R7` substrate question is answered before Phase C commits to the SWD interface
 
 ### Phase C: Stage 1 Substrate Split
 
 Goal:
 Build the first real code substrate.
 
-- `Person 1`: `R7` SWD interface skeleton and STM32 backend first
-- `Person 2`: `R6` UART adapter and serial discovery behavior
+**Phase-C entry gate (blocks the rest of `R7`): the pyOCD Python-API path must be proven on
+hardware before the SWD service is built.** Ideally this was already cleared as the Phase-B
+pull-forward task; if so, Phase C confirms it still holds and proceeds. If Phase B did not get to
+it, it is the first thing Phase C does, before any adapter/service is written — a throwaway
+reproduction oracle'd against `stage0_check.py`'s subprocess output (see `R7` "Current-state
+reconciliation" and build-plan Step 1.0d). Either way it is a ~half-day de-risk that decides
+whether the service layer is built on the API or needs a different approach — STM32 first.
+
+- `Person 1`: ensure the **API-validation gate is green** (run it now if Phase B didn't —
+  throwaway repro: connect → read → flash → recover through the pyOCD API, STM32 first, J-Link
+  workaround carried over; fix-before-migrate any wrong calls), THEN build the `R7` SWD interface
+  skeleton + STM32 backend as the first real
+  services in `adapters/`/`services/`
+- `Person 2`: `R6` UART adapter and serial discovery behavior, written as a service from the
+  start (lift `stage0_check.py`'s inline UART capture into the shared layer, do not leave it in
+  the script)
 - `Person 3`: finalize `R4` artifact contract and reference baseline structure, then start `R8` smoke-harness scaffolding and the symbol-resolution contract
 
 Why this works:
@@ -1345,21 +1420,32 @@ Why this works:
 - SWD, UART, and artifact or harness work can all progress in parallel
 - none of these sub-packets require all of Stage 1 to be finished before starting
 - this avoids making one person own all observability work alone
+- the API-validation gate keeps `Person 1` from pouring the SWD service onto an unproven
+  substrate; if it fails, the team learns it before the interface is committed
 
 ### Phase D: Stage 1 Close And Stage 2 Open
 
 Goal:
 Finish Stage 1 cleanly and start wrapping it in the first server surface.
 
-- `Person 1`: extend `R7` to the nRF backend and locked-target semantics
-- `Person 2`: start `R9` MCP server shell, config integration, and response-schema conventions
-- `Person 3`: complete the `R8` smoke harness, integrate symbol resolution into the harness, and harden `R6` UART behavior based on real runs
+- `Person 1`: extend `R7` to the nRF backend and locked-target semantics (this is where the
+  J-Link open quirk and APPROTECT/recover path get proven through the API, not just subprocess)
+- `Person 2`: **thin the existing `server.py` spike onto the `R7` services** rather than build a
+  greenfield shell — rewire its existing tools to call the shared services, add the missing
+  `flash_firmware`/`read_serial`/`unlock_recover` as thin wrappers, then do `R9` config
+  integration and response-schema conventions on that base
+- `Person 3`: complete the `R8` smoke harness, integrate symbol resolution into the harness,
+  harden `R6` UART behavior based on real runs, AND **migrate `stage0_check.py`'s target-control
+  calls from subprocess to the shared services** (the second half of the convergence — when done,
+  the J-Link workaround lives in exactly one place)
 
 Why this works:
 
 - once STM32 substrate behavior is real, the MCP shell can start
 - the harness work closes Stage 1 with actual evidence instead of ad hoc confidence
 - the nRF backend finishes the real both-boards requirement
+- thinning `server.py` and `stage0_check.py` onto the services in this phase is what actually
+  retires the two-parallel-implementations problem, instead of leaving it for "later"
 
 ### Phase E: Stage 3 Split Into Three Parallel Streams
 
