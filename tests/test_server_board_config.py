@@ -83,3 +83,24 @@ def test_format_board_info_minimal_board_has_no_silicon_line() -> None:
     text = server.format_board_info(board)
     assert "recover_mode: (none)" in text
     assert "silicon_id:" not in text
+
+
+def test_build_session_options_adds_jlink_workaround() -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    options = server.build_session_options(board, board.pyocd_target)
+
+    assert options == {
+        "target_override": "nrf52840",
+        "jlink.non_interactive": False,
+    }
+
+
+def test_build_session_options_leaves_non_jlink_boards_clean() -> None:
+    board = server.resolve_board_config("nucleo_l476rg", None)
+    assert board is not None
+
+    options = server.build_session_options(board, board.pyocd_target)
+
+    assert options == {"target_override": "stm32l476rgtx"}

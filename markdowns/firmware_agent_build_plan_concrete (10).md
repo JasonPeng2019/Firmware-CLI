@@ -450,6 +450,17 @@ then unwinding it.
    `read_serial`, `unlock_recover`); `stage0_check.py`'s target-control calls swap from
    subprocess to the same services. When done, the J-Link workaround exists in exactly one place.
 
+**Probe-abstraction discipline (critical when only one probe family is on the bench).** This
+de-risk happens on J-Link hardware first, and the STM32/ST-Link board may not be present when the
+service layer is built. Keep probe specifics — the J-Link `jlink.non_interactive=false` option,
+native-vs-CMSIS-DAP routing, locked-target handling — routed through `board_config` / the probe
+backend, **never as scattered `if probe == ...` branches** in the service or wrapper layers (the
+code already applies the J-Link option conditionally from `board.probe_family` — keep that
+pattern). Building with only J-Link present puts the burden on the author to keep ST-Link
+assumptions out, since they cannot yet be tested; this discipline is exactly what makes the
+eventual STM32/ST-Link bring-up a **drop-in** rather than a rewrite, and turns the STM32 into a
+verification of the abstraction instead of a trigger to redesign it.
+
 **Ordering note:** steps 1-3 (prove the API, create the layout, adopt the wrapper discipline)
 happen up front and gate the adapter work — that is why this is Step 1.0d and not a later step.
 Step 4 (thinning `server.py` and `stage0_check.py`) completes *incrementally as each service

@@ -101,6 +101,21 @@ def format_board_info(b: BoardConfig) -> str:
     return "\n".join(lines)
 
 
+def build_session_options(board: BoardConfig | None, target: str | None) -> dict[str, object] | None:
+    """Build pyOCD session options from shared board facts.
+
+    Keep probe-family-specific pyOCD quirks in one place so different wrappers
+    can converge on the same connection behavior later.
+    """
+    options: dict[str, object] = {}
+    if target:
+        options["target_override"] = target
+    if board and board.probe_family == "jlink":
+        # Match the Stage 0 CLI's verified workaround for J-Link open-by-serial.
+        options["jlink.non_interactive"] = False
+    return options or None
+
+
 def _target() -> Target:
     """Return the live target or raise if not connected."""
     if _session is None:
@@ -147,7 +162,7 @@ def connect(
             or os.environ.get("PYOCD_TARGET")
             or None
         )
-        options = {"target_override": tgt} if tgt else None
+        options = build_session_options(board, tgt)
 
         # auto_open=False so we control the open() explicitly for a long-lived
         # session; blocking=False + return_first=True keep it headless.

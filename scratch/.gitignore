@@ -1,0 +1,5 @@
+# scratch/ is a throwaway area. Keep the harness + README; ignore run output.
+*
+!.gitignore
+!README.md
+!*.py

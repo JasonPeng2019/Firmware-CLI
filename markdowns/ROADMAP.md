@@ -906,6 +906,17 @@ Step 1.0d):
 Scope: only target-control ops (`connect`, `read_memory`/silicon-ID, `flash`, `recover`,
 `halt`/`reset`/`resume`) need this. Probe enumeration, serial discovery, and pack checks stay.
 
+**Probe-abstraction discipline (when only one probe family is on the bench).** This work is done
+J-Link-first, and the STM32/ST-Link board may not be present while the service layer is built.
+Keep probe specifics — the J-Link `jlink.non_interactive=false` option, native-vs-CMSIS-DAP
+routing, locked-target handling — routed through `board_config` / the probe backend, **never as
+scattered `if probe == ...` branches** in the service or wrapper layers (the code already applies
+the J-Link option conditionally from `board.probe_family` — keep that pattern). Building with only
+J-Link present puts the burden on the author to keep ST-Link assumptions out, since they cannot yet
+be tested; this discipline is what makes the eventual STM32/ST-Link bring-up a **drop-in** rather
+than a rewrite, and turns the STM32 into a verification of the abstraction instead of a trigger to
+redesign it.
+
 ### Concrete outputs
 
 - abstract SWD interface module
