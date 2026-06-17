@@ -158,50 +158,48 @@ function Ensure-UvSync {
     Write-Status 'PASS' "Repo environment synced with 'uv sync --locked'"
 }
 
-function Load-BoardSpec {
-    param([string]$Path)
-    $spec = @{
-        board_id = ''
-        display_name = ''
-        mcu_family = ''
-        probe_family = ''
+function Get-SelectedBoardsViaLoader {
+    Write-Section 'Board config'
+
+    $cmd = @('uv', 'run')
+    if ($SkipUvSync -or $DryRun) {
+        $cmd += '--no-sync'
     }
-    foreach ($line in Get-Content $Path) {
-        if ($line -match '^\s*(board_id|display_name|mcu_family|probe_family)\s*:\s*(.+?)\s*(#.*)?$') {
-            $key = $matches[1]
-            $value = $matches[2].Trim().Trim('"').Trim("'")
-            $spec[$key] = $value
+    $cmd += @(
+        'python',
+        '-m',
+        'pyocd_debug_mcp.board_config_cli',
+        '--board-config-dir',
+        $BoardConfigDir
+    )
+    foreach ($path in $BoardConfig) {
+        $cmd += @('--board-config', $path)
+    }
+    foreach ($id in $BoardId) {
+        $cmd += @('--board-id', $id)
+    }
+
+    $json = & $cmd[0] @($cmd[1..($cmd.Count - 1)])
+    if ($LASTEXITCODE -ne 0) {
+        $hint = ''
+        if ($SkipUvSync -or $DryRun) {
+            $hint = ' The repo environment must already exist when using -SkipUvSync or -DryRun because board metadata is resolved through the shared Python loader.'
         }
-    }
-    if (-not $spec.board_id) {
-        throw "Board config missing board_id: $Path"
-    }
-    return [pscustomobject]@{
-        board_id = $spec.board_id.ToLowerInvariant()
-        display_name = $spec.display_name
-        mcu_family = $spec.mcu_family.ToLowerInvariant()
-        probe_family = $spec.probe_family.ToLowerInvariant()
-        source_path = $Path
-    }
-}
-
-function Get-SelectedBoards {
-    $paths = @()
-    if (Test-Path $BoardConfigDir) {
-        $paths += Get-ChildItem $BoardConfigDir -File | Where-Object {
-            $_.Extension -in @('.yaml', '.yml', '.json') -and $_.BaseName -notlike 'example_*'
-        } | ForEach-Object { $_.FullName }
-    }
-    $paths += $BoardConfig
-
-    $boards = foreach ($path in $paths) {
-        Load-BoardSpec -Path $path
+        throw "Shared board loader failed.$hint"
     }
 
-    if ($BoardId.Count -gt 0) {
-        $requested = $BoardId | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ }
-        $boards = $boards | Where-Object { $requested -contains $_.board_id }
+    try {
+        $boards = @($json | ConvertFrom-Json)
     }
+    catch {
+        throw "Shared board loader returned invalid JSON: $json"
+    }
+
+    if (-not $boards -or $boards.Count -eq 0) {
+        throw 'No board configs were selected.'
+    }
+
+    Write-Status 'PASS' ("Selected boards via shared loader: " + (($boards | ForEach-Object { $_.board_id }) -join ', '))
     return $boards
 }
 
@@ -339,34 +337,42 @@ function Run-HostBootstrap {
     }
 }
 
-Write-Section 'Windows host setup'
-if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-    throw 'setup_host.ps1 currently supports Windows host automation only.'
+try {
+    Write-Section 'Windows host setup'
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        throw 'setup_host.ps1 currently supports Windows host automation only.'
+    }
+
+    $boards = @(Get-SelectedBoards)
+    if (-not $boards -or @($boards).Count -eq 0) {
+        throw 'No board configs were selected.'
+    }
+
+    Write-Status 'INFO' ("Selected boards: " + (($boards | ForEach-Object { $_.board_id }) -join ', '))
+
+    $pythonCommand = Ensure-Python
+    Ensure-Uv -PythonCommand $pythonCommand
+    Ensure-UvSync
+
+    $needsNordicJlink = $boards | Where-Object { $_.mcu_family.StartsWith('nrf') -and $_.probe_family -eq 'jlink' }
+    $needsStlink = $boards | Where-Object { $_.probe_family -eq 'stlink' }
+
+    if ($needsNordicJlink) {
+        Ensure-Nrfjprog
+    }
+
+    if ($needsStlink) {
+        [void](Ensure-Stm32CubeProgrammerPath)
+    }
+
+    Run-HostBootstrap -Boards $boards
+
+    Write-Section 'Done'
+    Write-Status 'PASS' 'Windows host setup script completed.'
+    exit 0
 }
-
-$boards = @(Get-SelectedBoards)
-if (-not $boards -or @($boards).Count -eq 0) {
-    throw 'No board configs were selected.'
+catch {
+    Write-Section 'Failed'
+    Write-Status 'FAIL' $_.Exception.Message
+    exit 1
 }
-
-Write-Status 'INFO' ("Selected boards: " + (($boards | ForEach-Object { $_.board_id }) -join ', '))
-
-$pythonCommand = Ensure-Python
-Ensure-Uv -PythonCommand $pythonCommand
-Ensure-UvSync
-
-$needsNordicJlink = $boards | Where-Object { $_.mcu_family.StartsWith('nrf') -and $_.probe_family -eq 'jlink' }
-$needsStlink = $boards | Where-Object { $_.probe_family -eq 'stlink' }
-
-if ($needsNordicJlink) {
-    Ensure-Nrfjprog
-}
-
-if ($needsStlink) {
-    [void](Ensure-Stm32CubeProgrammerPath)
-}
-
-Run-HostBootstrap -Boards $boards
-
-Write-Section 'Done'
-Write-Status 'PASS' 'Windows host setup script completed.'

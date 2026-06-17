@@ -77,6 +77,43 @@ class StlinkComEntry:
 RunCommand = Callable[[list[str]], tuple[int, str, str]]
 
 
+# External USB-to-serial bridge chips commonly used to expose a custom PCB's
+# UART when the board has no onboard virtual COM port (the decoupled case: an
+# external debug probe plus a separate USB-serial adapter). These signatures let
+# discovery surface such an adapter even though it shares no probe serial and no
+# board-name hint with the board. Onboard dev-board VCPs (J-Link VID 0x1366,
+# ST-Link VID 0x0483) are deliberately NOT here — those are handled by the probe
+# link and the vendor-helper paths.
+USB_SERIAL_BRIDGE_VIDS: frozenset[int] = frozenset(
+    {
+        0x0403,  # VENDOR-FIXED (FTDI)
+        0x10C4,  # VENDOR-FIXED (Silicon Labs CP210x)
+        0x1A86,  # VENDOR-FIXED (WCH CH340/CH341/CH9102)
+        0x067B,  # VENDOR-FIXED (Prolific PL2303)
+    }
+)
+USB_SERIAL_BRIDGE_HINT_TERMS: tuple[str, ...] = (
+    "ftdi",
+    "ft232",
+    "ft231",
+    "cp210",
+    "cp2102",
+    "cp2104",
+    "cp2105",
+    "silicon labs",
+    "silabs",
+    "ch340",
+    "ch341",
+    "ch9102",
+    "pl2303",
+    "prolific",
+    "usb-serial",
+    "usb serial",
+    "usb uart",
+    "usb-uart",
+)
+
+
 WINDOWS_KNOWN_COMMAND_PATHS: dict[str, tuple[str, ...]] = {
     "nrfjprog": (
         r"C:\Program Files\Nordic Semiconductor\nrf-command-line-tools\bin\nrfjprog.exe",
@@ -168,6 +205,20 @@ def probe_uid_matches_serial(uid: str, serial: str) -> bool:
 
 def score_terms(text: str, terms: tuple[str, ...]) -> int:
     return sum(1 for term in terms if term in text)
+
+
+def looks_like_usb_serial_bridge(port: SerialPortInfo) -> bool:
+    """True when a port looks like a standalone USB-to-serial bridge chip.
+
+    Matches on the known external-adapter USB vendor IDs first (most reliable),
+    then on chip/description hints in the port's searchable text. Used to surface
+    an external UART adapter on a custom PCB whose serial path is decoupled from
+    the debug probe.
+    """
+    if port.vid is not None and port.vid in USB_SERIAL_BRIDGE_VIDS:
+        return True
+    text = port.searchable_text
+    return any(term in text for term in USB_SERIAL_BRIDGE_HINT_TERMS)
 
 
 def parse_nrfjprog_com_output(text: str) -> list[NordicComEntry]:
@@ -292,6 +343,11 @@ def _generic_candidates(board: BoardLike, ports: list[SerialPortInfo], probe: Pr
                 score += 100
             elif _normalized_probe_uid(probe.uid) and _normalized_probe_uid(probe.uid) in port.searchable_text:
                 score += 10
+        # Weak boost so an external USB-serial adapter on a decoupled custom PCB
+        # surfaces as a candidate when nothing stronger matches. Stays below a
+        # probe link or a real board hint, so it never overrides them.
+        if looks_like_usb_serial_bridge(port):
+            score += 1
         if score > 0:
             scored.append((score, port))
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pyocd_debug_mcp import serial_resolver
 from pyocd_debug_mcp.serial_resolver import (
     SerialPortInfo,
+    looks_like_usb_serial_bridge,
     parse_nrfjprog_com_output,
     parse_stm32_programmer_list_output,
     resolve_serial_port,
@@ -250,3 +251,53 @@ def test_ambiguous_unsupported_board_fails_non_interactive() -> None:
 
     assert result.port is None
     assert "--port weird=PORT" in result.note
+
+
+def test_looks_like_usb_serial_bridge_detects_known_adapters() -> None:
+    ftdi_by_vid = SerialPortInfo(
+        device="/dev/ttyUSB0",
+        description="USB device",
+        manufacturer="",
+        product="",
+        interface="",
+        hwid="",
+        vid=0x0403,
+    )
+    cp210x_by_text = make_port("COM5", "CP2102 USB to UART Bridge Controller")
+    jlink_vcp = make_port("COM6", "JLink CDC UART Port", serial_number="123")
+
+    assert looks_like_usb_serial_bridge(ftdi_by_vid) is True
+    assert looks_like_usb_serial_bridge(cp210x_by_text) is True
+    assert looks_like_usb_serial_bridge(jlink_vcp) is False
+
+
+def test_external_usb_serial_adapter_surfaces_for_decoupled_board() -> None:
+    # Custom PCB: external probe + external USB-serial adapter, no board hints,
+    # no probe-linked serial. The FTDI adapter must still be selected over an
+    # unrelated non-bridge port.
+    board = FakeBoard("custom_pcb", "Custom PCB", "nrf52840", "cmsisdap", tuple())
+    ftdi = SerialPortInfo(
+        device="COM21",
+        description="USB Serial Port",
+        manufacturer="FTDI",
+        product="FT232R USB UART",
+        interface="",
+        hwid="USB VID:PID=0403:6001",
+        serial_number="A50285BI",
+        vid=0x0403,
+        pid=0x6001,
+    )
+    unrelated = make_port("COM22", "Generic Input Device")
+
+    result = resolve_serial_port(
+        board=board,
+        ports=[ftdi, unrelated],
+        probe=None,
+        override=None,
+        allow_single_fallback=False,
+        run_cmd=lambda cmd: (127, "", ""),
+        interactive=False,
+    )
+
+    assert result.port is not None
+    assert result.port.device == "COM21"

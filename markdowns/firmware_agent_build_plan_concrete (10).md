@@ -7,11 +7,14 @@
 > code at once is where errors creep in, so this stays at the plan level.
 >
 > **Hardware — TWO co-primary boards (build and prove the loop on both):**
-> - **Nordic nRF52840-DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
+> - **Nordic nRF52833 DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
 >   USB. Radio-relevant (BLE/802.15.4). *Wrinkle to plan around:* J-Link's native protocol isn't
 >   pyOCD's native CMSIS-DAP, and nRF52 **APPROTECT** can lock the chip (needs a `recover`/unlock).
 > - **STM32 Nucleo-L476RG** — onboard **ST-Link/V2-1**; UART on **USART2 @115200 8N1**; SWD + UART on
 >   one USB. Cleanest open-stack path (pyOCD/OpenOCD support ST-Link out of the box).
+>
+> The repo may still retain related Nordic board profiles outside this scoped pair; those are support-
+> in-progress references, not part of the validated Phase A contract.
 >
 > Supporting two probe families (J-Link **and** ST-Link) from the start is deliberate: it forces the
 > probe abstraction to be real on day one instead of being retrofitted — which is exactly the
@@ -74,13 +77,13 @@ Stage 4+ and are recorded here only so it's clear their omission is intentional,
 ## STAGE 0 — Foundations (do before anything else), on BOTH boards
 
 **Goal:** two known-good boards + toolchains, so later failures are *your* bugs, not setup bugs.
-**Do every step for the nRF52840-DK AND the L476RG.**
+**Do every step for the nRF52833 DK AND the L476RG.**
 
 1. **Confirm each board's pyOCD target name** (`pyocd list`, `pyocd list --targets`; install the
-   CMSIS-Pack if prompted). Expect roughly `nrf52840` and an `stm32l476`-family target. *Why first:*
+   CMSIS-Pack if prompted). Expect roughly `nrf52833` and an `stm32l476`-family target. *Why first:*
    the generic `cortex_m` type debugs but **cannot program flash** — the "connects but won't flash" trap.
 2. **Probe-specific setup:**
-   - **nRF52840-DK (J-Link):** install SEGGER J-Link software (drivers). Route decision is made: use the
+   - **nRF52833 DK (J-Link):** install SEGGER J-Link software (drivers). Route decision is made: use the
      **native SEGGER J-Link path by default** (the OB does not expose CMSIS-DAP without being explicitly
      switched into it — see the driver sidebar), with CMSIS-DAP as the fallback. **Test a flash + a
      recover/unlock cycle** — confirm you can recover the chip if APPROTECT locks it. This is the nRF's
@@ -165,7 +168,7 @@ prints by hand — and on the nRF, you've proven you can recover a locked chip. 
 > **whether the DK's onboard J-Link presents cleanly as CMSIS-DAP without any SEGGER component present**
 > (onboard probes can behave differently from standalone CMSIS-DAP probes).
 >
-> **ANSWERED (2026-06-11, nRF52840-DK on Windows bench):** the Nordic DK's onboard SEGGER J-Link OB does
+> **ANSWERED (2026-06-11, Nordic DK J-Link OB bench path):** the Nordic DK's onboard SEGGER J-Link OB does
 > **not** present as CMSIS-DAP without a SEGGER component — its USB interface is the SEGGER bulk/WinUSB
 > debug channel, driven through SEGGER's J-Link DLL, not a generic CMSIS-DAP class. Reaching it over
 > CMSIS-DAP would require explicitly switching the OB into CMSIS-DAP mode. This is the concrete reason
@@ -216,30 +219,46 @@ pyocd-debug-mcp/
 ├── pyproject.toml + lockfile        # deps + pinned versions (team sync, see Scope Assumptions)
 ├── src/pyocd_debug_mcp/             # all product code
 │   ├── adapters/                    # uart.py, swd_interface.py, swd_pyocd.py
-│   ├── tools/                       # MCP tool/resource definitions + dispatch
+│   ├── services/                    # shared board-control operations used by MCP tools and local flows
+│   ├── tools/                       # thin MCP tool/resource definitions + dispatch
 │   ├── guardrails/                  # flash gate, unlock gate, convergence watcher, logging
 │   ├── server/                      # FastMCP server wiring
 │   └── brain/                       # turnkey client + skills loader (Stage 5)
 ├── boards/                          # ONE config file per board (board definitions)
-│   ├── nrf52840dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
+│   ├── nrf52833dk.yaml              #   pyocd target, default baud, probe path, recovery-image ref
 │   └── nucleo_l476rg.yaml           #   (USART2, 115200, stm32l476 target, …)
 ├── firmware/                        # YOUR OWN test firmware ONLY — never the user's (see note below)
-│   ├── nrf52840dk/
+│   ├── nrf52833dk/
 │   │   ├── reference/src/           #   reference firmware SOURCE tree (known-good, builds clean)
 │   │   ├── reference/build/         #   compiled known-good ARTIFACT (the baseline binary)
 │   │   ├── recovery/                #   known-good RECOVERY image the safety/unlock gates require
 │   │   └── bugs/                    #   injected-bug VARIANTS (see naming below)
 │   └── nucleo_l476rg/               #   (same shape)
 ├── skills/                          # per-chip/peripheral knowledge data files (Stage 5)
-│   ├── nrf52840/
+│   ├── nrf52833/
 │   └── stm32l476/
 ├── runs/                            # all runtime OUTPUT, keyed by session id
 │   └── <session_id>/                #   logs/, captured-serial/, applied-patches/, run-metadata
 └── tests/                           # injected-bug test definitions, harness
 ```
 
+**Decision (settled) — the two frontends are thin wrappers over one shared internal service layer; this
+binds Stages 2 and 5.** The hardware/board logic — flash, UART, recover, register/memory access,
+board-config and serial resolution, Stage-0 validation — lives in shared internal services (the
+`adapters/` layer and the small primitives beside it). BOTH frontends call down into those services and
+neither owns the logic: the MCP `tools/` are thin wrappers exposing the services over the protocol, and
+the turnkey CLI / any local programmer flow (Stage 5) calls the same services directly. The current
+`stage0_check.py` shell path is the CLI frontend in embryo — a wrapper over the shared board-validation
+code, not a parallel implementation — so behavior proven there is *reused* by the MCP tools, never
+rebuilt. This is the structural reason a board-validation capability can surface as a shell command today
+and an MCP tool later with zero logic duplicated: same service underneath, different wrapper on top. It
+also fixes where each surface is *documented* — an MCP tool's contract lives in its docstring (the
+description the client reads over the protocol), the shell workflow lives in the one operator guide
+(`stage0_setup.md`), and the shared service is plain code below both (see the Doc-Sync and Tool-Description
+playbooks).
+
 **Naming conventions (the part that's more than "pick a folder"):**
-- **Boards:** lowercase board id used everywhere — `nrf52840dk`, `nucleo_l476rg`. Every per-board path
+- **Boards:** lowercase board id used everywhere — `nrf52833dk`, `nucleo_l476rg`. Every per-board path
   and config keys off this exact string. One board id, used identically across `boards/`, `firmware/`,
   `skills/`.
 - **Firmware artifacts:** `reference/` = the known-good baseline (one canonical name per board, e.g.
@@ -290,11 +309,11 @@ exists** — otherwise you formalize guesses your later stages will correct.
 **Required v1 core (needed by Stage 2; every field traces to a decision already made).** Note each
 field carries an **origin tag** (see Coding Guidelines §1b) so a reader knows its authority/changeability:
 ```yaml
-board_id:            nrf52840dk          # PROJECT-DEFINED — canonical id (Step 1.0); keys all per-board paths
-display_name:        "Nordic nRF52840-DK" # PROJECT-DEFINED
-mcu_family:          nrf52840            # HW-FIXED — the silicon; selects skills/ dir (Stage 5)
+board_id:            nrf52833dk          # PROJECT-DEFINED — canonical id (Step 1.0); keys all per-board paths
+display_name:        "Nordic nRF52833 DK" # PROJECT-DEFINED
+mcu_family:          nrf52833            # HW-FIXED — the silicon; selects skills/ dir (Stage 5)
 probe_family:        jlink               # HW-FIXED — onboard probe; selects SWD backend (Stage 7)
-pyocd_target:        nrf52840            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
+pyocd_target:        nrf52833            # VENDOR-FIXED, UNVERIFIED — confirm via `pyocd list --targets` (won't-flash trap)
 serial_baudrate:     115200             # PROJECT-DEFINED — chosen default; must match reference firmware
 ```
 
@@ -319,6 +338,12 @@ fields. Board YAML stays hardware-focused; user and session paths stay out.
 - `probe_discovery_hints` / `serial_discovery_hints` — **only if needed.** Given the mixed-OS team,
   discovery is best driven by pyserial/pyOCD *enumeration*, which may make per-board hint strings
   unnecessary. Don't bake these in speculatively; add only if enumeration proves insufficient.
+  *(Decoupled-PCB note, IMPLEMENTED in the serial resolver:* for a custom PCB whose UART is on an
+  external USB-serial adapter — not an onboard VCP tied to the probe — discovery also recognizes the
+  common bridge chips (FTDI, Silicon Labs CP210x, WCH CH34x, Prolific PL2303) by USB vendor id and
+  description, so the adapter surfaces as a serial candidate even with no board hint and no probe link.
+  Onboard dev-board VCPs stay handled by the probe link / vendor helpers. An explicit `--port` override
+  still wins.)*
 - `memory_protection_rules` — **already covered** by the guardrails (fuse/option-byte refusal, APPROTECT
   case in Steps 3.1/3.1b). Don't duplicate that logic into a vague config field; extend only if a real
   per-board protection rule appears that the gates can't express generically.
@@ -353,7 +378,7 @@ the project's isolated Python environment with [uv](https://docs.astral.sh/uv/):
 **Boilerplate / local-override files — per-developer, never load-bearing for anyone else.** These are
 the machine-specific values the no-hardcoding rule (§1) keeps out of code and out of shared config:
 - **`.env`** — copy from `.env.example`; sets `PYOCD_PROBE_UID` (your probe's unique id, from
-  `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52840`, `stm32l476`). These are the
+  `uv run pyocd list`) and `PYOCD_TARGET` (your chip, e.g. `nrf52833`, `stm32l476`). These are the
   per-machine defaults for `connect`/`flash`; **gitignored** (`.env` ignored, `.env.example` committed).
   The Phase A MCP server and host scripts auto-load `.env` when present. The `connect` path still
   accepts `unique_id`/`target` as runtime args that override these.
@@ -375,11 +400,95 @@ Windows; `.env.example` exists; `pyocd.local.yaml` is the gitignored per-develop
 committed `pyocd.yaml` exists only if the team has real shared pyOCD options to standardize; `uv run
 pyocd list` sees each board's probe.
 
+## Future Fix: after Step 1.0d is completed, since its not relevant to the ROADMAP or TO DO after it has been fixed, should be replaced with something that describes how the codebase has been formatted / what has been done, not what NEEDS to be done. In particular, the ROAMAP and the build_plan should detail how the codebase is now setup (server + script is a thin wrapper, another file contains the actual tools), and should detail what should be done, and how it should be formatted in the future; the future steps in ROADMAP and build_plan should also be edited to follow the codebase structure & mechanistic operations of how this step specifies it.
+
+### Step 1.0d — Validate the pyOCD Python-API path and stand up the shared service layer (do FIRST, before any adapter)
+**Why this is the first code step in Stage 1 (current-state reality, not a hypothetical).** The
+repo already has TWO independent pyOCD callers, and together they are exactly the duplication
+Step 1.0 was written to prevent:
+- `stage0_check.py` drives pyOCD by **subprocess** (`pyocd cmd -c "read32 …"`, `pyocd load`,
+  `pyocd erase --mass`) and scrapes stdout with regex. This is the **only** target-control
+  path validated on real hardware to date.
+- `src/pyocd_debug_mcp/server.py` drives pyOCD via the **Python API** (`ConnectHelper`,
+  `session.target.read_memory`). This path is **NOT yet validated on hardware.**
+
+Neither calls the other; the J-Link `jlink.non_interactive=false` workaround lives only in the
+subprocess path; the shared service layer the rest of the plan assumes (Step 1.0, `adapters/` +
+`services/`) does not exist yet. **This gates every adapter step below:** Step 1.2's SWD
+interface cannot be built on a pyOCD access path that hasn't been proven, and Steps 1.1, 1.2,
+and 1.3 must all be written *as services in the layer this step stands up*, not as logic inside
+a frontend. Doing this after the adapters would mean writing a third parallel implementation and
+then unwinding it.
+
+**The discipline — ordered, do NOT reorder:**
+
+1. **Prove the API path at the smallest surface (de-risk first).** Before writing any
+   adapter/service, reproduce stage0's proven target-control operations through the pyOCD
+   **Python API** in a throwaway script — `connect → read silicon-ID` first, then the riskier
+   `flash` and `recover`. Oracle every result against what the subprocess path already
+   returns (stage0 is the reference of record). Do the **STM32 (ST-Link) first**: it has no
+   J-Link open quirk, so a failure points at the API approach itself rather than the probe
+   wrinkle. Carry the known workaround across — the API path must set pyOCD option
+   `jlink.non_interactive=false` (mirroring `stage0_check.py:pyocd_base`) or open-by-serial
+   fails on the nRF.
+2. **Fix before migrate — never migrate red code.** If the API calls are wrong, fix them at
+   the smallest reproduction and get them green on the bench FIRST. Fixing the calls
+   `server.py` *already has* (connect/read) in place is fine when the bug is trivial; drop to
+   the throwaway script when it is not, so you are not debugging through FastMCP + the lock +
+   stdio. Migration is a behavior-preserving refactor — it needs passing behavior to preserve,
+   so there must be nothing red crossing into the new layer.
+3. **Stand up the service layer and write the proven calls into it — not into a frontend.**
+   Create the `src/pyocd_debug_mcp/adapters/` + `services/` layout (the Step 1.0 layout, which
+   does not exist yet) and land the corrected operations there. Hand-test each service in a
+   REPL/small harness, oracle'd against the subprocess output. Do NOT grow `server.py` to full
+   capability and then relocate it — that writes the logic twice. (Distinction that resolves the
+   apparent fix-here-vs-there conflict: the calls `server.py` *already has* may be fixed in
+   place before extraction; the operations it does *not* have yet — `flash`, `recover`,
+   `read_serial` — are written straight into services, never built into `server.py` first.)
+4. **Thin the wrappers onto the services (this swap IS the migration).** `server.py`'s tools
+   become thin calls into the services, gaining the operations it lacks (`flash_firmware`,
+   `read_serial`, `unlock_recover`); `stage0_check.py`'s target-control calls swap from
+   subprocess to the same services. When done, the J-Link workaround exists in exactly one place.
+
+**Probe-abstraction discipline (critical when only one probe family is on the bench).** This
+de-risk happens on J-Link hardware first, and the STM32/ST-Link board may not be present when the
+service layer is built. Keep probe specifics — the J-Link `jlink.non_interactive=false` option,
+native-vs-CMSIS-DAP routing, locked-target handling — routed through `board_config` / the probe
+backend, **never as scattered `if probe == ...` branches** in the service or wrapper layers (the
+code already applies the J-Link option conditionally from `board.probe_family` — keep that
+pattern). Building with only J-Link present puts the burden on the author to keep ST-Link
+assumptions out, since they cannot yet be tested; this discipline is exactly what makes the
+eventual STM32/ST-Link bring-up a **drop-in** rather than a rewrite, and turns the STM32 into a
+verification of the abstraction instead of a trigger to redesign it.
+
+**Ordering note:** steps 1-3 (prove the API, create the layout, adopt the wrapper discipline)
+happen up front and gate the adapter work — that is why this is Step 1.0d and not a later step.
+Step 4 (thinning `server.py` and `stage0_check.py`) completes *incrementally as each service
+lands* through Steps 1.1-1.3 and the Stage 1 close; it is stated here so the discipline is owned
+from the first keystroke, not deferred. UART (Step 1.1) does not touch the pyOCD API and can be
+built in parallel with steps 1-2, but it still lands in the service layer this step creates.
+
+**Scope — only target-control operations are in scope for the API de-risk.** Probe enumeration
+(`pyocd list`), serial discovery (pyserial), and CMSIS-Pack checks do not touch the pyOCD
+target API and stay as they are. The operations to validate-then-extract are exactly:
+`connect`, `read_memory`/silicon-ID, `flash`, `recover` (unlock/mass-erase),
+`halt`/`reset`/`resume`.
+
+**Exit:** the `adapters/`/`services/` layout exists; the in-scope pyOCD target-control
+primitives are proven on hardware **through the Python API** (not just subprocess) and live in
+services; the wrapper-discipline is adopted so Steps 1.1-1.3 write into the service layer; the
+thinning of `server.py`/`stage0_check.py` is underway. This is the precondition for Step 1.2's
+SWD interface and for all of Stage 2.
+
 ### Step 1.1 — UART adapter (build first; easiest; board-agnostic)
 - **Design:** `open() / read_lines() / write() / reopen()`, 115200 8N1. One adapter works for both
   boards — UART is the same; only the COM port differs.
 - **Decision baked in now:** `reopen()` from the start — the Nucleo VCP can drop on reset/reflash, and
   reconnect-after-flash is good hygiene on both boards.
+- **Code-shape rule:** the adapter is the low-level I/O layer. Any higher-level
+  "capture UART for N seconds", "wait for expected text", or "reopen after
+  flash" behavior belongs in shared services above the adapter so both CLI flows
+  and MCP tools call the same logic.
 - **Exit:** see each board's reference firmware output in your own Python script.
 
 ### Step 1.2 — SWD adapter as an interface + pyOCD backend (this is where two probes pays off)
@@ -389,6 +498,10 @@ pyocd list` sees each board's probe.
   board, the interface has to genuinely abstract the probe from day one — you can't accidentally bake
   in ST-Link assumptions. That real-from-the-start abstraction is what makes later vendor GDB backends
   (Stage 7) a clean drop-in.
+- **Code-shape rule:** board-level operations such as "flash reference
+  firmware", "run recover", "verify target identity", or "Stage 0 validate this
+  board" should be implemented in shared services that compose these adapter
+  calls. The MCP layer and any local programmer/CLI wrappers stay thin.
 - **nRF-specific behavior to handle in the backend:** APPROTECT/locked-chip detection + a `recover`
   path, so a locked nRF doesn't look like a generic failure.
 - **Build order within the step:** connect → read a register → flash → halt → read PC, on each board.
@@ -413,16 +526,26 @@ symbol, all by hand, all through the same adapter interface. *Nothing past here 
 config and uses the same tools for either. Prove the server against both boards.
 
 ### Step 2.1 — FastMCP server, stdio transport
-- **Design:** `@mcp.tool()` / resource decorators wrapping Stage-1 adapter methods. stdio only (local,
-  no auth, lowest latency; the natural fit since the server must sit next to the board).
+- **Design:** `@mcp.tool()` / resource decorators wrapping shared Stage-1/Stage-0
+  service methods, not reimplementing board logic in the handler itself. stdio
+  only (local, no auth, lowest latency; the natural fit since the server must
+  sit next to the board).
 - **Decision — primitive split:** actions = **tools** (`flash_firmware`, `reset_and_halt`, `halt`,
   `resume`, `apply_patch`, `unlock_recover` [gated — destructive, see Step 3.1b], `load_firmware_project`
   [ingest external user firmware, see Step 2.5]); read-only data = **resources** (`read_serial`,
   `read_register`, `read_memory`, `resolve_symbol`).
 - **Decision — return types:** return typed text/content blocks (strings), **not raw dicts** (raw
   dicts can truncate silently in the client though they look fine in the Inspector).
-- **Decision — board selection:** target + port are server config/params, so one server binary serves
-  either board. (At scale, one server instance per board — see Stage 6.)
+- **Decision — board selection (board-config-aware, IMPLEMENTED):** `connect` takes an optional
+  `board_id` (or `PYOCD_BOARD_ID` env, plus `board_config` / `PYOCD_BOARD_CONFIG` for a custom board
+  file outside `boards/`) and resolves the board's facts — pyOCD target, recover policy, silicon id,
+  baud — through the **same shared loader the Stage 0 CLI uses** (`pyocd_debug_mcp.board_config`). This
+  realizes the shared-service decision (Step 1.0): the server is a thin wrapper over the one loader, so a
+  custom ST/nRF board connects by id with no hand-passed target, and its facts reach the tools, not just
+  the CLI. Precedence for the target: explicit `target` arg > the board's `pyocd_target` > `PYOCD_TARGET`
+  env > pyOCD auto-detect. A read-only `get_board_info` tool exposes the loaded facts; calling `connect`
+  with no `board_id` stays valid (raw-target mode). One server binary still serves either board (at
+  scale, one instance per board — see Stage 6).
 - **Decision — entry point & startup (how the server actually launches):** declare a console-script
   entry point in `pyproject.toml` (`[project.scripts]`, e.g. `pyocd-debug-mcp = "pyocd_debug_mcp.server:main"`)
   so the server starts as **`uv run pyocd-debug-mcp`** over the MCP **stdio** transport. This exact
@@ -502,13 +625,17 @@ Code). **Design rule:** guardrails are deterministic code, not model judgment.
 ### Step 3.1 — Pre-flash safety gate (first guardrail)
 - **Design:** inside `flash_firmware`, before hardware is touched — validate image, refuse
   fuse/option-byte writes, require a known-good recovery image. Unsafe → refuse via the protocol.
+- **Code-shape rule:** the guarded flash path should live in shared internal
+  code below both the MCP tool wrapper and any local programmer wrapper, so
+  there is exactly one flash policy.
 - **Board note:** include the nRF APPROTECT/lock case — the gate (and recovery image) is what makes a
   locked nRF recoverable rather than a dead end. *Why first:* it prevents the most expensive failure.
 
 ### Step 3.1b — Gated unlock/recover (SECURITY FLAG — destructive action)
 - **What it is:** the nRF APPROTECT unlock is **built into pyOCD** (option `auto_unlock`, default
   **True**; it unlocks by performing a **mass erase**). You do NOT write the unlock logic — your
-  `unlock_recover` tool is a thin wrapper over pyOCD's built-in unlock/mass-erase.
+  shared recover operation is a thin wrapper over pyOCD's built-in unlock/mass-erase, and the
+  `unlock_recover` MCP tool or local programmer flow should call that shared operation.
 - **WHY IT'S A SECURITY FLAG, not just a convenience:** **unlocking erases the entire chip.** It is
   irreversible. `auto_unlock` silently wiping a chip is fine on a dev bench but is exactly the kind of
   destructive, irreversible action an autonomous agent must not trigger casually.
@@ -790,3 +917,18 @@ skills); that's yours to build in Python. A repo that's functionally close but a
 (e.g. stm32-mcp) is *more* hazardous as a live reference than an irrelevant one, because a build can
 absorb its contradicting patterns — which is exactly why its one good idea is lifted into R.1 and the
 repo itself is off the list.
+
+## Verification Status
+
+Verified:
+
+- The current checked-in repo now uses `src/pyocd_debug_mcp/` as the canonical
+  product-code path and `nrf52833dk` as the current scoped Nordic bench board
+  in the Phase A docs.
+
+Pending verification:
+
+- The unattended Windows bootstrap path still needs a real Windows bench run.
+- The `nucleo_l476rg` reference baseline now exists and builds, but its
+  physical Stage 0 flash and UART proof still need a real `nucleo_l476rg`
+  bench run.

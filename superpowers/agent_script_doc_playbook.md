@@ -1,153 +1,165 @@
-# Script-Doc Playbook — Every Runnable Script Has a Doc That Fully Replaces Reading It
+# Tool-Description & Operator-Guide Playbook — Where Documentation Lives in an MCP Product
 
-> **Why this exists.** In operation, the agent driving this product **cannot see the source code.** It
-> can only *run* a script and *read what the script emits* (logs, output, exit codes). Therefore each
-> script's `.md` is not documentation-for-humans — it is the **operating agent's ONLY model of what the
-> script does.** If the doc is wrong or incomplete, the agent operates blind: it has no source to fall
-> back on.
+> **Why this exists, and what changed.** An earlier version of this playbook required a separate,
+> exhaustive `.md` "script-doc" for *every* runnable script, on the premise that *"the operating agent
+> is blind to the source — it can only run a script and read its output."* **The MCP architecture
+> (see `markdowns/firmware_agent_mcp_architecture.md`) obsoletes that premise for the runtime tools.**
+> An MCP client (the user's Claude Code, or the turnkey brain) does **not** run scripts and read sidecar
+> markdown. It calls MCP tools and sees exactly three things over the protocol: the tool **name**, the
+> tool **description** (the function's docstring), and the **input schema** + **typed return** (the
+> "handle"). It never reads a `.md`. So for an MCP tool the agent is *not* blind to the tool — the
+> docstring IS its interface, and the docstring lives in the code.
 >
-> **The bar this sets:** an agent that has never seen the code must, from the doc + the script's runtime
-> output alone, be able to (a) decide WHEN to run it, (b) choose the RIGHT inputs, (c) interpret EVERY
-> log/output it can produce, (d) diagnose ANY failure from output alone, and (e) know EXACTLY what to do
-> next for each outcome. The doc must *fully substitute for reading the code.*
+> Maintaining a sidecar `.md` per MCP tool therefore documented the tool in a place the agent can never
+> read, while duplicating the docstring that it *does* read — pure drift surface. This playbook replaces
+> "a script-doc for every file" with two precise rules:
 >
-> **Read this whenever you create or change any runnable script (`.py` or otherwise) the agent will
-> later invoke.** Every such script MUST have a doc meeting this template before it is considered done.
+> 1. **MCP tool documentation lives in the tool's docstring, in the code** (§1).
+> 2. **Bench/setup scripts that a human or terminal agent runs get ONE operator guide**, not one doc per
+>    script (§2).
+>
+> **Read this whenever you add or change an MCP tool, or any setup/bench script the operator runs.**
 
 ---
 
-## 0. THE PRINCIPLE: the doc is the interface; the code is invisible
+## 0. THE PRINCIPLE: document each thing in the one place its reader actually looks
 
-- The operating agent reasons about a script **only** through (1) this doc and (2) the script's runtime
-  output. It will never read the source. Write the doc accordingly — completeness is not optional polish,
-  it is the difference between the agent operating correctly and operating blind.
-- **No behavior may be "discoverable only by reading the code."** If the script does it, the doc says it.
-  Hidden behavior = behavior the agent cannot account for = wrong agent decisions.
-- **Every observable the script emits must be explained.** If a log line, output field, or exit code can
-  appear, the doc must tell the agent what it means and what to do about it. An unexplained output is a
-  blind spot.
-- This makes script-docs the HIGHEST-drift-risk docs in the project: a doc that lags the code doesn't
-  just mislead a human, it directs the operating agent to wrong actions. The Doc-Sync Playbook applies to
-  these with maximum force — see §3.
+There are two readers and two surfaces. Put each kind of documentation where its reader will see it,
+and nowhere else.
 
----
+| Surface | Who reads it | Where its documentation MUST live |
+|---|---|---|
+| **MCP tools** (`@mcp.tool()` / resources in `server.py`) | the MCP **client agent**, over the protocol | the function **docstring** + type-hinted signature + typed return string |
+| **Bench/setup scripts / shell workflow** (`setup_host.*`, `host_bootstrap.py`, current `stage0_check.py` CLI wrapper) | a **human or terminal agent** at a shell for host bootstrap and today's Stage 0 path | **one operator guide** (`stage0_setup.md`) covering the shell sequence + troubleshooting; if board-validation capabilities are later exposed as MCP tools, those tool contracts move to code docstrings |
 
-## 1. MANDATORY template — every script-doc has ALL of these sections
-
-No section may be omitted. "Not applicable" must be stated explicitly, not left blank.
-
-### 1. Purpose & when to run vs. when NOT to run (a real decision aid)
-- One-paragraph plain statement of what the script does.
-- **WHEN to run it:** the specific situation(s) where THIS script is the correct choice. State the
-  triggering conditions an agent can check from observable state ("run this when a board is connected and
-  detected but not yet flashed", not "run this to flash").
-- **WHEN NOT to run it:** the situations where it's the WRONG choice — and **which script to run
-  instead.** A blind agent choosing among several scripts needs the doc to disambiguate: "if you need X
-  instead, run `<other_script>`; if the board isn't detected yet, run `<detect_script>` first." Without
-  this, the agent picks wrong when multiple scripts look superficially applicable.
-- **Conflicting states:** conditions under which running it is unsafe or meaningless (e.g. a flash script
-  while a live-monitor session holds the SWD connection).
-
-### 2. Exact behavior (step by step)
-- What the script actually does, in order, in enough detail that the agent can predict its effect
-  without seeing the code. Side effects (files written, hardware touched, state changed) called out
-  explicitly. Note anything destructive/irreversible (e.g. flash, mass-erase) prominently.
-
-### 3. Inputs — every option, what it does, what it means
-- EVERY input the script accepts: flags, arguments, env vars, config keys. For each: name, type,
-  required/optional, default, allowed values/range, and **what it actually changes in behavior.** No
-  input may be undocumented. Include examples of valid invocations.
-
-### 4. Outputs & logs — what every emission MEANS
-- Every log line / output field / status the script can emit, and what each one tells the agent.
-- Group by meaning: normal-progress logs vs. warnings vs. errors. For each meaningful log, state what it
-  implies about the script's state and whether action is needed.
-- Exit codes / return status: enumerate each and its meaning.
-
-### 5. Failure modes — exactly why it fails and how to fix
-- A table/list of every known failure: **symptom (what the agent will see in the output) → cause → fix /
-  next action.** This is the most important section — the agent diagnoses failures ONLY from output, so
-  every failure must be traceable from its visible symptom to its remedy.
-- Include hardware-specific failures (board not found, port busy, locked chip / APPROTECT, wrong target,
-  wiring/power) with their distinguishing symptoms, since "is it code or hardware" is core to the product.
-- For each fix, state **what to rerun** and with what inputs.
-
-### 6. Rerun guidance — for each outcome, what to do next
-- Given a particular log/result, what the agent should run next (this script again with different inputs,
-  a different script, a recovery step, or stop-and-surface). Map outcomes → next actions explicitly.
-
-### 7. Prerequisite SEQUENCE — the exact commands to reach the state this script needs
-- **Not just "what must be true" — the ordered, runnable steps to GET there.** A blind agent cannot infer
-  setup order from source; it needs the doc to lay out the path.
-- List, IN ORDER, the commands/scripts to run before this one to bring the system to the required state,
-  e.g.:
-  1. `setup.py` (installs deps / drivers) — if not already done
-  2. `<detect_board>` — confirms a supported board is connected and gets its id/port
-  3. `<connect>` — establishes the SWD/serial session
-  4. → THEN this script is valid to run
-- **State the preconditions this script ASSUMES** (board detected, session open, firmware built, etc.)
-  and, for each, **which earlier step/script satisfies it** — so the agent can trace back if a
-  precondition is unmet.
-- **Distinguish auto-handled vs. agent-must-run:** which preconditions the setup scripts handle
-  automatically (per the Portability Playbook) vs. which the agent must explicitly run in sequence.
-- If running out of order is a common failure, cross-reference it in §5 (symptom → "you skipped step N").
-
-### 8. Verified / Pending verification
-- Per the Coding Guidelines: which described behaviors are verified (run on real hardware / tested) vs.
-  assumed. An UNVERIFIED behavior in a script-doc is especially dangerous — the agent will trust it.
+The cardinal error this playbook now prevents is the inverse of the old one: **do not write a sidecar
+`.md` to document an MCP tool.** The client can't read it, and it will drift from the docstring the
+client *does* read.
 
 ---
 
-## 2. QUALITY bar — write it for an agent operating blind
+## 1. MCP TOOL DESCRIPTIONS — the docstring is the interface
 
-- **The failure-modes and logs sections are where docs usually fail — make them the most rigorous.**
-  Every symptom the agent could see must map to a cause and a fix. If the agent sees output you didn't
-  document, that's a gap to close, not the agent's problem.
-- **Symptom-first, not cause-first.** The agent starts from what it *observes* (a log line, an exit
-  code), not from the internal cause. Index failures by their visible symptom so the agent can go
-  observation → diagnosis → fix.
-- **No magic values.** If the script's output contains a number, code, or string the agent must
-  interpret, the doc defines it. Apply origin tags where relevant.
-- **Destructive operations get a prominent warning** in §2 and §5, with the gate/confirmation behavior
-  described — consistent with the safety gates in `build_plan_concrete`.
-- **Examples, not just descriptions.** Show real invocations and real (representative) output snippets so
-  the agent can pattern-match what it sees against the doc.
+For anything exposed through the MCP server (`src/pyocd_debug_mcp/server.py`), the docstring is the
+*entire* contract the model sees. Treat it with the rigor the old script-docs demanded — but put it in
+the code, not beside it.
+
+**Every `@mcp.tool()` / resource docstring must make the model able to:**
+- **decide WHEN to call it** — one plain sentence on what it does and the state it expects (e.g. "Open a
+  debug session to a connected probe" / "Call `connect` first").
+- **choose the RIGHT inputs** — document every argument in the docstring's `Args:` block: meaning, units,
+  accepted forms (e.g. "hex (0x...) or decimal"), and the default/fallback (e.g. "Defaults to the
+  `PYOCD_PROBE_UID` environment variable").
+- **interpret the RETURN** — the return string is the agent's only feedback. Make returns self-describing
+  ("Connected to board '<name>' via probe <uid>.", "Halted.", "0x{value:08X}") and keep them stable;
+  the agent pattern-matches on them.
+- **recover from refusals/errors** — guard and error strings ARE documentation. Phrase them as the next
+  action ("Already connected. Call `disconnect` first to switch probes.", "Not connected to a probe.
+  Call `connect` first."). A raised error surfaces to the client as the tool error text, so make that
+  text diagnostic.
+
+**Rules that carry over from the Coding Guidelines and the build plan:**
+- **Return typed text/content (strings), not raw dicts** — raw dicts can truncate silently in the client
+  though they render fine in the Inspector (build plan Step 2.1; Coding Guidelines §3).
+- **Destructive tools say so in the first line of the docstring** and route through their gate
+  (`flash_firmware`, `unlock_recover`) — consistent with the Stage 3 safety gates. "This is destructive
+  / irreversible (mass-erase)" belongs in the description the model reads before it calls.
+- **Origin/verification honesty still applies** — if a tool's behavior is unverified on hardware, say so
+  where it matters (a comment, and the operator guide's verification section), not as a silent assumption.
+- **Validate every tool in the MCP Inspector** (`uv run mcp dev …`) before wiring a real client — schema
+  errors fail silently in the client (build plan Step 2.2). The Inspector, not a sidecar `.md`, is how you
+  confirm the description/schema the agent will receive.
+
+**Cross-session operating sequence** (which tool to call before which — `connect` before reads, gate
+before flash) is *agent-runtime* knowledge. Keep the per-tool slice of it in each docstring ("call
+`connect` first"); keep the broader arc in the brain/skills layer (Stage 5), not in a sidecar doc the
+server can't serve.
+
+**There is no sidecar `.md` for an MCP tool.** If you find one, it is drift — fold any unique content
+into the docstring and delete it.
 
 ---
 
-## 3. SYNC: the script-doc moves with the script (zero tolerance for drift here)
+## 2. OPERATOR GUIDE — ONE doc for the bench/setup scripts (not one per file)
 
-- **A script change is not done until its doc is updated** — same unit of work, per the Doc-Sync
-  Playbook. For script-docs this is absolute: a drifted script-doc actively misdirects the operating
-  agent.
-- **Any new input, log, output, failure mode, or behavior change → update the doc's matching section in
-  the same commit.** Adding a log line the doc doesn't explain creates a blind spot the moment it ships.
-- **If you change what a log means or what an exit code signals, the doc's §4/§5 MUST change with it** —
-  the agent diagnoses from these; stale meanings cause wrong fixes.
-- **A script with no doc, or a doc missing a mandatory §1–§8 section, is INCOMPLETE** and must not be
-  considered shippable or agent-runnable.
+`setup_host.*` and `host_bootstrap.py` are pre-server shell scripts. `stage0_check.py` is the current
+shell/operator wrapper for Stage 0 board validation. Today these are run at a terminal by a human or a
+terminal-driving agent, so they do **not** each need an exhaustive standalone doc. They need **one
+operator guide** that an operator follows to take a fresh machine to a Stage-0-ready bench.
+
+This is a workflow boundary, not a permanent product boundary. Raw machine bootstrap still begins outside
+the server, but board-validation logic currently fronted by `stage0_check.py` may later be exposed through
+MCP tools. When that happens, the shell workflow remains documented in `stage0_setup.md`, while the new
+MCP tool contracts live in code docstrings per §1. The underlying implementation should live in shared
+internal services that both those MCP tools and any local programmer flows call.
+
+**The single operator guide is `stage0_setup.md`.** It is the consolidated home for what used to be
+scattered across `setup_host.md` / `host_bootstrap.md` / `stage0_check.md`. It must contain:
+
+1. **Purpose & entry conditions** — when this bring-up flow is the right one.
+2. **Ordered sequence** — the exact commands, in order, for the current shell path:
+   `setup_host.{ps1,sh}` → `host_bootstrap.py` → `stage0_check.py` → `uv run pyocd-debug-mcp`. State what
+   each step is for in a sentence or two; do not reproduce every flag.
+3. **Per-script essentials** — for each script, a short block: its one-line purpose, the handful of flags
+   an operator actually chooses (`--board-id`, `--install-packs`, `--reference-firmware`, `--recover-test`,
+   …), and what "done/ready" looks like. The script's `--help` carries the exhaustive flag list; the guide
+   carries the *decisions*.
+4. **Branch points & handoffs** — "if probes aren't visible, fix host visibility before Stage 0"; what each
+   step must produce for the next (a probe UID for `.env`, a passing host check before board checks), and
+   which parts are expected to remain shell-first vs. become MCP-callable later.
+5. **Consolidated troubleshooting table** — symptom (visible in output) → cause → fix → what to rerun,
+   merged across the scripts. This is the salvaged value of the old per-script failure tables; keep it
+   rigorous and symptom-first, because the operator diagnoses from output alone.
+6. **Verified / Pending verification** — per the Coding Guidelines, especially what is still unproven on
+   real hardware.
+
+**Bootstrap/environment specifics** (installing `uv`, the pinned `3.12` interpreter, `.env` /
+`pyocd.local.yaml` local overrides) live in `init.md`; **canonical layout and naming** live in
+`README.md`. The operator guide links to those rather than duplicating them. One fact, one home.
+
+**When a NEW bench/setup script appears:** do not create a new standalone script-doc. Add its purpose,
+its operator-facing flags, its "ready" signal, and its failure rows to `stage0_setup.md`, in sequence. A
+second operator guide is warranted only if a genuinely separate operator workflow emerges (not the case
+in Phase A).
 
 ---
 
-## 4. Pre-commit script-doc check (run before committing any runnable script)
-- [ ] The script has a doc with ALL mandatory sections §1–§8 present (none blank; N/A stated) (§1)
-- [ ] §1 states WHEN to run AND when NOT to (with which script to run instead) — a real decision aid (§1)
-- [ ] §7 gives the ordered, runnable PREREQUISITE COMMANDS to reach the state this script needs (§7)
-- [ ] Every input/flag/env var/config key is documented with meaning, type, default, allowed values (§3)
-- [ ] Every log line, output field, and exit code the script can emit is explained (§4)
-- [ ] Every known failure maps symptom (visible in output) → cause → fix → what to rerun (§5, §6)
-- [ ] Out-of-order / unmet-precondition failures cross-referenced between §5 and §7 (§7)
-- [ ] Destructive behavior is prominently flagged; gate behavior described (§2)
-- [ ] Hardware failure modes (board/port/lock/target/wiring) have distinguishing symptoms (§5)
-- [ ] No behavior is discoverable only by reading the code — the doc fully substitutes for the source (§0)
-- [ ] Doc updated in the SAME commit as the script; no new undocumented log/input/behavior (§3 sync)
-- [ ] Verified vs. Pending-verification stated; UNVERIFIED behaviors marked (§8)
+## 3. SYNC: documentation still moves with the code (the drift rule is unchanged)
+
+The Doc-Sync Playbook applies in full — only the *location* of the documentation changed.
+
+- **Change an MCP tool's behavior, inputs, returns, or guard text → update its docstring in the SAME unit
+  of work.** A drifted docstring misdirects the client agent exactly as a drifted script-doc once did —
+  worse, because it's the only thing the agent sees.
+- **Change a bench/setup script's sequence, an operator-facing flag, a "ready" signal, or a failure
+  mode → update `stage0_setup.md` in the same unit of work.** Do not let the operator guide lag the
+  scripts.
+- **Never reintroduce a sidecar per-script `.md`.** If a change makes you want one, the content belongs in
+  a docstring (MCP tool) or in `stage0_setup.md` (bench script).
+
+---
+
+## 4. Pre-commit documentation check
+
+For an **MCP tool** change:
+- [ ] The docstring lets the model decide WHEN to call, choose inputs, and interpret the return (§1)
+- [ ] Every argument is documented in `Args:` with meaning, accepted forms, and default/fallback (§1)
+- [ ] Return and guard/error strings are self-describing, stable, and phrased as the next action (§1)
+- [ ] Returns typed text, not raw dicts; destructive tools flag it in the first line and route through the gate (§1)
+- [ ] Validated in the MCP Inspector; no sidecar `.md` was created for the tool (§1)
+- [ ] Docstring updated in the SAME commit as the code (§3)
+
+For a **bench/setup script** change:
+- [ ] `stage0_setup.md` carries the script's purpose, operator-facing flags, "ready" signal, and failure rows (§2)
+- [ ] Ordered sequence and branch points still correct end-to-end; bootstrap/layout facts left to `init.md`/`README.md` (§2)
+- [ ] Consolidated troubleshooting table updated; symptom→cause→fix→rerun intact (§2)
+- [ ] No new standalone script-doc introduced; operator guide updated in the SAME commit (§2, §3)
+- [ ] Verified vs. Pending-verification stated; UNVERIFIED hardware behavior marked (§2)
 
 ---
 
 ## The one-sentence version
-**The operating agent never sees the code — only the doc and the script's output — so every runnable
-script carries a doc that fully replaces reading it: when to run it vs. when to run something else, the
-exact ordered commands to reach the state it needs, every input, every log/output/exit-code's meaning,
-and every failure mapped from visible symptom to cause to fix to what-to-rerun — kept in lockstep with
-the script, because a stale script-doc actively misdirects an agent operating blind.**
+**In the MCP product the client agent reads tool *descriptions and handles over the protocol, never a
+sidecar `.md`* — so an MCP tool is documented in its docstring (in the code), and the human/terminal
+bench scripts share ONE operator guide (`stage0_setup.md`) instead of a separate exhaustive doc per
+file; documentation still moves with the code, it just lives where its reader actually looks.**

@@ -125,8 +125,9 @@ only values whose *origin and changeability* a future reader would need to know.
 - **MCP protocol plumbing → the `mcp` SDK + FastMCP do this.** Use the decorators; don't hand-roll
   JSON-RPC.
 - **Where your real code lives** (and the only place to spend real effort): the uniform adapter
-  interface, the MCP tool wrappers, and the safety/convergence/logging/skills layer. That last layer is
-  the product; the libraries are the hands it uses.
+  interface, the shared board-control services above those adapters, the thin
+  MCP tool wrappers, and the safety/convergence/logging/skills layer. That last
+  layer is the product; the libraries are the hands it uses.
 
 ---
 

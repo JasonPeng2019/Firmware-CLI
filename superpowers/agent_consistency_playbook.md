@@ -14,10 +14,10 @@
 
 When two sources disagree, the higher one wins. **No exceptions without explicit user sign-off.**
 
-1. **`build_plan_concrete.md`** — THE source of truth for architecture, stages, decisions, repo
+1. **`markdowns/firmware_agent_build_plan_concrete (10).md`** — THE source of truth for architecture, stages, decisions, repo
    layout, board schema, tool surface, guardrails, and build order. When *anything* conflicts with it,
    it wins.
-2. **`agent_coding_guidelines.md`** — how code/docs must be written (no-hardcoding, origin tags,
+2. **`superpowers/agent_coding_playbook.md`** — how code/docs must be written (no-hardcoding, origin tags,
    verify-don't-claim, build-on-libraries). Binding wherever it doesn't conflict with #1.
 3. **The current committed `main` branch code** — the real, merged state. Reflects reality, but is
    SUBORDINATE to the plan: if committed code contradicts the plan, the *code* is the bug, not the plan
@@ -36,7 +36,7 @@ reality-subject-to-the-plan) is authority. Everything else is a proposal to be r
 
 Before writing a single line of code or doc, every agent MUST, in order:
 
-1. **Read this playbook, then `build_plan_concrete.md`, then `agent_coding_guidelines.md`.** No task
+1. **Read this playbook, then `markdowns/firmware_agent_build_plan_concrete (10).md`, then `superpowers/agent_coding_playbook.md`.** No task
    starts without these three in context.
 2. **Read the current `main` state of every file you will touch or depend on** — in full, not skimmed.
 3. **Read any roadmap/design doc/branch that claims to govern this area** — explicitly to *check it
@@ -116,7 +116,7 @@ need, you MUST surface it to the user — clearly and in one place — rather th
 ---
 
 ## 6. The pre-commit consistency check (run before every commit)
-- [ ] Read playbook + `build_plan_concrete` + guidelines before starting (§2)
+- [ ] Read playbook + `markdowns/firmware_agent_build_plan_concrete (10).md` + `superpowers/agent_coding_playbook.md` before starting (§2)
 - [ ] Read current `main` of every touched/depended-on file, in full (§2)
 - [ ] Built a reconciliation list; resolved conflicts by the authority order (§1, §2)
 - [ ] Matched existing layout/naming/patterns/layering; didn't invent parallel conventions (§3)
