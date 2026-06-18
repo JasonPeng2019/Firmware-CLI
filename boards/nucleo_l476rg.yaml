@@ -2,25 +2,27 @@ board_id: nucleo_l476rg  # PROJECT-DEFINED (our canonical board id)
 display_name: "Nucleo-L476RG"  # PROJECT-DEFINED (human-facing board label)
 mcu_family: stm32l476  # HW-FIXED (the silicon family on the reference board)
 probe_family: stlink  # HW-FIXED (the onboard debug probe family)
-pyocd_target: stm32l476rgtx  # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --targets`)
-serial_baudrate: 115200  # PROJECT-DEFINED, UNVERIFIED (chosen reference-firmware UART default)
+pyocd_target: stm32l476rgtx  # VENDOR-FIXED, BENCH-VERIFIED on the live Nucleo-L476RG Stage 0 path
+serial_baudrate: 115200  # PROJECT-DEFINED, BENCH-VERIFIED by the repo-owned reference firmware
 test_read_address: 0x08000000  # HW-FIXED (STM32 flash base; safe readable smoke-test address)
-pack_name: stm32l476  # VENDOR-FIXED, UNVERIFIED (`pyocd pack install` search/install token)
-# This board remains pending real R2 bench validation for its exact pyOCD target and pack behavior.
-# If host bootstrap reports missing target support here, treat it as a surfaced Stage 0 readiness gap.
-uart_note: "Reference firmware should print on USART2 at 115200 8N1."  # PROJECT-DEFINED, UNVERIFIED (expected Stage 0 validation note)
-probe_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side probe matching heuristics)
+pack_name: stm32l476  # VENDOR-FIXED, BENCH-VERIFIED (`pyocd pack install stm32l476` supplies the target)
+# Bench truth (macOS host): probe UID 0668FF514988525067213913, serial port /dev/cu.usbmodem143303,
+# reference artifact flash + UART `boot ok` both pass through the shared Stage 0 services.
+# The human operator confirmed that the visible ST-Link probe and `/dev/cu.usbmodem143303`
+# were exposed by the same physical `nucleo_l476rg` board during the final STM32 bench run.
+uart_note: "Reference firmware should print on USART2 at 115200 8N1."  # PROJECT-DEFINED, BENCH-VERIFIED
+probe_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED by generic matching on this host
   - st-link
   - stlink
   - stm32
   - nucleo
-serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matching heuristics)
+serial_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED by generic matching on this host
   - st-link
   - stlink
   - stm32
   - nucleo
   - virtual com
-reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (expected repo-owned reference-firmware UART signature; Stage 0 UART proof still needs the physical board)
+reference_uart_patterns:  # PROJECT-DEFINED, BENCH-VERIFIED against the repo-owned reference firmware
   - "boot ok"
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.
 # Those are runtime/session inputs supplied by the host, not board metadata.

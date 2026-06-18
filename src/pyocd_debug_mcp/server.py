@@ -21,9 +21,6 @@ import threading
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
-from pyocd.core.helpers import ConnectHelper
-from pyocd.core.session import Session
-from pyocd.core.target import Target
 
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
@@ -31,6 +28,8 @@ from pyocd_debug_mcp.board_config import (
     load_selected_board_configs,
 )
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.services import target_control
+from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 
 load_local_env()
 
@@ -39,10 +38,7 @@ mcp = FastMCP("pyocd-debug")
 # pyOCD is not thread-safe: serialize all probe access.
 _lock = threading.Lock()
 # The single live session, or None when disconnected.
-_session: Session | None = None
-# The board definition the active session was opened with, or None in raw-target
-# mode (connect called without a board_id). Lets tools read board-config facts.
-_active_board: BoardConfig | None = None
+_session_handle: TargetSessionHandle | None = None
 
 
 def _parse_int(text: str) -> int:
@@ -102,25 +98,15 @@ def format_board_info(b: BoardConfig) -> str:
 
 
 def build_session_options(board: BoardConfig | None, target: str | None) -> dict[str, object] | None:
-    """Build pyOCD session options from shared board facts.
-
-    Keep probe-family-specific pyOCD quirks in one place so different wrappers
-    can converge on the same connection behavior later.
-    """
-    options: dict[str, object] = {}
-    if target:
-        options["target_override"] = target
-    if board and board.probe_family == "jlink":
-        # Match the Stage 0 CLI's verified workaround for J-Link open-by-serial.
-        options["jlink.non_interactive"] = False
-    return options or None
+    """Compatibility wrapper around the shared target-control option builder."""
+    return target_control.build_session_options(board, target)
 
 
-def _target() -> Target:
-    """Return the live target or raise if not connected."""
-    if _session is None:
+def _handle() -> TargetSessionHandle:
+    """Return the live session handle or raise if not connected."""
+    if _session_handle is None:
         raise RuntimeError("Not connected to a probe. Call `connect` first.")
-    return _session.target
+    return _session_handle
 
 
 @mcp.tool()
@@ -149,9 +135,9 @@ def connect(
             ``boards/`` directory, for a custom board. Defaults to the
             ``PYOCD_BOARD_CONFIG`` environment variable.
     """
-    global _session, _active_board
+    global _session_handle
     with _lock:
-        if _session is not None:
+        if _session_handle is not None:
             return "Already connected. Call `disconnect` first to switch probes."
 
         board = resolve_board_config(board_id, board_config)
@@ -162,40 +148,25 @@ def connect(
             or os.environ.get("PYOCD_TARGET")
             or None
         )
-        options = build_session_options(board, tgt)
-
-        # auto_open=False so we control the open() explicitly for a long-lived
-        # session; blocking=False + return_first=True keep it headless.
-        session = ConnectHelper.session_with_chosen_probe(
-            blocking=False,
-            return_first=True,
-            unique_id=uid,
-            auto_open=False,
-            options=options,
-        )
-        if session is None:
-            raise RuntimeError("No matching debug probe found.")
-
-        session.open()
-        _session = session
-        _active_board = board
+        handle = target_control.open_session(board=board, unique_id=uid, target=tgt)
+        _session_handle = handle
         suffix = f" [board config: {board.board_id}]" if board else ""
+        board_name = handle.session.board.name if handle.session.board is not None else "<unknown>"
         return (
-            f"Connected to board '{session.board.name}' via probe "
-            f"{session.probe.unique_id}.{suffix}"
+            f"Connected to board '{board_name}' via probe "
+            f"{handle.probe_uid or '(unknown)'} via {handle.route_used}.{suffix}"
         )
 
 
 @mcp.tool()
 def disconnect() -> str:
     """Close the active debug session and release the probe."""
-    global _session, _active_board
+    global _session_handle
     with _lock:
-        if _session is None:
+        if _session_handle is None:
             return "Not connected."
-        _session.close()
-        _session = None
-        _active_board = None
+        target_control.close_session(_session_handle)
+        _session_handle = None
         return "Disconnected."
 
 
@@ -210,7 +181,10 @@ def get_board_info() -> str:
     facts were not loaded.
     """
     with _lock:
-        b = _active_board
+        handle = _session_handle
+        if handle is None:
+            return "Not connected. Call `connect` first."
+        b = handle.board
         if b is None:
             return (
                 "No board config loaded for this session. Pass `board_id` to "
@@ -223,14 +197,14 @@ def get_board_info() -> str:
 def get_state() -> str:
     """Return the current core run state (e.g. HALTED, RUNNING, RESET)."""
     with _lock:
-        return _target().get_state().name
+        return target_control.get_state(_handle())
 
 
 @mcp.tool()
 def halt() -> str:
     """Halt the core."""
     with _lock:
-        _target().halt()
+        target_control.halt(_handle())
         return "Halted."
 
 
@@ -238,7 +212,7 @@ def halt() -> str:
 def resume() -> str:
     """Resume execution of the core."""
     with _lock:
-        _target().resume()
+        target_control.resume(_handle())
         return "Resumed."
 
 
@@ -246,9 +220,8 @@ def resume() -> str:
 def step() -> str:
     """Single-step one instruction and return the new program counter."""
     with _lock:
-        t = _target()
-        t.step()
-        return f"Stepped. pc=0x{t.read_core_register('pc'):08X}"
+        pc = target_control.step(_handle())
+        return f"Stepped. pc=0x{pc:08X}"
 
 
 @mcp.tool()
@@ -260,11 +233,9 @@ def reset(halt_after: bool = True) -> str:
             If False, reset and let the target run.
     """
     with _lock:
-        t = _target()
+        target_control.reset(_handle(), halt_after=halt_after)
         if halt_after:
-            t.reset_and_halt()
             return "Reset and halted."
-        t.reset()
         return "Reset and running."
 
 
@@ -275,14 +246,14 @@ def read_core_register(name: str) -> str:
     Returns the value as a hex string.
     """
     with _lock:
-        return f"0x{_target().read_core_register(name):08X}"
+        return f"0x{target_control.read_core_register(_handle(), name):08X}"
 
 
 @mcp.tool()
 def write_core_register(name: str, value: str) -> str:
     """Write a core register by name. ``value`` may be hex (0x...) or decimal."""
     with _lock:
-        _target().write_core_register(name, _parse_int(value))
+        target_control.write_core_register(_handle(), name, _parse_int(value))
         return f"Wrote {value} to {name}."
 
 
@@ -295,7 +266,7 @@ def read_memory(address: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
-        value = _target().read_memory(_parse_int(address), word_size)
+        value = target_control.read_memory(_handle(), _parse_int(address), word_size)
         width = word_size // 4
         return f"0x{value:0{width}X}"
 
@@ -307,7 +278,7 @@ def read_memory_block(address: str, length: int) -> str:
     Returns the bytes as a space-separated hex string.
     """
     with _lock:
-        data = _target().read_memory_block8(_parse_int(address), length)
+        data = target_control.read_memory_block(_handle(), _parse_int(address), length)
         return " ".join(f"{b:02X}" for b in data)
 
 
@@ -321,7 +292,7 @@ def write_memory(address: str, value: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
-        _target().write_memory(_parse_int(address), _parse_int(value), word_size)
+        target_control.write_memory(_handle(), _parse_int(address), _parse_int(value), word_size)
         return f"Wrote {value} to {address}."
 
 
@@ -329,7 +300,7 @@ def write_memory(address: str, value: str, word_size: int = 32) -> str:
 def set_breakpoint(address: str) -> str:
     """Set a hardware/software breakpoint at ``address``."""
     with _lock:
-        _target().set_breakpoint(_parse_int(address))
+        target_control.set_breakpoint(_handle(), _parse_int(address))
         return f"Breakpoint set at {address}."
 
 
@@ -337,7 +308,7 @@ def set_breakpoint(address: str) -> str:
 def remove_breakpoint(address: str) -> str:
     """Remove the breakpoint at ``address``."""
     with _lock:
-        _target().remove_breakpoint(_parse_int(address))
+        target_control.remove_breakpoint(_handle(), _parse_int(address))
         return f"Breakpoint removed at {address}."
 
 

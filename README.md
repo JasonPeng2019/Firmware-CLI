@@ -30,10 +30,11 @@ Today that means:
 - test and harness scaffolding in `tests/`
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 
-The current scoped board pair for the real Phase A bench path is
-`nrf52833dk` plus `nucleo_l476rg`.
-The repo still carries a related `nrf52840dk` profile, but it is not the
-current primary Nordic board for the validated Stage 0 path.
+The official scoped board pair for the real Phase A / Phase B bench path is
+`nrf52840dk` plus `nucleo_l476rg`.
+The repo also carries `nrf52833dk` as a useful supplemental Nordic bench
+profile, but it does not replace the official `nrf52840dk` scope in the
+roadmap.
 
 ## Canonical Tree
 
@@ -50,10 +51,16 @@ Firmware-CLI/
 |-- stage0_check.py
 |-- stage0_setup.md
 |-- boards/
+|   |-- nrf52833dk.yaml
 |   |-- nrf52840dk.yaml
 |   `-- nucleo_l476rg.yaml
 |-- firmware/
 |   |-- README.md
+|   |-- nrf52833dk/
+|   |   |-- reference/src/
+|   |   |-- reference/build/
+|   |   |-- recovery/
+|   |   `-- bugs/
 |   |-- nrf52840dk/
 |   |   |-- reference/src/
 |   |   |-- reference/build/
@@ -71,15 +78,23 @@ Firmware-CLI/
 |   |-- fixtures/
 |   |-- cases/
 |   `-- harness/
+|       `-- stage1_smoke.py
 |-- src/
 |   `-- pyocd_debug_mcp/
+|       |-- adapters/
+|       |-- services/
 |       |-- __init__.py
+|       |-- board_config.py
 |       |-- local_env.py
+|       |-- serial_resolver.py
 |       `-- server.py
+|-- scratch/
+|   `-- README.md
 `-- markdowns/
     |-- ROADMAP.md
     |-- firmware_agent_build_plan_concrete (10).md
     |-- firmware_agent_mcp_architecture.md
+    |-- current-progress.md
     `-- build_plan_spec_gaps.md
 ```
 
@@ -161,7 +176,7 @@ uv sync
 On Windows, the preferred unattended host bootstrap entry point is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 ```
 
 On macOS, the preferred host bootstrap entry point is:
@@ -246,8 +261,17 @@ Verified:
 
 - non-hardware verification: this document's tree, command surface, and doc
   links match the current root-level scripts and docs
+- hardware-backed STM32 proof on this Mac host: `nucleo_l476rg` now passes
+  Stage 0 connect, flash, and UART through the shared target-control services
+- the STM32 bench truth is fully closed in repo status, including the confirmed
+  shared USB correlation between the visible ST-Link probe and
+  `/dev/cu.usbmodem143303`
+- the canonical Windows `R0` bootstrap path has been verified on a real Windows
+  host
+- the repo now carries a full official-board baseline package under
+  `firmware/nrf52840dk/` for the scoped Nordic board
 
 Pending verification:
 
-- hardware-backed confirmation that the documented bring-up flow is sufficient
-  on all supported board families
+- the official `nrf52840dk` board still needs the same shared-service proof on
+  current hardware

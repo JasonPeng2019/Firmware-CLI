@@ -343,7 +343,7 @@ try {
         throw 'setup_host.ps1 currently supports Windows host automation only.'
     }
 
-    $boards = @(Get-SelectedBoards)
+    $boards = @(Get-SelectedBoardsViaLoader)
     if (-not $boards -or @($boards).Count -eq 0) {
         throw 'No board configs were selected.'
     }

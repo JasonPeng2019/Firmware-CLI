@@ -923,12 +923,14 @@ repo itself is off the list.
 Verified:
 
 - The current checked-in repo now uses `src/pyocd_debug_mcp/` as the canonical
-  product-code path and `nrf52833dk` as the current scoped Nordic bench board
-  in the Phase A docs.
+  product-code path and `nrf52840dk` as the official scoped Nordic board in
+  the Phase A docs.
+- The canonical Windows `R0` bootstrap path has been verified on a real
+  Windows host.
+- The `nucleo_l476rg` reference baseline now has real Stage 0 flash and UART
+  proof on the Mac bench.
 
 Pending verification:
 
-- The unattended Windows bootstrap path still needs a real Windows bench run.
-- The `nucleo_l476rg` reference baseline now exists and builds, but its
-  physical Stage 0 flash and UART proof still need a real `nucleo_l476rg`
-  bench run.
+- The official `nrf52840dk` board still needs full real bench proof through
+  the shared-service Stage 0 and API-harness paths.

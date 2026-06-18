@@ -149,13 +149,13 @@ def default_test_address(mcu_family: str) -> int:
     )
 
 
-def load_board_config_document(path: Path) -> dict:
+def load_board_config_document(path: Path) -> dict[str, object]:
     suffix = path.suffix.lower()
     if suffix == ".json":
         data = json.loads(path.read_text(encoding="utf-8"))
     elif suffix in BOARD_CONFIG_SUFFIXES:
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
         except ImportError as exc:
             raise ConfigError(
                 f"PyYAML is required to load {path.name}. Run 'uv sync' from the repo root or use JSON."
@@ -169,7 +169,7 @@ def load_board_config_document(path: Path) -> dict:
     return data
 
 
-def make_board_config(raw: dict, source_path: Path | None) -> BoardConfig:
+def make_board_config(raw: dict[str, object], source_path: Path | None) -> BoardConfig:
     forbidden_session_fields = {
         "project_path",
         "user_project_path",

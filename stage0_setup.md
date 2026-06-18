@@ -66,7 +66,7 @@ brew install uv
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
 ```
 
 macOS:
@@ -319,11 +319,16 @@ Verified:
 - this operator guide's sequence, branch points, handoffs, and per-script essentials match the current
   `setup_host`, `host_bootstrap.py`, and `stage0_check.py` roles, flags, and output
 - this flow matches the current `stage0_check.py` CLI shape and shared board loader behavior
-- the `nrf52833dk` flash, UART, and recover path is bench-verified on this Mac host when a reference
-  artifact is supplied
+- the supplemental `nrf52833dk` flash, UART, and recover path is bench-verified on this Mac host when a
+  reference artifact is supplied
+- the `nucleo_l476rg` flash and UART path is now bench-verified on this Mac host through the shared
+  target-control and UART services
+- the STM32 bench truth is fully closed in repo status, including the
+  confirmed shared USB correlation for `nucleo_l476rg`
+- the canonical Windows `R0` bootstrap path has been verified on a real
+  Windows host
 
 Pending verification:
 
-- the unattended Windows bootstrap path still needs a real Windows bench run
-- the `nucleo_l476rg` reference baseline now exists and builds, but its physical Stage 0 flash and UART
-  proof still need a real `nucleo_l476rg` bench run
+- the official `nrf52840dk` board still needs the same end-to-end shared-service proof on current
+  hardware

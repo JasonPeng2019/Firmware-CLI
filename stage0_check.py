@@ -30,7 +30,7 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
-from pyocd_debug_mcp.board_config import (
+from pyocd_debug_mcp.board_config import (  # noqa: E402
     DEFAULT_BOARD_CONFIG_DIR,
     PROBE_FAMILY_HINTS,
     RECOVER_MODE_MANUAL_ONLY,
@@ -41,12 +41,21 @@ from pyocd_debug_mcp.board_config import (
     parse_int,
     validate_width_bits,
 )
-from pyocd_debug_mcp.local_env import load_local_env
-from pyocd_debug_mcp.serial_resolver import (
+from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
     SerialPortInfo,
     command_exists,
     is_interactive_terminal,
+    list_serial_ports,
     resolve_serial_port,
+)
+from pyocd_debug_mcp.services import target_control  # noqa: E402
+from pyocd_debug_mcp.services.uart_capture import capture_uart_output  # noqa: E402
+from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle  # noqa: E402
+from pyocd_debug_mcp.target_errors import (  # noqa: E402
+    LockedTargetError,
+    TargetConnectionError,
+    UnsupportedArtifactError,
 )
 
 PASS = "PASS"
@@ -86,6 +95,7 @@ class ReadResult:
     stdout: str
     stderr: str
     value: int | None = None
+    error: Exception | None = None
 
     @property
     def combined(self) -> str:
@@ -97,6 +107,12 @@ class RecoverResult:
     completed: bool
     reconnect_ok: bool | None = None
     post_identity_ok: bool | None = None
+
+
+@dataclass
+class FlashResult:
+    status: bool | None
+    session_handle: TargetSessionHandle | None = None
 
 
 def run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
@@ -282,19 +298,36 @@ def read_memory_value(
         return ReadResult(rc=1, stdout="", stderr="probe not detected")
 
     width_bits = validate_width_bits(width_bits, "width_bits")
-    read_len = width_bits // 8
-    cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(["-c", f"read{width_bits} {hex(address)} {read_len}"])
     last_result = ReadResult(rc=1, stdout="", stderr="unknown read failure")
     for attempt in range(3):
-        rc, out, err = run(cmd)
-        last_result = ReadResult(rc=rc, stdout=out, stderr=err, value=None)
+        handle = None
+        try:
+            handle = target_control.open_session(
+                board=board,
+                unique_id=probe.uid or None,
+                target=board.pyocd_target,
+            )
+            value = target_control.read_memory(handle, address, width_bits)
+            width_nibbles = width_bits // 4
+            out = f"{address:08X}:  {value:0{width_nibbles}X}"
+            return ReadResult(rc=0, stdout=out, stderr="", value=value)
+        except Exception as exc:  # noqa: BLE001 - keep the raw backend failure text
+            last_result = ReadResult(
+                rc=1,
+                stdout="",
+                stderr=f"{type(exc).__name__}: {exc}",
+                value=None,
+                error=exc,
+            )
+        finally:
+            if handle is not None:
+                try:
+                    target_control.close_session(handle)
+                except Exception:  # noqa: BLE001 - close failure should not mask the read error
+                    pass
+
         combined = last_result.combined
-        if rc == 0 and out.strip() and "error" not in combined:
-            match = re.search(r":\s+([0-9a-fA-F]+)", out)
-            if match:
-                return ReadResult(rc=rc, stdout=out, stderr=err, value=int(match.group(1), 16))
-        if attempt < 2 and (
+        if attempt < 2 and isinstance(last_result.error, TargetConnectionError) and (
             "j-link is already open" in combined or "could not read j-link capabilities" in combined
         ):
             time.sleep(0.25)
@@ -415,20 +448,17 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
         check(False, "Skipped - target pack not installed")
         return False
 
-    cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(["-c", f"read32 {hex(board.test_addr)} 4"])
-    print(f"  Attempting: {' '.join(cmd)}")
+    print(
+        "  Attempting: "
+        f"pyOCD API read32 {hex(board.test_addr)} via {probe.uid or 'auto-selected probe'}"
+    )
     result = read_memory_value(board, probe, board.test_addr, 32)
 
     if result.value is not None:
-        check(True, f"Connected and read {hex(board.test_addr)}: {result.stdout.strip()}")
+        check(True, f"Connected and read {hex(board.test_addr)}: 0x{result.value:08X}")
         return True
 
-    if (
-        "approtect" in result.combined
-        or "access port" in result.combined
-        or "locked" in result.combined
-    ):
+    if isinstance(result.error, LockedTargetError):
         log(WARN, f"{board.display_name} appears access-protected.")
         for _, recover_cmd in build_recover_attempts(board, probe):
             print(f"      Recover with: {' '.join(recover_cmd)}")
@@ -436,50 +466,46 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
             print("      Recover mode for this board is manual_only; automate this later in code.")
         return False
 
-    if (
-        "no connected" in result.combined
-        or "no target" in result.combined
-        or "unable to connect" in result.combined
-    ):
+    if isinstance(result.error, TargetConnectionError):
+        if (
+            "no emulator" in result.combined
+            or "could not read j-link capabilities" in result.combined
+            or "no j-link" in result.combined
+            or "unable to open" in result.combined
+            or "could not open" in result.combined
+            or "failed to open" in result.combined
+            or "access denied" in result.combined
+            or "no backend available" in result.combined
+            or "no usb backend" in result.combined
+            or "libusb" in result.combined
+        ):
+            check(
+                False,
+                f"{board.display_name} probe is visible but the {board.probe_type} backend could not claim it",
+            )
+            print("      The probe enumerates on the host but the debug channel cannot be opened.")
+            print("      This is almost always a USB driver-binding or exclusive-access issue, not the board:")
+            print("      - Close anything else holding the probe (other pyOCD/JLink/IDE sessions, an MCP server) and replug.")
+            if board.probe_family == "jlink":
+                print(
+                    "      - The J-Link debug interface must be bound to the SEGGER J-Link driver, not generic WinUSB."
+                )
+                print(
+                    "        Reinstall the SEGGER J-Link Software pack (it rebinds the driver), then replug."
+                )
+            elif board.probe_family == "stlink":
+                print("      - Install/repair the ST-Link USB driver, then replug.")
+            else:
+                print(
+                    "      - Ensure the debug interface is bound to the driver pyOCD expects for this probe family."
+                )
+            return False
+
         check(False, "pyOCD found the probe but could not connect to the target MCU")
         print("      - Is the board powered?")
         print("      - Is the USB cable a data cable (not charge-only)?")
         if board.probe_family == "jlink":
             print("      - J-Link firmware or drivers may need updating")
-        return False
-
-    if (
-        "no emulator" in result.combined
-        or "could not read j-link capabilities" in result.combined
-        or "no j-link" in result.combined
-        or "unable to open" in result.combined
-        or "could not open" in result.combined
-        or "failed to open" in result.combined
-        or "access denied" in result.combined
-        or "no backend available" in result.combined
-        or "no usb backend" in result.combined
-        or "libusb" in result.combined
-    ):
-        check(
-            False,
-            f"{board.display_name} probe is visible but the {board.probe_type} backend could not claim it",
-        )
-        print("      The probe enumerates on the host but the debug channel cannot be opened.")
-        print("      This is almost always a USB driver-binding or exclusive-access issue, not the board:")
-        print("      - Close anything else holding the probe (other pyOCD/JLink/IDE sessions, an MCP server) and replug.")
-        if board.probe_family == "jlink":
-            print(
-                "      - The J-Link debug interface must be bound to the SEGGER J-Link driver, not generic WinUSB."
-            )
-            print(
-                "        Reinstall the SEGGER J-Link Software pack (it rebinds the driver), then replug."
-            )
-        elif board.probe_family == "stlink":
-            print("      - Install/repair the ST-Link USB driver, then replug.")
-        else:
-            print(
-                "      - Ensure the debug interface is bound to the driver pyOCD expects for this probe family."
-            )
         return False
 
     check(False, f"Unexpected error (rc={result.rc})")
@@ -508,14 +534,11 @@ def check_silicon_identity(
         return False
 
     label = board.silicon_id_label or "silicon identity"
-    cmd = pyocd_base("cmd", board, probe)
-    cmd.extend(
-        [
-            "-c",
-            f"read{board.silicon_id_width_bits} {hex(board.silicon_id_addr)} {board.silicon_id_width_bits // 8}",
-        ]
+    print(
+        "  Attempting: "
+        f"pyOCD API read{board.silicon_id_width_bits} {hex(board.silicon_id_addr)} "
+        f"via {probe.uid or 'auto-selected probe'}"
     )
-    print(f"  Attempting: {' '.join(cmd)}")
     result = read_memory_value(board, probe, board.silicon_id_addr, board.silicon_id_width_bits)
     if result.value is None:
         check(False, f"Unable to read {label}")
@@ -541,30 +564,6 @@ def check_silicon_identity(
     if result.stdout.strip():
         print(f"      Raw: {result.stdout.strip()[:300]}")
     return ok
-
-
-def list_serial_ports() -> list[SerialPortInfo] | None:
-    _, list_ports = load_pyserial()
-    if list_ports is None:
-        return None
-
-    ports = []
-    for port in list_ports.comports():
-        ports.append(
-            SerialPortInfo(
-                device=port.device,
-                description=port.description or "",
-                manufacturer=getattr(port, "manufacturer", "") or "",
-                product=getattr(port, "product", "") or "",
-                interface=getattr(port, "interface", "") or "",
-                hwid=port.hwid or "",
-                serial_number=getattr(port, "serial_number", "") or "",
-                location=getattr(port, "location", "") or "",
-                vid=getattr(port, "vid", None),
-                pid=getattr(port, "pid", None),
-            )
-        )
-    return ports
 
 
 def check_virtual_com_ports(
@@ -643,24 +642,24 @@ def flash_reference_firmware(
     target_ok: bool,
     identity_ok: bool | None,
     reference_firmware_path: Path | None,
-) -> bool | None:
+) -> FlashResult:
     header(f"Reference firmware flash - {board.display_name}")
 
     if reference_firmware_path is None:
         log(WARN, "No reference firmware path supplied - leaving flash validation as a manual step")
-        return None
+        return FlashResult(None)
     if not reference_firmware_path.exists():
         check(False, f"Reference firmware file does not exist: {reference_firmware_path}")
-        return False
+        return FlashResult(False)
     if probe is None:
         check(False, "Skipped - probe not detected")
-        return False
+        return FlashResult(False)
     if not target_ok:
         check(False, "Skipped - target pack not installed")
-        return False
+        return FlashResult(False)
     if board.silicon_id_expected is not None and identity_ok is False:
         check(False, "Skipped - connected silicon identity does not match this board config")
-        return False
+        return FlashResult(False)
 
     def try_nrfjprog_fallback() -> bool:
         if not (board.mcu_family.startswith("nrf") and board.probe_family == "jlink"):
@@ -706,20 +705,40 @@ def flash_reference_firmware(
             print(f"      reset output: {trimmed_reset_out}")
         return True
 
-    cmd = pyocd_base("load", board, probe)
-    cmd.append(str(reference_firmware_path))
-    print(f"  Attempting: {' '.join(cmd)}")
-    rc, out, err = run(cmd)
-    if rc == 0:
-        check(True, f"Flashed reference firmware: {reference_firmware_path}")
-        if out.strip():
-            print(f"      {out.strip()[:300]}")
-        return True
-
-    check(False, f"Flash failed for {reference_firmware_path}")
-    if err.strip():
-        print(f"      stderr: {err.strip()[:300]}")
-    return True if try_nrfjprog_fallback() else False
+    print(
+        "  Attempting: "
+        f"pyOCD API flash {reference_firmware_path} via {probe.uid or 'auto-selected probe'}"
+    )
+    handle = None
+    keep_session_open = False
+    try:
+        handle = target_control.open_session(
+            board=board,
+            unique_id=probe.uid or None,
+            target=board.pyocd_target,
+        )
+        flashed_path = target_control.flash_firmware(
+            handle,
+            reference_firmware_path,
+            halt_after_reset=True,
+        )
+        check(True, f"Flashed reference firmware: {flashed_path}")
+        keep_session_open = True
+        return FlashResult(True, session_handle=handle)
+    except UnsupportedArtifactError as exc:
+        check(False, f"Flash failed for {reference_firmware_path}")
+        print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")
+        return FlashResult(False)
+    except Exception as exc:  # noqa: BLE001 - surface the raw flash failure first
+        check(False, f"Flash failed for {reference_firmware_path}")
+        print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")
+        return FlashResult(True if try_nrfjprog_fallback() else False)
+    finally:
+        if handle is not None and not keep_session_open:
+            try:
+                target_control.close_session(handle)
+            except Exception:  # noqa: BLE001 - do not hide the flash result
+                pass
 
 
 def read_uart_output(
@@ -728,6 +747,7 @@ def read_uart_output(
     baudrate: int,
     read_seconds: float,
     expected_text: str | None,
+    reset_handle: TargetSessionHandle | None = None,
 ) -> bool | None:
     header(f"UART output check - {board.display_name}")
 
@@ -740,36 +760,35 @@ def read_uart_output(
         check(False, "Skipped - pyserial is not installed")
         return False
 
-    deadline = time.monotonic() + read_seconds
-    captured = bytearray()
     try:
-        with serial_mod.Serial(port.device, baudrate=baudrate, timeout=0.2) as handle:
-            handle.reset_input_buffer()
-            while time.monotonic() < deadline:
-                chunk = handle.read(256)
-                if chunk:
-                    captured.extend(chunk)
+        on_port_open = None
+        if reset_handle is not None:
+            def on_port_open() -> None:
+                target_control.reset(reset_handle, halt_after=False)
+        capture = capture_uart_output(
+            port.device,
+            baudrate,
+            read_seconds,
+            expected_text,
+            on_port_open=on_port_open,
+        )
     except Exception as exc:
         check(False, f"Unable to read {port.device} at {baudrate} baud: {exc}")
         return False
 
-    text = captured.decode("utf-8", errors="replace")
-    excerpt = text.strip().replace("\r", "\\r").replace("\n", "\\n")
-    excerpt = excerpt[:300] if excerpt else ""
-
     if expected_text:
-        ok = expected_text in text
+        ok = capture.matched
         check(
             ok, f"UART output {'matched' if ok else 'did not match'} expected text on {port.device}"
         )
-        if excerpt:
-            print(f"      Captured: {excerpt}")
+        if capture.excerpt:
+            print(f"      Captured: {capture.excerpt}")
         return ok
 
-    ok = bool(text.strip())
+    ok = capture.has_output
     check(ok, f"UART produced {'some output' if ok else 'no output'} on {port.device}")
-    if excerpt:
-        print(f"      Captured: {excerpt}")
+    if capture.excerpt:
+        print(f"      Captured: {capture.excerpt}")
     return ok
 
 
@@ -797,28 +816,26 @@ def run_recover_test(
         check(False, "Skipped - this board's recover_mode is manual_only")
         return RecoverResult(False)
 
-    recover_attempts = build_recover_attempts(board, probe)
-    if not recover_attempts:
-        check(False, "Skipped - no built-in recover flow is implemented for this board family")
-        return RecoverResult(False)
-
     print("  Running destructive recover command. This may erase flash on the target.")
-    rc = 1
-    err = "recover flow did not run"
-    completed_via = ""
-    for index, (label, cmd) in enumerate(recover_attempts):
-        if index > 0:
-            print(f"  Previous recover step failed; attempting {label}.")
-        print(f"  Attempting: {' '.join(cmd)}")
-        rc, _, err = run(cmd)
-        if rc == 0:
-            completed_via = label
-            break
-    if rc != 0:
+    print(f"  Attempting: pyOCD API recover via {probe.uid or 'auto-selected probe'}")
+    handle = None
+    try:
+        handle = target_control.open_session(
+            board=board,
+            unique_id=probe.uid or None,
+            target=board.pyocd_target,
+        )
+        completed_via = target_control.recover_target(handle)
+    except Exception as exc:  # noqa: BLE001 - preserve the backend failure
         check(False, "Recover flow failed")
-        if err.strip():
-            print(f"      stderr: {err.strip()[:300]}")
+        print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")
         return RecoverResult(False)
+    finally:
+        if handle is not None:
+            try:
+                target_control.close_session(handle)
+            except Exception:  # noqa: BLE001 - do not hide the recover result
+                pass
 
     check(True, f"Recover completed via {completed_via}")
     reconnect_ok = check_connection(board, probe, target_ok)
@@ -1031,22 +1048,31 @@ def main():
 
         conn_ok = check_connection(board, probe, target_available)
         identity_ok = check_silicon_identity(board, probe, target_available)
-        flash_ok = flash_reference_firmware(
+        flash_result = flash_reference_firmware(
             board,
             probe,
             target_available,
             identity_ok,
             reference_firmware_path,
         )
+        flash_ok = flash_result.status
         uart_ok = None
-        if flash_ok is True:
-            uart_ok = read_uart_output(
-                board,
-                port,
-                baudrate,
-                args.serial_read_seconds,
-                expected_text,
-            )
+        try:
+            if flash_ok is True:
+                uart_ok = read_uart_output(
+                    board,
+                    port,
+                    baudrate,
+                    args.serial_read_seconds,
+                    expected_text,
+                    reset_handle=flash_result.session_handle,
+                )
+        finally:
+            if flash_result.session_handle is not None:
+                try:
+                    target_control.close_session(flash_result.session_handle)
+                except Exception:  # noqa: BLE001 - preserve the Stage 0 result
+                    pass
         recover_ok = run_recover_test(
             board,
             probe,

@@ -10,5 +10,10 @@ Intended layout:
 - `tests/cases/`: benchmark and injected-bug case definitions
 - `tests/harness/`: harness code and reusable test helpers
 
+Tracked harnesses:
+
+- `tests/harness/stage1_smoke.py`: the current canonical Stage 1 smoke-harness
+  entrypoint over the shared SWD and UART services
+
 Keep bug-variant source trees under `firmware/<board>/bugs/`. Keep harness and
 test definitions under `tests/`.

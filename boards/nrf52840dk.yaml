@@ -21,6 +21,8 @@ serial_hint_terms:  # PROJECT-DEFINED, UNVERIFIED (host-side serial-port matchin
   - segger
   - nrf
   - virtual com
+reference_uart_patterns:  # PROJECT-DEFINED, UNVERIFIED (expected repo-owned reference-firmware UART signature for the official Nordic board)
+  - "boot ok"
 requires_recover_validation: true  # PROJECT-DEFINED (Stage 0 policy for this board family)
 recover_mode: nrf_pyocd_unlock  # PROJECT-DEFINED (selects the Stage 0 recover backend for Nordic APPROTECT boards)
 # Do not add firmware paths, user project paths, build commands, or output artifact paths here.

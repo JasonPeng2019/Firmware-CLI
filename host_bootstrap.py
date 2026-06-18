@@ -28,15 +28,15 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 
-from pyocd_debug_mcp.board_config import (
+from pyocd_debug_mcp.board_config import (  # noqa: E402
     DEFAULT_BOARD_CONFIG_DIR,
     BoardConfig,
     ConfigError,
     load_selected_board_configs,
     preview_board_config_paths,
 )
-from pyocd_debug_mcp.local_env import load_local_env
-from pyocd_debug_mcp.serial_resolver import command_exists
+from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.serial_resolver import command_exists  # noqa: E402
 
 PASS = "PASS"
 FAIL = "FAIL"

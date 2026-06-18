@@ -185,8 +185,8 @@ at runtime. An explicit `target` takes precedence over a board config's
 ```bash
 uv run python host_bootstrap.py
 uv run python stage0_check.py
-uv run python host_bootstrap.py --board-id nrf52833dk
-uv run python stage0_check.py --board-id nrf52833dk
+uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52840dk
 uv run pyocd-debug-mcp
 uv run pytest
 uv run ruff check .
@@ -207,8 +207,14 @@ Verified:
 
 - non-hardware verification: this document's command sequence and related-doc
   links match the current repo layout and root scripts
+- the shared-service Stage 0 path is bench-proven on this Mac host for
+  `nucleo_l476rg` flash + UART
+- the supplemental `nrf52833dk` Stage 0 path is also bench-proven on this Mac
+  host when its reference artifact is supplied
+- the canonical Windows `R0` bootstrap path has been verified on a real
+  Windows host
 
 Pending verification:
 
-- first-run bootstrap behavior on a truly fresh Windows host
-- first-run bootstrap behavior on a truly fresh macOS host
+- the official `nrf52840dk` board still needs the same end-to-end shared-service
+  proof on current hardware

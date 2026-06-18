@@ -92,82 +92,55 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-parse_board_spec() {
-  local path="$1"
-  python3 - "$path" <<'PY'
-from pathlib import Path
+get_selected_boards_via_loader() {
+  section "Board config" >&2
+
+  local cmd=(uv run)
+  if [[ "$SKIP_UV_SYNC" -eq 1 || "$DRY_RUN" -eq 1 ]]; then
+    cmd+=(--no-sync)
+  fi
+  cmd+=(
+    python
+    -m
+    pyocd_debug_mcp.board_config_cli
+    --board-config-dir
+    "$BOARD_CONFIG_DIR"
+  )
+  local path
+  for path in "${BOARD_CONFIGS[@]:-}"; do
+    [[ -n "$path" ]] || continue
+    cmd+=(--board-config "$path")
+  done
+  local board_id
+  for board_id in "${BOARD_IDS[@]:-}"; do
+    [[ -n "$board_id" ]] || continue
+    cmd+=(--board-id "$board_id")
+  done
+
+  local boards_json
+  if ! boards_json="$("${cmd[@]}")"; then
+    local hint=""
+    if [[ "$SKIP_UV_SYNC" -eq 1 || "$DRY_RUN" -eq 1 ]]; then
+      hint=" The repo environment must already exist when using --skip-uv-sync or --dry-run because board metadata is resolved through the shared Python loader."
+    fi
+    echo "Shared board loader failed.${hint}" >&2
+    exit 1
+  fi
+
+  if [[ -z "$boards_json" || "$boards_json" == "[]" ]]; then
+    echo "No board configs were selected." >&2
+    exit 1
+  fi
+
+  status "PASS" "Selected boards via shared loader: $(python3 - <<'PY' "$boards_json"
 import json
 import sys
 
-path = Path(sys.argv[1])
-fields = {
-    "board_id": "",
-    "display_name": "",
-    "mcu_family": "",
-    "probe_family": "",
-}
-for raw_line in path.read_text(encoding="utf-8").splitlines():
-    line = raw_line.split("#", 1)[0]
-    if ":" not in line:
-        continue
-    key, value = line.split(":", 1)
-    key = key.strip()
-    if key not in fields:
-        continue
-    fields[key] = value.strip().strip('"').strip("'")
-if not fields["board_id"]:
-    raise SystemExit(f"board_id missing in {path}")
-print(json.dumps(fields))
+boards = json.loads(sys.argv[1])
+print(", ".join(board["board_id"] for board in boards))
 PY
-}
-
-gather_board_specs() {
-  python3 - "$BOARD_CONFIG_DIR" "${BOARD_CONFIGS[@]}" -- "${BOARD_IDS[@]}" <<'PY'
-from pathlib import Path
-import json
-import sys
-
-args = sys.argv[1:]
-sep = args.index("--")
-board_dir = Path(args[0])
-extra_paths = [Path(p) for p in args[1:sep]]
-board_ids = {item.strip().lower() for item in args[sep + 1:] if item.strip()}
-
-def load(path: Path) -> dict[str, str]:
-    fields = {
-        "board_id": "",
-        "display_name": "",
-        "mcu_family": "",
-        "probe_family": "",
-    }
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("#", 1)[0]
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = key.strip()
-        if key not in fields:
-            continue
-        fields[key] = value.strip().strip('"').strip("'")
-    if not fields["board_id"]:
-        raise SystemExit(f"board_id missing in {path}")
-    fields["board_id"] = fields["board_id"].lower()
-    fields["mcu_family"] = fields["mcu_family"].lower()
-    fields["probe_family"] = fields["probe_family"].lower()
-    return fields
-
-paths = []
-if board_dir.is_dir():
-    for path in sorted(board_dir.iterdir()):
-      if path.is_file() and path.suffix.lower() in {".yaml", ".yml", ".json"} and not path.stem.startswith("example_"):
-        paths.append(path)
-paths.extend(extra_paths)
-
-boards = [load(path) for path in paths]
-if board_ids:
-    boards = [board for board in boards if board["board_id"] in board_ids]
-print(json.dumps(boards))
-PY
+)" >&2
+  printf '%s\n' "$boards_json"
 }
 
 ensure_homebrew() {
@@ -272,22 +245,11 @@ run_host_bootstrap() {
 }
 
 section "macOS host setup"
-boards_json="$(gather_board_specs)"
-if [[ -z "$boards_json" || "$boards_json" == "[]" ]]; then
-  echo "No board configs were selected." >&2
-  exit 1
-fi
-
-status "INFO" "Selected boards: $(python3 - <<'PY' "$boards_json"
-import json, sys
-boards = json.loads(sys.argv[1])
-print(", ".join(board["board_id"] for board in boards))
-PY
-)"
 
 ensure_homebrew
 ensure_uv
 ensure_uv_sync
+boards_json="$(get_selected_boards_via_loader)"
 ensure_libusb
 
 needs_nordic="$(python3 - <<'PY' "$boards_json"

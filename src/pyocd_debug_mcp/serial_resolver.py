@@ -160,6 +160,31 @@ def command_exists(name: str) -> bool:
     return resolve_command_path(name) is not None
 
 
+def list_serial_ports() -> list[SerialPortInfo] | None:
+    try:
+        from serial.tools import list_ports  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+
+    ports: list[SerialPortInfo] = []
+    for port in list_ports.comports():
+        ports.append(
+            SerialPortInfo(
+                device=port.device,
+                description=port.description or "",
+                manufacturer=getattr(port, "manufacturer", "") or "",
+                product=getattr(port, "product", "") or "",
+                interface=getattr(port, "interface", "") or "",
+                hwid=port.hwid or "",
+                serial_number=getattr(port, "serial_number", "") or "",
+                location=getattr(port, "location", "") or "",
+                vid=getattr(port, "vid", None),
+                pid=getattr(port, "pid", None),
+            )
+        )
+    return ports
+
+
 def is_interactive_terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
