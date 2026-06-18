@@ -283,6 +283,11 @@ Verified:
   `firmware/nrf52840dk/` for the scoped Nordic board
 - the tracked Stage 1 proof surface is now `tests/harness/stage1_smoke.py`; the
   old scratch API harness is retired
+- limited STM32 MCP validation now exists for the current shared-service server
+  surface: `connect`, `get_board_info`, `halt`, `resume`, `reset`,
+  `read_memory`, `read_core_register`, `flash_firmware`, `read_serial`, and
+  the `unlock_recover` refusal/unsupported shape were exercised against the
+  live `nucleo_l476rg`
 
 Pending verification:
 
@@ -291,3 +296,4 @@ Pending verification:
 - the canonical official-board closure packet is frozen in
   `firmware/nrf52840dk/README.md`, but that runbook still needs to be executed
   on live `nrf52840dk` hardware before `G1` or `G3` can be claimed
+- official Nordic MCP Inspector proof is still pending, so `R9` is not closed

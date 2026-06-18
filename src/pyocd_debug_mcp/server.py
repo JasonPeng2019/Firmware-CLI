@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -57,9 +56,9 @@ NO_BOARD_CONFIG_MESSAGE = (
 )
 
 
-@dataclass(frozen=True)
 class _ProbeHint:
-    uid: str
+    def __init__(self, uid: str) -> None:
+        self.uid = uid
 
 
 def _parse_int(text: str) -> int:
@@ -379,6 +378,7 @@ def flash_firmware(path: str | None = None, halt_after_reset: bool = False) -> s
     Args:
         path: Optional explicit artifact path. When omitted, resolve the default
             flash artifact for the connected session's loaded board config.
+            Returns the resolved path in the success text.
         halt_after_reset: If True, leave the target halted after flashing.
             If False, reset and let it run.
     """
@@ -408,7 +408,14 @@ def read_serial(
     port: str | None = None,
     reset_on_open: bool = False,
 ) -> str:
-    """Capture bounded UART output through the shared serial-resolution and UART services."""
+    """Capture bounded UART output through the shared serial-resolution and UART services.
+
+    Defaults come from the connected board config when available:
+    expected UART text, baudrate, and serial-port selection heuristics.
+    Set ``port`` to override serial resolution explicitly. Set ``reset_on_open``
+    to trigger a target reset immediately after the UART port opens so boot text
+    is captured deterministically.
+    """
     with _lock:
         handle = _handle()
         if handle.board is None:
@@ -448,7 +455,12 @@ def read_serial(
 
 @mcp.tool()
 def unlock_recover(confirm: bool = False) -> str:
-    """Run the shared recover/unlock path for the connected board."""
+    """Run the shared recover/unlock path for the connected board.
+
+    This is a destructive action. When ``confirm`` is false the tool refuses
+    without touching hardware. Boards whose tracked config has no supported
+    ``recover_mode`` fail deterministically instead of pretending success.
+    """
     with _lock:
         handle = _handle()
         if handle.board is None:

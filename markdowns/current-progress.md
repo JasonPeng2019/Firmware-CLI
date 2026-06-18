@@ -120,6 +120,57 @@ path.
   - shared recover (`unlock_recover`)
 - this is limited `R9` prep only, not full `R9` closure
 
+## Limited `R9` Validation On STM32
+
+The current Stage 2 server surface has now been exercised on the live STM32
+bench.
+
+- Inspector launch command:
+  - `uv run mcp dev src/pyocd_debug_mcp/server.py`
+- STM32 bench facts used for the run:
+  - `board_id = nucleo_l476rg`
+  - probe UID `0668FF514988525067213913`
+  - serial port `/dev/cu.usbmodem143303`
+- Repo-side launch issue that was exposed and fixed:
+  - the `mcp dev` import path no longer crashes on `_ProbeHint`
+- Transport issue that was exposed and fixed:
+  - `flash_firmware` no longer leaks pyOCD progress bars onto MCP stdio during
+    flash operations
+
+Observed STM32 tool results on the current shared-service server surface:
+
+- passed:
+  - `connect`
+  - `get_board_info`
+  - `halt`
+  - `resume`
+  - `reset`
+  - `read_memory`
+  - `read_core_register`
+  - `flash_firmware()` with default artifact resolution
+  - `flash_firmware(path=..., halt_after_reset=true)` with explicit artifact
+    override
+  - `read_serial(reset_on_open=true)` with default board-config expectations
+  - `read_serial(port=..., reset_on_open=true)` with explicit serial override
+  - `disconnect`
+- default flash artifact resolution worked:
+  - `flash_firmware()` resolved the tracked STM32 baseline flash artifact at
+    `firmware/nucleo_l476rg/reference/build/firmware.hex`
+- default serial resolution worked:
+  - `read_serial(reset_on_open=true)` selected
+    `/dev/cu.usbmodem143303` and matched `boot ok`
+- explicit serial override worked:
+  - `read_serial(port=\"/dev/cu.usbmodem143303\", reset_on_open=true,
+    read_seconds=3.0)` matched `boot ok`
+- `unlock_recover` behavior on STM32 is now characterized:
+  - `confirm=false` returns the expected destructive-action refusal text
+  - `confirm=true` fails deterministically with
+    `Nucleo-L476RG does not define a recover mode.`
+- post-disconnect edge behavior is now characterized:
+  - `get_board_info()` returns the expected not-connected text
+  - `read_memory(...)` fails deterministically with
+    `Not connected to a probe. Call \`connect\` first.`
+
 `stage0_check.py`
 
 - still owns probe enumeration, pack checks, serial listing, CLI reporting, and
@@ -163,7 +214,7 @@ As of this file:
 - `R8`: first real smoke harness exists and passes on STM32, but is still
   waiting on the same harness run for `nrf52840dk`
 - `R9`: lightly prepared through thin MCP wrappers, but still waiting on later
-  Inspector-level validation and both-board proof
+  official `nrf52840dk` Inspector proof and both-board validation
 
 ## Short Resume Note
 

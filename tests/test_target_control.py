@@ -115,6 +115,47 @@ def test_pyocd_flash_can_leave_target_halted(monkeypatch, tmp_path: Path) -> Non
     ]
 
 
+def test_pyocd_flash_suppresses_backend_stdout_progress(
+    monkeypatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[str] = []
+    target = FakeTarget(calls)
+    session = FakeSession(target)
+    handle = TargetSessionHandle(
+        session=session,  # type: ignore[arg-type]
+        board=None,
+        probe_uid="probe-1",
+        route_used=swd_pyocd.ROUTE_PYOCD_NATIVE,
+        target_override="stm32l476rgtx",
+    )
+    firmware = tmp_path / "firmware.elf"
+    firmware.write_text("placeholder", encoding="utf-8")
+
+    class FakeProgrammer:
+        def __init__(self, provided_session) -> None:
+            assert provided_session is session
+
+        def program(self, path: str) -> None:
+            print("[---|---|---|---|---|---|---|---|---|----]")
+            print("[========================================]")
+            calls.append(f"program:{Path(path).name}")
+
+    monkeypatch.setattr(swd_pyocd, "FileProgrammer", FakeProgrammer)
+
+    adapter = swd_pyocd.PyOCDSWDInterface()
+    adapter.flash(handle, firmware, halt_after_reset=False)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert calls == [
+        "reset_and_halt",
+        "program:firmware.elf",
+        "reset",
+    ]
+
+
 def test_recover_target_rejects_manual_only_board() -> None:
     manual_only_board = BoardConfig(
         board_id="tmp_manual",

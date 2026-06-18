@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 from pathlib import Path
 from typing import cast
@@ -184,7 +186,9 @@ class PyOCDSWDInterface(SWDInterface):
         # this can make the Python API flash path fail even though the CLI succeeds.
         try:
             target.reset_and_halt()
-            FileProgrammer(handle.session).program(str(firmware))
+            # Keep transport stdout protocol-clean when the backend emits progress bars.
+            with contextlib.redirect_stdout(io.StringIO()):
+                FileProgrammer(handle.session).program(str(firmware))
             if halt_after_reset:
                 target.reset_and_halt()
             else:
