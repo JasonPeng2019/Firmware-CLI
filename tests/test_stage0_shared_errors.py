@@ -11,6 +11,7 @@ for entry in (REPO_ROOT, SRC_ROOT):
 
 import stage0_check  # noqa: E402
 from pyocd_debug_mcp.board_config import BoardConfig  # noqa: E402
+from pyocd_debug_mcp.serial_resolver import SerialPortInfo  # noqa: E402
 from pyocd_debug_mcp.target_errors import LockedTargetError, TargetConnectionError  # noqa: E402
 
 
@@ -66,3 +67,34 @@ def test_check_connection_handles_typed_target_connection_error(monkeypatch, cap
     assert ok is False
     captured = capsys.readouterr().out
     assert "could not connect to the target MCU" in captured
+
+
+def test_read_uart_output_preserves_typed_failure_context(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(stage0_check, "load_pyserial", lambda: (object(), object()))
+
+    def raise_capture(*args, **kwargs):
+        raise RuntimeError("port busy")
+
+    monkeypatch.setattr(stage0_check, "capture_uart_output", raise_capture)
+    port = SerialPortInfo(
+        device="/dev/cu.usbmodem143303",
+        description="ST-Link",
+        manufacturer="STMicroelectronics",
+        product="ST-Link",
+        interface="VCP",
+        hwid="USB VID:PID=0483:374B",
+    )
+
+    ok = stage0_check.read_uart_output(
+        make_board(),
+        port,
+        115200,
+        1.0,
+        "boot ok",
+    )
+
+    assert ok is False
+    captured = capsys.readouterr().out
+    assert "RuntimeError: port busy" in captured
+    assert "/dev/cu.usbmodem143303" in captured
+    assert "Expected: boot ok" in captured

@@ -82,12 +82,22 @@ Firmware-CLI/
 |-- src/
 |   `-- pyocd_debug_mcp/
 |       |-- adapters/
+|       |   |-- swd_interface.py
+|       |   |-- swd_pyocd.py
+|       |   |-- uart_interface.py
+|       |   `-- uart_pyserial.py
 |       |-- services/
+|       |   |-- symbols.py
+|       |   |-- target_control.py
+|       |   `-- uart_capture.py
 |       |-- __init__.py
 |       |-- board_config.py
+|       |-- board_config_cli.py
 |       |-- local_env.py
+|       |-- reference_artifacts.py
 |       |-- serial_resolver.py
-|       `-- server.py
+|       |-- server.py
+|       `-- target_errors.py
 |-- scratch/
 |   `-- README.md
 `-- markdowns/
@@ -248,6 +258,7 @@ uv run pyocd-debug-mcp
 - Setup and bootstrap: [init.md](./init.md)
 - Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
+- Official Nordic pre-bench runbook: [firmware/nrf52840dk/README.md](./firmware/nrf52840dk/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
@@ -270,8 +281,13 @@ Verified:
   host
 - the repo now carries a full official-board baseline package under
   `firmware/nrf52840dk/` for the scoped Nordic board
+- the tracked Stage 1 proof surface is now `tests/harness/stage1_smoke.py`; the
+  old scratch API harness is retired
 
 Pending verification:
 
 - the official `nrf52840dk` board still needs the same shared-service proof on
   current hardware
+- the canonical official-board closure packet is frozen in
+  `firmware/nrf52840dk/README.md`, but that runbook still needs to be executed
+  on live `nrf52840dk` hardware before `G1` or `G3` can be claimed

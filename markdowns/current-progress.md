@@ -9,6 +9,8 @@ The repo is now in **late reachable `R7` / early `R8` on STM32**:
 - the shared UART substrate now exists too, with an explicit adapter split and
   bounded capture behavior
 - `server.py` is thin over the shared target-control services
+- limited `R9` prep now exists too via thin plain-text MCP wrappers for shared
+  flash, UART capture, and recover
 - `stage0_check.py` now uses the shared SWD and UART services for the delegated
   hardware-control path
 - the first tracked Stage 1 smoke harness now exists at
@@ -112,6 +114,11 @@ path.
 
 - now delegates its live target-control operations through the shared service
   layer instead of holding direct pyOCD mechanics inline
+- now exposes thin plain-text wrappers for:
+  - shared flash (`flash_firmware`)
+  - shared UART capture (`read_serial`)
+  - shared recover (`unlock_recover`)
+- this is limited `R9` prep only, not full `R9` closure
 
 `stage0_check.py`
 
@@ -136,6 +143,7 @@ Still open before calling the broader milestone complete:
   - the repo-owned reference package and built artifacts now exist, but the live
     board still needs the full Stage 0 truth path: probe visibility, exact
     silicon identity, flash, UART, recover, and shared-USB confirmation
+  - the exact pre-bench runbook is now frozen in `firmware/nrf52840dk/README.md`
 - **official Nordic scope is still blocked**
   - `nrf52833dk` is useful bench evidence, but it does not replace official
     scope closure
@@ -154,6 +162,8 @@ As of this file:
   official Nordic board proof
 - `R8`: first real smoke harness exists and passes on STM32, but is still
   waiting on the same harness run for `nrf52840dk`
+- `R9`: lightly prepared through thin MCP wrappers, but still waiting on later
+  Inspector-level validation and both-board proof
 
 ## Short Resume Note
 

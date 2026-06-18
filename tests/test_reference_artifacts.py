@@ -52,3 +52,11 @@ def test_resolve_reference_artifacts_raises_for_missing_canonical_elf(
 
     with pytest.raises(ReferenceArtifactError, match="Missing canonical symbol artifact"):
         reference_artifacts.resolve_reference_artifacts("nrf52840dk")
+
+
+def test_tracked_nrf52840dk_artifacts_follow_canonical_contract() -> None:
+    pair = reference_artifacts.resolve_reference_artifacts("nrf52840dk")
+
+    assert pair.board_id == "nrf52840dk"
+    assert pair.symbol_artifact.name == "firmware.elf"
+    assert pair.flash_artifact.name == "firmware.hex"

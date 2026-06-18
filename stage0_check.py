@@ -773,7 +773,10 @@ def read_uart_output(
             on_port_open=on_port_open,
         )
     except Exception as exc:
-        check(False, f"Unable to read {port.device} at {baudrate} baud: {exc}")
+        check(False, f"Unable to read {port.device} at {baudrate} baud")
+        print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")
+        if expected_text:
+            print(f"      Expected: {expected_text}")
         return False
 
     if expected_text:
@@ -781,12 +784,19 @@ def read_uart_output(
         check(
             ok, f"UART output {'matched' if ok else 'did not match'} expected text on {port.device}"
         )
+        if not ok:
+            print(f"      Expected: {expected_text}")
+            print(f"      Reopen count: {capture.reopen_count}")
+            print(f"      Duration: {capture.duration_seconds:.2f}s")
         if capture.excerpt:
             print(f"      Captured: {capture.excerpt}")
         return ok
 
     ok = capture.has_output
     check(ok, f"UART produced {'some output' if ok else 'no output'} on {port.device}")
+    if not ok:
+        print(f"      Reopen count: {capture.reopen_count}")
+        print(f"      Duration: {capture.duration_seconds:.2f}s")
     if capture.excerpt:
         print(f"      Captured: {capture.excerpt}")
     return ok

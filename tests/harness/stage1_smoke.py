@@ -118,26 +118,32 @@ def main() -> int:
     load_local_env()
     parser = build_parser()
     args = parser.parse_args()
-
-    board = load_board(args.board_id.strip().lower())
-    probe_uid = args.probe_uid or os.environ.get("PYOCD_PROBE_UID") or None
-    baudrate = args.baudrate or board.default_baudrate
-    artifact_pair = resolve_reference_artifacts(
-        board,
-        flash_artifact=args.flash_artifact,
-        elf_path=args.elf,
-    )
-    serial_port = resolve_port(board, probe_uid=probe_uid, override=args.port)
-    expected_text = board.expected_uart_substring or "boot ok"
-
-    print(f"\nStage 1 smoke harness — {board.display_name} ({board.board_id})")
-    print(f"flash artifact: {artifact_pair.flash_artifact}")
-    print(f"symbol artifact: {artifact_pair.symbol_artifact}")
-    print(f"serial port: {serial_port.device}")
-
-    header("Flash and control")
+    requested_board_id = args.board_id.strip().lower()
     handle = None
+    board: BoardConfig | None = None
+    probe_uid = args.probe_uid or os.environ.get("PYOCD_PROBE_UID") or None
+    baudrate: int | None = None
+    artifact_pair = None
+    serial_port: SerialPortInfo | None = None
+    expected_text: str | None = None
+    capture = None
     try:
+        board = load_board(requested_board_id)
+        baudrate = args.baudrate or board.default_baudrate
+        artifact_pair = resolve_reference_artifacts(
+            board,
+            flash_artifact=args.flash_artifact,
+            elf_path=args.elf,
+        )
+        serial_port = resolve_port(board, probe_uid=probe_uid, override=args.port)
+        expected_text = board.expected_uart_substring or "boot ok"
+
+        print(f"\nStage 1 smoke harness — {board.display_name} ({board.board_id})")
+        print(f"flash artifact: {artifact_pair.flash_artifact}")
+        print(f"symbol artifact: {artifact_pair.symbol_artifact}")
+        print(f"serial port: {serial_port.device}")
+
+        header("Flash and control")
         handle = target_control.open_session(
             board=board,
             unique_id=probe_uid,
@@ -184,6 +190,37 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - surface the concrete harness failure
         header("Summary")
         log(FAIL, f"{type(exc).__name__}: {exc}")
+        flash_label = (
+            str(artifact_pair.flash_artifact)
+            if artifact_pair is not None
+            else str(Path(args.flash_artifact).expanduser().resolve())
+            if args.flash_artifact
+            else "(unresolved)"
+        )
+        symbol_label = (
+            str(artifact_pair.symbol_artifact)
+            if artifact_pair is not None
+            else str(Path(args.elf).expanduser().resolve())
+            if args.elf
+            else "(unresolved)"
+        )
+        serial_label = serial_port.device if serial_port is not None else (args.port or "(unresolved)")
+        print(f"      board_id: {requested_board_id}")
+        print(f"      flash_artifact: {flash_label}")
+        print(f"      symbol_artifact: {symbol_label}")
+        print(f"      serial_port: {serial_label}")
+        print(f"      baudrate: {baudrate if baudrate is not None else '(unresolved)'}")
+        print(f"      expected_text: {expected_text!r}")
+        if handle is not None:
+            print(f"      route_used: {handle.route_used}")
+        if capture is not None:
+            print(f"      reopen_count: {capture.reopen_count}")
+            print(f"      capture_duration: {capture.duration_seconds:.2f}s")
+            print(f"      excerpt: {capture.excerpt or '(none)'}")
+        else:
+            print("      reopen_count: (unavailable)")
+            print("      capture_duration: (unavailable)")
+            print("      excerpt: (unavailable)")
         return 1
     finally:
         if handle is not None:

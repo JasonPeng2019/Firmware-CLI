@@ -55,6 +55,25 @@ def test_nrf52833_board_profile_has_exact_identity_check() -> None:
     assert board.silicon_id_label == "FICR.INFO.PART"
 
 
+def test_nrf52840_board_profile_matches_frozen_official_contract() -> None:
+    [board] = load_board_configs_from_paths([BOARD_DIR / "nrf52840dk.yaml"])
+
+    assert board.board_id == "nrf52840dk"
+    assert board.display_name == "nRF52840-DK"
+    assert board.mcu_family == "nrf52840"
+    assert board.probe_family == "jlink"
+    assert board.pyocd_target == "nrf52840"
+    assert board.pack_name == "nrf52840"
+    assert board.default_baudrate == 115200
+    assert board.test_addr == 0x10000000
+    assert board.silicon_id_addr == 0x10000100
+    assert board.silicon_id_expected == 0x00052840
+    assert board.silicon_id_label == "FICR.INFO.PART"
+    assert board.expected_uart_substring == "boot ok"
+    assert board.requires_recover_validation is True
+    assert board.recover_mode == "nrf_pyocd_unlock"
+
+
 def test_non_nrf_recover_validation_defaults_to_manual_only(tmp_path: Path) -> None:
     board_path = tmp_path / "manual_only_board.json"
     board_path.write_text(

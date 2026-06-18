@@ -17,19 +17,31 @@ Design notes
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
+from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
+from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
     BoardConfig,
     load_selected_board_configs,
 )
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
+from pyocd_debug_mcp.serial_resolver import (
+    BoardLike,
+    ProbeLike,
+    SerialPortInfo,
+    list_serial_ports,
+    resolve_serial_port,
+)
 from pyocd_debug_mcp.services import target_control
-from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
+from pyocd_debug_mcp.services.uart_capture import capture_uart_output
 
 load_local_env()
 
@@ -39,11 +51,29 @@ mcp = FastMCP("pyocd-debug")
 _lock = threading.Lock()
 # The single live session, or None when disconnected.
 _session_handle: TargetSessionHandle | None = None
+NO_BOARD_CONFIG_MESSAGE = (
+    "No board config loaded for this session. Pass `board_id` to `connect` "
+    "(or set PYOCD_BOARD_ID) to load boards/<board>.yaml facts."
+)
+
+
+@dataclass(frozen=True)
+class _ProbeHint:
+    uid: str
 
 
 def _parse_int(text: str) -> int:
     """Parse an int from a string, accepting hex (0x...), binary, or decimal."""
     return int(text, 0)
+
+
+def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        executable = cmd[0] if cmd else "<unknown>"
+        return 127, "", f"command not found: {executable}"
+    return result.returncode, result.stdout or "", result.stderr or ""
 
 
 def resolve_board_config(board_id: str | None, board_config: str | None) -> BoardConfig | None:
@@ -186,11 +216,41 @@ def get_board_info() -> str:
             return "Not connected. Call `connect` first."
         b = handle.board
         if b is None:
-            return (
-                "No board config loaded for this session. Pass `board_id` to "
-                "`connect` (or set PYOCD_BOARD_ID) to load boards/<board>.yaml facts."
-            )
+            return NO_BOARD_CONFIG_MESSAGE
         return format_board_info(b)
+
+
+def _require_loaded_board(handle: TargetSessionHandle) -> BoardConfig:
+    if handle.board is None:
+        raise RuntimeError(NO_BOARD_CONFIG_MESSAGE)
+    return handle.board
+
+
+def _resolve_serial_port_for_session(
+    handle: TargetSessionHandle,
+    *,
+    override: str | None,
+) -> SerialPortInfo:
+    board = _require_loaded_board(handle)
+    ports = list_serial_ports()
+    if ports is None:
+        raise RuntimeError("pyserial is not installed")
+    if not ports:
+        raise RuntimeError("No serial ports detected")
+
+    probe = _ProbeHint(handle.probe_uid) if handle.probe_uid else None
+    resolution = resolve_serial_port(
+        board=cast(BoardLike, board),
+        ports=ports,
+        probe=cast(ProbeLike | None, probe),
+        override=override,
+        allow_single_fallback=len(ports) == 1,
+        run_cmd=_run_cmd,
+        interactive=False,
+    )
+    if resolution.port is None:
+        raise RuntimeError(f"Serial port resolution failed: {resolution.note}")
+    return resolution.port
 
 
 @mcp.tool()
@@ -310,6 +370,94 @@ def remove_breakpoint(address: str) -> str:
     with _lock:
         target_control.remove_breakpoint(_handle(), _parse_int(address))
         return f"Breakpoint removed at {address}."
+
+
+@mcp.tool()
+def flash_firmware(path: str | None = None, halt_after_reset: bool = False) -> str:
+    """Flash firmware through the shared target-control service layer.
+
+    Args:
+        path: Optional explicit artifact path. When omitted, resolve the default
+            flash artifact for the connected session's loaded board config.
+        halt_after_reset: If True, leave the target halted after flashing.
+            If False, reset and let it run.
+    """
+    with _lock:
+        handle = _handle()
+        if path is None:
+            if handle.board is None:
+                return NO_BOARD_CONFIG_MESSAGE
+            artifact = resolve_reference_artifacts(handle.board).flash_artifact
+        else:
+            artifact = Path(path).expanduser().resolve()
+
+        flashed = target_control.flash_firmware(
+            handle,
+            artifact,
+            halt_after_reset=halt_after_reset,
+        )
+        state = "halted" if halt_after_reset else "running"
+        return f"Flashed {flashed} via {handle.route_used}; target left {state}."
+
+
+@mcp.tool()
+def read_serial(
+    expected_text: str | None = None,
+    read_seconds: float = 3.0,
+    baudrate: int | None = None,
+    port: str | None = None,
+    reset_on_open: bool = False,
+) -> str:
+    """Capture bounded UART output through the shared serial-resolution and UART services."""
+    with _lock:
+        handle = _handle()
+        if handle.board is None:
+            return NO_BOARD_CONFIG_MESSAGE
+
+        board = handle.board
+        resolved_port = _resolve_serial_port_for_session(handle, override=port)
+        resolved_baudrate = baudrate or board.default_baudrate
+        resolved_expected_text = expected_text if expected_text is not None else board.expected_uart_substring
+
+        on_port_open = None
+        if reset_on_open:
+
+            def on_port_open() -> None:
+                target_control.reset(handle, halt_after=False)
+
+        capture = capture_uart_output(
+            resolved_port.device,
+            resolved_baudrate,
+            read_seconds,
+            resolved_expected_text,
+            on_port_open=on_port_open,
+        )
+        expectation_label = (
+            f"expected='{resolved_expected_text}'"
+            if resolved_expected_text is not None
+            else "expected=(any output)"
+        )
+        verdict = "matched" if capture.matched else "did not match"
+        excerpt = capture.excerpt or "(none)"
+        return (
+            f"UART {verdict} on {resolved_port.device} at {resolved_baudrate} baud via {handle.route_used}; "
+            f"{expectation_label}; reopen_count={capture.reopen_count}; "
+            f"duration={capture.duration_seconds:.2f}s; excerpt={excerpt}"
+        )
+
+
+@mcp.tool()
+def unlock_recover(confirm: bool = False) -> str:
+    """Run the shared recover/unlock path for the connected board."""
+    with _lock:
+        handle = _handle()
+        if handle.board is None:
+            return NO_BOARD_CONFIG_MESSAGE
+        if not confirm:
+            return "Refusing to run recover without confirm=True. This operation may erase flash."
+
+        backend = target_control.recover_target(handle)
+        return f"Recover completed via {backend} on {handle.board.board_id} via {handle.route_used}."
 
 
 def main() -> None:
