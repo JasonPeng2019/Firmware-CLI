@@ -2,7 +2,7 @@
 
 ## Current Position
 
-The repo is now past the scoped `R9` closure point for the active board pair:
+The repo is now in active `R10 / G5` work for the scoped board pair:
 
 - scoped board pair: `nrf52833dk + nucleo_l476rg`
 - `R0` through `R5`: effectively closed for the scoped pair
@@ -14,13 +14,50 @@ The repo is now past the scoped `R9` closure point for the active board pair:
   - `G1` (`R2` + `R3`)
   - `G3` (`R6` + `R7` + `R8`)
   - `G4` (`R9`)
+- active frontier:
+  - `R10`
+  - `G5`
 
-That means the next real roadmap frontier is `R10`, the safety/runtime
-substrate.
+That means the scoped substrate is frozen through `R9`, and the current work
+is the first safety/runtime layer on top of that substrate.
 
 `nrf52840dk` is still retained in the repo, but it is now an alternate/future
 Nordic profile rather than the official blocker for the current Phase A /
 Phase B path.
+
+## `R10 / G5` Status
+
+The implementation source of truth for this pass is
+`markdowns/r10_contract.md`.
+
+What has landed so far:
+
+- `R10b` runtime substrate:
+  - single active runtime session model
+  - generated `session_id` on successful `connect`
+  - append-only JSONL events under `runs/<session_id>/logs/events.jsonl`
+  - per-session metadata under `runs/<session_id>/run-metadata/session.json`
+  - structured event fields for tool name, board, probe, route, normalized
+    args, outcome kind, error/refusal code, and duration
+- `R10a` shared guardrails:
+  - shared flash gate for local existing `.elf` / `.hex` artifacts only
+  - shared recover gate for confirmation, tracked recover-mode support, and
+    one-success-per-session policy
+  - the same flash/recover policy is now callable from `server.py` and
+    `stage0_check.py`
+- `R10c` first watcher pass:
+  - structured-event-based mutation watcher
+  - repeated flash failures block only `flash_firmware`
+  - repeated UART misses block only `read_serial`
+  - repeated recover failures block only `unlock_recover`
+  - block state clears when the session ends and a new session starts
+
+What is not yet being claimed:
+
+- `G5` is not yet green
+- no `R11+` work has started
+- the new safety/runtime behavior still needs its live scoped-pair validation
+  before the roadmap can move past `R10`
 
 ## What Changed In This Pass
 

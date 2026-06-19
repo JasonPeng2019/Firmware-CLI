@@ -15,6 +15,11 @@ shared board-validation logic that is callable from `stage0_check.py`, future
 MCP tools, and local programmer flows; only raw host bootstrap remains
 pre-server.
 
+The current roadmap frontier is `R10 / G5`: the scoped `R0-R9` substrate for
+`nrf52833dk + nucleo_l476rg` is frozen, and the repo is now adding runtime
+safety policy, structured session logs, and first-pass convergence blocking on
+top of that substrate.
+
 ## What Phase A Delivers
 
 Phase A freezes the repo shape, the local development environment, and the
@@ -86,7 +91,12 @@ Firmware-CLI/
 |       |   |-- swd_pyocd.py
 |       |   |-- uart_interface.py
 |       |   `-- uart_pyserial.py
+|       |-- guardrails/
+|       |   |-- flash_gate.py
+|       |   `-- recover_gate.py
 |       |-- services/
+|       |   |-- convergence_watcher.py
+|       |   |-- session_runtime.py
 |       |   |-- symbols.py
 |       |   |-- target_control.py
 |       |   `-- uart_capture.py
@@ -103,6 +113,7 @@ Firmware-CLI/
 |   `-- README.md
 `-- markdowns/
     |-- ROADMAP.md
+    |-- r10_contract.md
     |-- firmware_agent_build_plan_concrete (10).md
     |-- firmware_agent_mcp_architecture.md
     |-- current-progress.md
@@ -261,6 +272,7 @@ uv run pyocd-debug-mcp
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
+- `R10` contract: [markdowns/r10_contract.md](./markdowns/r10_contract.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
@@ -297,11 +309,15 @@ Verified:
   `unlock_recover`
 - the current scoped gates are now green:
   `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), and `G4` (`R9`)
+- the project has now entered `R10 / G5` work:
+  `markdowns/r10_contract.md` locks the first safety/runtime contract, and the
+  repo now carries shared runtime session logging, shared flash/recover
+  guardrails, and a first mutation-focused convergence watcher
 
 Pending verification:
 
 - `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
   source/build assets, but it still needs its own live bench proof if future
   support for that alternate board becomes a project goal
-- the next roadmap frontier after the scoped `R9` closure is `R10`, the
-  safety/runtime substrate
+- `R10 / G5` itself is not yet claimed green; the new safety/runtime layer
+  still needs its live scoped-pair validation before `R11` can begin
