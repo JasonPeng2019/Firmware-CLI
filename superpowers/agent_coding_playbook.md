@@ -82,9 +82,9 @@ DEFAULT_TIMEOUT_S = 30       # PROJECT-DEFINED (our v1 default; tune later)
 
 **In YAML (inline comment per field):**
 ```yaml
-board_id:        nrf52840dk     # PROJECT-DEFINED (our canonical id)
-mcu_family:      nrf52840        # HW-FIXED (the silicon)
-pyocd_target:    nrf52840        # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --targets`)
+board_id:        nrf52833dk     # PROJECT-DEFINED (our canonical id)
+mcu_family:      nrf52833        # HW-FIXED (the silicon)
+pyocd_target:    nrf52833        # VENDOR-FIXED, UNVERIFIED (confirm via `pyocd list --targets`)
 serial_baudrate: 115200          # PROJECT-DEFINED (our chosen default; matches reference firmware)
 probe_family: jlink              # HW-FIXED (the onboard debug probe family)
 ```

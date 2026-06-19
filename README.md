@@ -31,10 +31,10 @@ Today that means:
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 
 The official scoped board pair for the real Phase A / Phase B bench path is
-`nrf52840dk` plus `nucleo_l476rg`.
-The repo also carries `nrf52833dk` as a useful supplemental Nordic bench
-profile, but it does not replace the official `nrf52840dk` scope in the
-roadmap.
+`nrf52833dk` plus `nucleo_l476rg`.
+The repo also carries `nrf52840dk` as a retained alternate Nordic profile for
+future support work, but it is no longer the board that blocks the current
+Phase A / Phase B gates.
 
 ## Canonical Tree
 
@@ -94,6 +94,7 @@ Firmware-CLI/
 |       |-- board_config.py
 |       |-- board_config_cli.py
 |       |-- local_env.py
+|       |-- probe_inventory.py
 |       |-- reference_artifacts.py
 |       |-- serial_resolver.py
 |       |-- server.py
@@ -186,13 +187,13 @@ uv sync
 On Windows, the preferred unattended host bootstrap entry point is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 On macOS, the preferred host bootstrap entry point is:
 
 ```bash
-bash ./setup_host.sh --board-id nrf52840dk
+bash ./setup_host.sh --board-id nrf52833dk
 ```
 
 Run host bootstrap for all tracked boards:
@@ -219,15 +220,15 @@ terminal. In non-interactive runs, rerun with `--port BOARD_ID=PORT`.
 Run host bootstrap and Stage 0 for one board on your bench:
 
 ```bash
-uv run python host_bootstrap.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk
 ```
 
 Windows PowerShell:
 
 ```powershell
-uv run python host_bootstrap.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk
 ```
 
 Vendor-assisted serial auto-detect is used when the helper CLI is available:
@@ -258,7 +259,7 @@ uv run pyocd-debug-mcp
 - Setup and bootstrap: [init.md](./init.md)
 - Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
-- Official Nordic pre-bench runbook: [firmware/nrf52840dk/README.md](./firmware/nrf52840dk/README.md)
+- Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
@@ -276,24 +277,31 @@ Verified:
   Stage 0 connect, flash, and UART through the shared target-control services
 - the STM32 bench truth is fully closed in repo status, including the confirmed
   shared USB correlation between the visible ST-Link probe and
-  `/dev/cu.usbmodem143303`
+  `/dev/cu.usbmodem144403`
 - the canonical Windows `R0` bootstrap path has been verified on a real Windows
   host
-- the repo now carries a full official-board baseline package under
-  `firmware/nrf52840dk/` for the scoped Nordic board
+- the scoped Nordic board is now `nrf52833dk`, and its Stage 0 path is bench
+  proven on this Mac host for probe visibility, exact silicon identity, flash,
+  UART `boot ok`, recover, and shared USB confirmation
+- the repo now carries full baseline packages for the scoped board pair under
+  `firmware/nrf52833dk/` and `firmware/nucleo_l476rg/`
 - the tracked Stage 1 proof surface is now `tests/harness/stage1_smoke.py`; the
   old scratch API harness is retired
-- limited STM32 MCP validation now exists for the current shared-service server
-  surface: `connect`, `get_board_info`, `halt`, `resume`, `reset`,
-  `read_memory`, `read_core_register`, `flash_firmware`, `read_serial`, and
-  the `unlock_recover` refusal/unsupported shape were exercised against the
-  live `nucleo_l476rg`
+- the tracked Stage 1 smoke harness now passes on both scoped boards:
+  `nucleo_l476rg` and `nrf52833dk`
+- the full current MCP tool surface is now live-validated on both scoped
+  boards through `server.py`: `connect`, `disconnect`, `get_board_info`,
+  `get_state`, `halt`, `resume`, `step`, `reset`, `read_core_register`,
+  `write_core_register`, `read_memory`, `read_memory_block`, `write_memory`,
+  `set_breakpoint`, `remove_breakpoint`, `flash_firmware`, `read_serial`, and
+  `unlock_recover`
+- the current scoped gates are now green:
+  `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), and `G4` (`R9`)
 
 Pending verification:
 
-- the official `nrf52840dk` board still needs the same shared-service proof on
-  current hardware
-- the canonical official-board closure packet is frozen in
-  `firmware/nrf52840dk/README.md`, but that runbook still needs to be executed
-  on live `nrf52840dk` hardware before `G1` or `G3` can be claimed
-- official Nordic MCP Inspector proof is still pending, so `R9` is not closed
+- `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
+  source/build assets, but it still needs its own live bench proof if future
+  support for that alternate board becomes a project goal
+- the next roadmap frontier after the scoped `R9` closure is `R10`, the
+  safety/runtime substrate

@@ -86,13 +86,13 @@ def test_format_board_info_minimal_board_has_no_silicon_line() -> None:
 
 
 def test_build_session_options_adds_jlink_workaround() -> None:
-    board = server.resolve_board_config("nrf52840dk", None)
+    board = server.resolve_board_config("nrf52833dk", None)
     assert board is not None
 
     options = server.build_session_options(board, board.pyocd_target)
 
     assert options == {
-        "target_override": "nrf52840",
+        "target_override": "nrf52833",
         "jlink.non_interactive": False,
     }
 
@@ -103,4 +103,8 @@ def test_build_session_options_leaves_non_jlink_boards_clean() -> None:
 
     options = server.build_session_options(board, board.pyocd_target)
 
-    assert options == {"target_override": "stm32l476rgtx"}
+    assert options == {
+        "target_override": "stm32l476rgtx",
+        "connect_mode": "under-reset",
+        "frequency": 1_000_000,
+    }

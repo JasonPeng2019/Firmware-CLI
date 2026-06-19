@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import re
 import subprocess
 import sys
@@ -36,6 +35,7 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
     preview_board_config_paths,
 )
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.probe_inventory import list_connected_probes  # noqa: E402
 from pyocd_debug_mcp.serial_resolver import command_exists  # noqa: E402
 
 PASS = "PASS"
@@ -52,14 +52,6 @@ class DependencySpec:
     import_name: str
     required: bool
     reason: str
-
-
-@dataclass(frozen=True)
-class ProbeInfo:
-    uid: str
-    description: str
-    raw: str
-    state: str = ""
 
 
 DEPENDENCIES = (
@@ -198,43 +190,6 @@ def serial_summary(pyserial_ok: bool) -> int | None:
     return len(ports)
 
 
-def list_probes() -> list[ProbeInfo]:
-    rc, out, _ = run(["pyocd", "list", "--output", "json"])
-    if rc != 0 or not out.strip():
-        _, out, _ = run(["pyocd", "list"])
-        probes: list[ProbeInfo] = []
-        for line in out.splitlines():
-            stripped = line.strip()
-            if (
-                stripped
-                and not stripped.startswith("#")
-                and not stripped.lower().startswith("no")
-                and not re.fullmatch(r"-+", stripped)
-            ):
-                probes.append(ProbeInfo(uid="", description=stripped.lower(), raw=stripped))
-        return probes
-
-    try:
-        data = json.loads(out)
-        boards = data.get("boards", data) if isinstance(data, dict) else data
-        probes = []
-        for item in boards:
-            description = " ".join(
-                part for part in [item.get("description", ""), item.get("board_name", "")] if part
-            )
-            probes.append(
-                ProbeInfo(
-                    uid=item.get("unique_id", item.get("uid", "")),
-                    description=description,
-                    state=item.get("state", ""),
-                    raw=str(item),
-                )
-            )
-        return probes
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return []
-
-
 def list_target_names() -> set[str]:
     _, out, _ = run(["pyocd", "list", "--targets"])
     names: set[str] = set()
@@ -259,7 +214,7 @@ def pyocd_summary(pyocd_ok: bool) -> int | None:
         log(FAIL, f"pyOCD command failed: {(err or out).strip()[:300]}")
         return None
 
-    probes = list_probes()
+    probes = list_connected_probes(lambda cmd: run(cmd))
     if probes:
         log(PASS, f"Detected {len(probes)} probe(s)")
         for probe in probes:

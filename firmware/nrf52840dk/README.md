@@ -1,15 +1,14 @@
 # nRF52840 DK Reference Firmware
 
-This board package is the repo-owned baseline for `nrf52840dk`, the official
-Nordic board in the roadmap scope.
+This board package is the repo-owned baseline for `nrf52840dk`, retained as an
+alternate / future Nordic profile.
 
-This file is the single canonical pre-bench runbook for the official Nordic
-closure packet. The baseline source/build/artifacts already exist in-repo, but
-official Stage 0 and Stage 1 bench proof are still pending on live
-`nrf52840dk` hardware. `nrf52833dk` remains supplemental bench evidence only
-and does not close official scope.
+It is no longer the official blocker for the current scoped Phase A / Phase B
+path. The active scoped Nordic board is `nrf52833dk`. Keep this package because
+it already captures a useful alternate Nordic baseline and may become relevant
+again if future support for `nrf52840dk` is desired.
 
-## What Already Exists
+## What Exists
 
 - App root: `firmware/nrf52840dk/reference/src/`
 - Canonical symbol-bearing artifact:
@@ -48,7 +47,7 @@ Validated toolchain note for this bench:
   so Intel Macs need an older supported SDK release or another supported
   toolchain path
 
-## Frozen Pre-Bench Board Facts
+## Frozen Alternate-Profile Facts
 
 - `board_id = nrf52840dk`
 - `display_name = nRF52840-DK`
@@ -64,23 +63,13 @@ Validated toolchain note for this bench:
 - `reference_uart_patterns[0] = "boot ok"`
 - `requires_recover_validation = true`
 - `recover_mode = nrf_pyocd_unlock`
-- symbol artifact =
-  `firmware/nrf52840dk/reference/build/firmware.elf`
-- flash artifact preference =
-  `firmware/nrf52840dk/reference/build/firmware.hex` if present, else
-  `firmware.elf`
 
-Pending host-heuristic verification only:
+These values are still useful as the retained alternate-board contract, but
+they are not part of the current scoped-gate proof story.
 
-- `probe_hint_terms = ["j-link", "jlink", "segger", "nrf"]`
-- `serial_hint_terms = ["j-link", "jlink", "segger", "nrf", "virtual com"]`
+## If Future Live Proof Is Wanted
 
-Those hint terms are intentionally frozen as the intended resolver contract, but
-they are not bench-proven facts until the official board is attached again.
-
-## Official Nordic Closure Checklist
-
-Run these in this exact order after physically switching to `nrf52840dk`:
+Use this order:
 
 1. `uv run pyocd list`
 2. `uv run python host_bootstrap.py --board-id nrf52840dk`
@@ -88,50 +77,24 @@ Run these in this exact order after physically switching to `nrf52840dk`:
 4. `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
 5. `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
 
-If serial auto-resolution is ambiguous, the only rerun path is to rerun Stage 0
-and/or the smoke harness with an explicit port override:
+If serial auto-resolution is ambiguous, rerun with:
 
 - `--port nrf52840dk=<port>`
-
-The board config already declares the expected UART substring, so `--expect` is
-not required for the normal reference-firmware path.
-
-## Official Nordic Pass / Fail Checklist
-
-Treat the official Nordic run as successful only if all of these are true:
-
-- J-Link probe is visible.
-- Target `nrf52840` is available.
-- Silicon identity matches `0x00052840` at `0x10000100`.
-- Stage 0 flashes the canonical reference artifact successfully.
-- Stage 0 UART output contains `boot ok`.
-- Stage 0 recover/unlock succeeds.
-- The operator confirms the visible probe and COM port are the same physical
-  board.
-- The tracked Stage 1 smoke harness passes:
-  - flash
-  - `reset_and_halt`
-  - `pc` read
-  - symbol resolution
-  - `0x1234ABCD` value readback
-  - UART `boot ok`
 
 ## Current Status
 
 Verified in repo:
 
-- The repo contains one canonical reference-firmware source tree and one
-  repeatable build entrypoint for `nrf52840dk`.
-- The repo-owned reference app mirrors the existing minimal Nordic baseline
-  pattern: deterministic `boot ok` UART plus the fixed Stage 1 symbol contract
-  `stage1_known_value = 0x1234ABCD`.
-- The build helper completed on this Mac host and produced
-  `firmware/nrf52840dk/reference/build/firmware.elf` plus `firmware.hex`.
+- the repo contains one canonical reference-firmware source tree and one
+  repeatable build entrypoint for `nrf52840dk`
+- the repo-owned reference app mirrors the minimal Nordic baseline pattern:
+  deterministic `boot ok` UART plus the fixed Stage 1 symbol contract
+  `stage1_known_value = 0x1234ABCD`
+- the build helper completed on this Mac host and produced
+  `firmware/nrf52840dk/reference/build/firmware.elf` plus `firmware.hex`
 
-Still pending on live official hardware:
+Still pending if future support is desired:
 
-- The official `nrf52840dk` Stage 0 truth path:
-  J-Link visibility, exact silicon identity, flash, UART, recover, and shared
-  USB confirmation.
-- The same tracked Stage 1 smoke harness run on the official `nrf52840dk`
-  board after Stage 0 is green.
+- live Stage 0 proof on an attached `nrf52840dk`
+- live Stage 1 smoke-harness proof on an attached `nrf52840dk`
+- live MCP tool-surface validation on an attached `nrf52840dk`

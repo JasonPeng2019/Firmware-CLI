@@ -2,227 +2,231 @@
 
 ## Current Position
 
-The repo is now in **late reachable `R7` / early `R8` on STM32**:
+The repo is now past the scoped `R9` closure point for the active board pair:
 
-- the shared SWD substrate exists under
-  `src/pyocd_debug_mcp/adapters/` and `src/pyocd_debug_mcp/services/`
-- the shared UART substrate now exists too, with an explicit adapter split and
-  bounded capture behavior
-- `server.py` is thin over the shared target-control services
-- limited `R9` prep now exists too via thin plain-text MCP wrappers for shared
-  flash, UART capture, and recover
-- `stage0_check.py` now uses the shared SWD and UART services for the delegated
-  hardware-control path
-- the first tracked Stage 1 smoke harness now exists at
-  `tests/harness/stage1_smoke.py` and has passed on the live STM32 board
+- scoped board pair: `nrf52833dk + nucleo_l476rg`
+- `R0` through `R5`: effectively closed for the scoped pair
+- `R6`: closed
+- `R7`: closed for the scoped pair
+- `R8`: closed for the scoped pair
+- `R9`: closed for the scoped pair
+- green gates:
+  - `G1` (`R2` + `R3`)
+  - `G3` (`R6` + `R7` + `R8`)
+  - `G4` (`R9`)
 
-This is real `R6` completion and substantial `R7` / `R8` progress, but **not**
-formal both-board closure:
-the official Nordic board is still `nrf52840dk`, and that board still needs the
-same Stage 0 and Stage 1 proof before `G1`, full `R7`, and full `R8` can be
-called complete.
+That means the next real roadmap frontier is `R10`, the safety/runtime
+substrate.
 
-## What Was Just Proven On STM32
+`nrf52840dk` is still retained in the repo, but it is now an alternate/future
+Nordic profile rather than the official blocker for the current Phase A /
+Phase B path.
 
-On the live **`nucleo_l476rg`** attached to this Mac host:
+## What Changed In This Pass
 
-- `uv run python host_bootstrap.py --board-id nucleo_l476rg` passed
-- `uv run python stage0_check.py --board-id nucleo_l476rg` passed for the
-  non-destructive checks
-- `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware
-  nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf` passed for:
-  - probe visibility
-  - target availability
-  - virtual COM visibility on `/dev/cu.usbmodem143303`
-  - SWD connect + read
-  - reference firmware flash
-  - UART output capture of `boot ok`
-- the confirmed STM32 facts on this host are:
-  - probe UID: `0668FF514988525067213913`
-  - serial port: `/dev/cu.usbmodem143303`
-  - pyOCD target: `stm32l476rgtx`
-  - pack token: `stm32l476`
-- generic ST-Link matching worked **without** `STM32_Programmer_CLI`
-- the human operator confirmed that the visible ST-Link probe and the visible
-  `/dev/cu.usbmodem143303` COM port came from the same physical
-  `nucleo_l476rg` board
+Two important repo issues were closed before the live proof reruns:
 
-## Stage 1 Smoke Status On STM32
+- the shared probe-selection path no longer relies on unsupported
+  `pyocd list --output json`
+- a new shared helper inventories probes via supported
+  `pyocd list --probes`, preserves real probe UIDs, and applies board-aware
+  selection consistently in:
+  - `host_bootstrap.py`
+  - `stage0_check.py`
+  - `tests.harness.stage1_smoke`
+  - `server.connect(...)`
 
-The tracked Stage 1 smoke harness now passes on the live STM32 board:
+This was necessary because with both boards attached, the old lossy probe
+parsing could drop the J-Link UID and open the wrong probe for the Nordic
+board.
 
+The shared pyOCD backend also now carries one board-aware STM32 host quirk that
+was proven on this Mac bench:
+
+- `nucleo_l476rg` opens reliably with:
+  - `connect_mode=under-reset`
+  - `frequency=1000000`
+
+Without that, direct ST-Link attach could fail with the pyOCD / ST-Link
+`DP wait` error on this host even though the target was physically present.
+
+## Live Bench Facts — Scoped Pair
+
+### `nucleo_l476rg`
+
+Confirmed on the current Mac bench:
+
+- probe UID: `0668FF514988525067213913`
+- serial port: `/dev/cu.usbmodem144403`
+- pyOCD target: `stm32l476rgtx`
+- pack token: `stm32l476`
+- probe and COM port were confirmed to come from the same physical board
+
+Live proofs now completed:
+
+- `uv run python host_bootstrap.py --board-id nucleo_l476rg`
+- `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
 - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
-  - **PASS**
 
-That run proved the shared Stage 1 flow end to end:
+Those runs prove:
 
-- flash the canonical reference artifact through the shared SWD services
-- `reset_and_halt`
-- read `pc`
-- resolve the fixed symbol `stage1_known_value` from
-  `firmware/nucleo_l476rg/reference/build/firmware.elf`
-- read target memory back at that resolved address and confirm `0x1234ABCD`
-- reopen/run-capture through the shared UART service and match `boot ok`
+- probe visibility
+- target availability
+- SWD connect/read
+- flash of the tracked reference baseline
+- UART `boot ok`
+- Stage 1 symbol-resolution readback of `stage1_known_value = 0x1234ABCD`
 
-Important implementation findings:
+### `nrf52833dk`
 
-- the direct pyOCD Python-API flash path needed to match `pyocd load`'s
-  pre-reset-and-halt sequencing on STM32/ST-Link
-- the Stage 1 symbol contract needed to be flash-backed and explicitly retained
-  in the reference ELF, otherwise reset-halt proof was not reliable
-- the UART smoke-harness path needed to open the serial port first and trigger
-  reset on port-open so the boot line was captured deterministically
+Confirmed on the current Mac bench:
 
-The STM32 silicon-ID path remains intentionally **unset** in
-`boards/nucleo_l476rg.yaml`. That is still by design in this pass: STM32 was
-handled as flash-first and smoke-first, not by inventing a new STM32 identity
-register contract.
+- probe UID: `685400693`
+- serial port: `/dev/cu.usbmodem0006854006931`
+- pyOCD target: `nrf52833`
+- pack token: `nrf52833`
+- silicon identity:
+  - address `0x10000100`
+  - expected `0x00052833`
+  - matched on live hardware
+- probe and COM port were confirmed to come from the same physical board
 
-## Shared Layer That Now Exists
+Live proofs now completed:
 
-New internal code landed under `src/pyocd_debug_mcp/`:
+- `./firmware/nrf52833dk/reference/build_reference.sh`
+- `uv run python host_bootstrap.py --board-id nrf52833dk`
+- `uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk`
+- `uv run python -m tests.harness.stage1_smoke --board-id nrf52833dk`
+
+Those runs prove:
+
+- probe visibility
+- target availability
+- SWD connect/read
+- exact silicon identity
+- flash of the tracked reference baseline
+- UART `boot ok`
+- recover / unlock
+- post-recover reachability
+- Stage 1 symbol-resolution readback of `stage1_known_value = 0x1234ABCD`
+
+## Shared Substrate Status
+
+The shared substrate that now exists under `src/pyocd_debug_mcp/` is real and
+live-proven on the scoped pair:
 
 - `adapters/swd_interface.py`
-  - internal SWD contract plus `TargetSessionHandle`
 - `adapters/swd_pyocd.py`
-  - pyOCD-backed implementation
-  - board-aware session options
-  - J-Link `jlink.non_interactive=false` workaround kept here
-  - STM32-safe API flash sequencing now kept here too
-- `services/target_control.py`
-  - shared session open/close, target state/control, read/write, flash, recover
-- `services/uart_capture.py`
-  - bounded UART capture
-  - expected-substring wait
-  - reopen behavior
-  - post-flash/post-reset capture coordination
 - `adapters/uart_interface.py`
-  - backend-neutral low-level UART contract
 - `adapters/uart_pyserial.py`
-  - pyserial-backed UART implementation
-- `reference_artifacts.py`
-  - canonical `firmware.elf` / `firmware.hex` artifact-pair resolution
+- `services/target_control.py`
+- `services/uart_capture.py`
 - `services/symbols.py`
-  - shared ELF symbol lookup and target-value readback
+- `reference_artifacts.py`
+- `probe_inventory.py`
 
-This means the main Phase A wrappers no longer each own their own pyOCD control
-path.
+This means the main wrappers no longer each own their own disconnected
+hardware-control path.
 
-## Wrapper Status
+## Stage 1 / `R8` Status
 
-`server.py`
+The tracked Stage 1 harness at `tests/harness/stage1_smoke.py` now passes on
+both scoped boards.
 
-- now delegates its live target-control operations through the shared service
-  layer instead of holding direct pyOCD mechanics inline
-- now exposes thin plain-text wrappers for:
-  - shared flash (`flash_firmware`)
-  - shared UART capture (`read_serial`)
-  - shared recover (`unlock_recover`)
-- this is limited `R9` prep only, not full `R9` closure
+It proves one repeatable shared-service flow:
 
-## Limited `R9` Validation On STM32
+1. load board config
+2. resolve artifact pair
+3. resolve the correct serial port
+4. open the correct probe/session
+5. flash the reference artifact
+6. `reset_and_halt`
+7. read `pc`
+8. resolve `stage1_known_value` from the ELF
+9. read back `0x1234ABCD` from target memory
+10. reset/run
+11. capture UART until `boot ok`
 
-The current Stage 2 server surface has now been exercised on the live STM32
-bench.
+That closes the scoped `R8` proof requirement.
 
-- Inspector launch command:
-  - `uv run mcp dev src/pyocd_debug_mcp/server.py`
-- STM32 bench facts used for the run:
-  - `board_id = nucleo_l476rg`
-  - probe UID `0668FF514988525067213913`
-  - serial port `/dev/cu.usbmodem143303`
-- Repo-side launch issue that was exposed and fixed:
-  - the `mcp dev` import path no longer crashes on `_ProbeHint`
-- Transport issue that was exposed and fixed:
-  - `flash_firmware` no longer leaks pyOCD progress bars onto MCP stdio during
-    flash operations
+## MCP Surface / `R9` Status
 
-Observed STM32 tool results on the current shared-service server surface:
+The current live MCP tool surface has now been exercised against both scoped
+boards through the real `server.py` tool functions while both probes were
+attached.
 
-- passed:
-  - `connect`
-  - `get_board_info`
-  - `halt`
-  - `resume`
-  - `reset`
-  - `read_memory`
-  - `read_core_register`
-  - `flash_firmware()` with default artifact resolution
-  - `flash_firmware(path=..., halt_after_reset=true)` with explicit artifact
-    override
-  - `read_serial(reset_on_open=true)` with default board-config expectations
-  - `read_serial(port=..., reset_on_open=true)` with explicit serial override
-  - `disconnect`
-- default flash artifact resolution worked:
-  - `flash_firmware()` resolved the tracked STM32 baseline flash artifact at
-    `firmware/nucleo_l476rg/reference/build/firmware.hex`
-- default serial resolution worked:
-  - `read_serial(reset_on_open=true)` selected
-    `/dev/cu.usbmodem143303` and matched `boot ok`
-- explicit serial override worked:
-  - `read_serial(port=\"/dev/cu.usbmodem143303\", reset_on_open=true,
-    read_seconds=3.0)` matched `boot ok`
-- `unlock_recover` behavior on STM32 is now characterized:
-  - `confirm=false` returns the expected destructive-action refusal text
-  - `confirm=true` fails deterministically with
-    `Nucleo-L476RG does not define a recover mode.`
-- post-disconnect edge behavior is now characterized:
-  - `get_board_info()` returns the expected not-connected text
-  - `read_memory(...)` fails deterministically with
-    `Not connected to a probe. Call \`connect\` first.`
+Validated tool surface:
 
-`stage0_check.py`
+- `connect`
+- `disconnect`
+- `get_board_info`
+- `get_state`
+- `halt`
+- `resume`
+- `step`
+- `reset`
+- `read_core_register`
+- `write_core_register`
+- `read_memory`
+- `read_memory_block`
+- `write_memory`
+- `set_breakpoint`
+- `remove_breakpoint`
+- `flash_firmware`
+- `read_serial`
+- `unlock_recover`
 
-- still owns probe enumeration, pack checks, serial listing, CLI reporting, and
-  summary generation
-- now delegates:
-  - connect/read
-  - silicon-ID reads
-  - flash
-  - recover
-  - UART capture
+Important live behavior that is now proven:
 
-That split matches the intended near-term architecture: shared control logic,
-wrapper-specific UX.
+- `connect(board_id=..., unique_id=None)` auto-selects the correct probe for
+  both boards while both probes are attached
+- default flash artifact resolution works on both boards
+- explicit flash artifact override works on both boards
+- default serial resolution works on both boards
+- explicit serial override works on both boards
+- Nordic recover succeeds and the baseline can be restored immediately after
+  the erase
+- STM32 recover refuses cleanly when `confirm=False` and fails deterministically
+  when `confirm=True` because the tracked board has no recover mode
+- post-disconnect not-connected behavior is deterministic
 
-## Remaining Gaps
+That is enough to treat scoped `R9` / `G4` as green.
 
-Still open before calling the broader milestone complete:
+## Scope Reading
 
-- **official Nordic Stage 0 is still pending**
-  - `nrf52840dk` remains the official Nordic board
-  - the repo-owned reference package and built artifacts now exist, but the live
-    board still needs the full Stage 0 truth path: probe visibility, exact
-    silicon identity, flash, UART, recover, and shared-USB confirmation
-  - the exact pre-bench runbook is now frozen in `firmware/nrf52840dk/README.md`
-- **official Nordic scope is still blocked**
-  - `nrf52833dk` is useful bench evidence, but it does not replace official
-    scope closure
-- **official Nordic Stage 1 shared-substrate proof is still pending**
-  - the same tracked `tests/harness/stage1_smoke.py` flow now needs to pass on
-    `nrf52840dk`
-  - until that happens, `R7` and `R8` remain formally open even though the
-    shared substrate is already proven on STM32
+For the scoped board pair:
 
-## Short Scope Reading
+- `R0`: closed
+- `R1`: closed
+- `R2`: closed on `nucleo_l476rg`
+- `R3`: closed on `nrf52833dk`
+- `R4`: closed for the scoped pair
+- `R5`: closed enough for the current shared-loader architecture
+- `R6`: closed
+- `R7`: closed for the scoped pair
+- `R8`: closed for the scoped pair
+- `R9`: closed for the scoped pair
 
-As of this file:
+The next meaningful project work is not more Phase A cleanup. It is the
+roadmap's `R10` safety/runtime substrate.
 
-- `R6`: implementation-complete and STM32-proven
-- `R7`: code-complete enough for both-board use, but formally blocked on the
-  official Nordic board proof
-- `R8`: first real smoke harness exists and passes on STM32, but is still
-  waiting on the same harness run for `nrf52840dk`
-- `R9`: lightly prepared through thin MCP wrappers, but still waiting on later
-  official `nrf52840dk` Inspector proof and both-board validation
+## Still Open
+
+Not blockers for the scoped gates, but still real work:
+
+- `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
+  source/build assets and still needs live bench proof if future support for
+  that board becomes a goal
+- a Windows follow-up for the official `nrf52833dk` bench path would further
+  strengthen the new scope decision, even though repo-level `R0` is already
+  considered proven
 
 ## Short Resume Note
 
 If resuming later:
 
-> STM32 Stage 0 truth is green for flash + UART on `nucleo_l476rg`, the shared
-> SWD and UART substrates are in place, and the tracked Stage 1 smoke harness at
-> `tests/harness/stage1_smoke.py` now passes on STM32. `R6` is effectively
-> complete on reachable hardware. The remaining blocker for formal `R7` / `R8`
-> closure is still the official Nordic board: rerun Stage 0 and the same Stage 1
-> smoke harness on `nrf52840dk`.
+> The official scoped pair is now `nrf52833dk + nucleo_l476rg`. Both boards are
+> green through Stage 0, the tracked Stage 1 smoke harness, and the current MCP
+> tool surface. The multi-probe J-Link/ST-Link selection bug is fixed through
+> shared `pyocd list --probes` inventory. The next roadmap frontier is `R10`,
+> not more scoped Phase A / Phase B bring-up.

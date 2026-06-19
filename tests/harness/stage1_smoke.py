@@ -22,6 +22,7 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
     load_selected_board_configs,
 )
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.probe_inventory import resolve_probe_for_board  # noqa: E402
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts  # noqa: E402
 from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
     SerialPortInfo,
@@ -129,6 +130,22 @@ def main() -> int:
     capture = None
     try:
         board = load_board(requested_board_id)
+        if probe_uid is None:
+            resolution = resolve_probe_for_board(
+                board,
+                run_cmd=run_cmd,
+                allow_single_fallback=True,
+            )
+            if resolution.probe is None:
+                raise RuntimeError(
+                    f"Probe resolution failed for {board.display_name}: {resolution.note}"
+                )
+            if not resolution.probe.uid:
+                raise RuntimeError(
+                    f"Probe resolution for {board.display_name} did not yield a unique id. "
+                    "Rerun with --probe-uid."
+                )
+            probe_uid = resolution.probe.uid
         baudrate = args.baudrate or board.default_baudrate
         artifact_pair = resolve_reference_artifacts(
             board,

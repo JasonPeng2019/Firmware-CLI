@@ -46,6 +46,11 @@ def build_session_options(
     if board and board.probe_family == "jlink":
         # Match the Stage 0/J-Link open-by-serial workaround proven on hardware.
         options["jlink.non_interactive"] = False
+    if board and board.board_id == "nucleo_l476rg":
+        # Current STM32 bench truth on this host requires connecting under reset
+        # at a lower SWD clock to avoid STLink "DP wait" attach failures.
+        options["connect_mode"] = "under-reset"
+        options["frequency"] = 1_000_000
     return options or None
 
 

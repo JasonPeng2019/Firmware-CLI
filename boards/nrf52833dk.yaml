@@ -1,4 +1,4 @@
-board_id: nrf52833dk  # PROJECT-DEFINED (our canonical board id for the attached Nordic dev board)
+board_id: nrf52833dk  # PROJECT-DEFINED (our canonical board id for the scoped Nordic board)
 display_name: "nRF52833 DK"  # PROJECT-DEFINED (human-facing board label)
 mcu_family: nrf52833  # HW-FIXED (the silicon on the reference board)
 probe_family: jlink  # HW-FIXED (the onboard debug probe family)
@@ -9,7 +9,8 @@ pack_name: nrf52833  # VENDOR-FIXED, BENCH-VERIFIED (`pyocd pack install` search
 silicon_id_address: 0x10000100  # HW-FIXED (nRF FICR INFO.PART register)
 silicon_id_expected: 0x00052833  # HW-FIXED, BENCH-VERIFIED (nRF52833 part code from FICR.INFO.PART)
 silicon_id_label: "FICR.INFO.PART"  # PROJECT-DEFINED (human-facing identity check label)
-# This board now has host-side Stage 0 connectivity and exact silicon identity validation on the Mac bench.
+# This is now the official scoped Nordic board and it is bench-proven on the current Mac host for
+# Stage 0, Stage 1 smoke, and the current MCP tool surface.
 probe_hint_terms:  # PROJECT-DEFINED, BENCH-VERIFIED (host-side probe matching heuristics)
   - j-link
   - jlink

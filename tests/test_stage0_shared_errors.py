@@ -77,7 +77,7 @@ def test_read_uart_output_preserves_typed_failure_context(monkeypatch, capsys) -
 
     monkeypatch.setattr(stage0_check, "capture_uart_output", raise_capture)
     port = SerialPortInfo(
-        device="/dev/cu.usbmodem143303",
+        device="/dev/cu.usbmodem144403",
         description="ST-Link",
         manufacturer="STMicroelectronics",
         product="ST-Link",
@@ -96,5 +96,5 @@ def test_read_uart_output_preserves_typed_failure_context(monkeypatch, capsys) -
     assert ok is False
     captured = capsys.readouterr().out
     assert "RuntimeError: port busy" in captured
-    assert "/dev/cu.usbmodem143303" in captured
+    assert "/dev/cu.usbmodem144403" in captured
     assert "Expected: boot ok" in captured

@@ -44,13 +44,13 @@ Open a new shell after install so `uv` is on `PATH`.
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 macOS:
 
 ```bash
-bash ./setup_host.sh --board-id nrf52840dk
+bash ./setup_host.sh --board-id nrf52833dk
 ```
 
 These scripts can:
@@ -72,7 +72,7 @@ Start-Process -Verb RunAs -FilePath "$env:TEMP\nrf-command-line-tools-10.24.2-x6
 Then reopen the terminal and rerun:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 ### 3. Do not create or activate a venv manually
@@ -93,7 +93,7 @@ Run all commands from the repo root.
 uv sync
 uv run pyocd list
 uv run python host_bootstrap.py
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52833dk
 uv run pyocd-debug-mcp
 ```
 
@@ -129,20 +129,20 @@ macOS / Linux:
 
 ```bash
 uv run python stage0_check.py
-uv run python stage0_check.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=/dev/tty.usbmodemXXXX
-uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
+uv run python stage0_check.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --recover-test nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --port nrf52833dk=/dev/tty.usbmodemXXXX
+uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=path/to/firmware.elf
 ```
 
 Windows PowerShell:
 
 ```powershell
 uv run python stage0_check.py
-uv run python stage0_check.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk --recover-test nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk --port nrf52840dk=COM8
-uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=path/to/firmware.elf
+uv run python stage0_check.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --recover-test nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --port nrf52833dk=COM8
+uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=path/to/firmware.elf
 ```
 
 When UART auto-detect is supported, `stage0_check.py` tries:
@@ -185,8 +185,8 @@ at runtime. An explicit `target` takes precedence over a board config's
 ```bash
 uv run python host_bootstrap.py
 uv run python stage0_check.py
-uv run python host_bootstrap.py --board-id nrf52840dk
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk
 uv run pyocd-debug-mcp
 uv run pytest
 uv run ruff check .
@@ -207,14 +207,12 @@ Verified:
 
 - non-hardware verification: this document's command sequence and related-doc
   links match the current repo layout and root scripts
-- the shared-service Stage 0 path is bench-proven on this Mac host for
-  `nucleo_l476rg` flash + UART
-- the supplemental `nrf52833dk` Stage 0 path is also bench-proven on this Mac
-  host when its reference artifact is supplied
+- the shared-service Stage 0 path is bench-proven on this Mac host for the
+  scoped pair: `nucleo_l476rg` and `nrf52833dk`
 - the canonical Windows `R0` bootstrap path has been verified on a real
   Windows host
 
 Pending verification:
 
-- the official `nrf52840dk` board still needs the same end-to-end shared-service
-  proof on current hardware
+- `nrf52840dk` remains a retained alternate Nordic profile and still needs live
+  proof if future support for that board becomes a project goal

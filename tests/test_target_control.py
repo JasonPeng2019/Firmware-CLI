@@ -49,6 +49,29 @@ def test_build_session_options_keeps_jlink_workaround() -> None:
     }
 
 
+def test_build_session_options_adds_nucleo_under_reset_workaround() -> None:
+    stlink_board = BoardConfig(
+        board_id="nucleo_l476rg",
+        display_name="Nucleo-L476RG",
+        mcu_family="stm32l476",
+        probe_family="stlink",
+        pyocd_target="stm32l476rgtx",
+        pack_name="stm32l476",
+        probe_type="ST-Link",
+        probe_hint_terms=("stlink",),
+        serial_hint_terms=("stlink",),
+        test_addr=0x08000000,
+    )
+
+    options = target_control.build_session_options(stlink_board, stlink_board.pyocd_target)
+
+    assert options == {
+        "target_override": "stm32l476rgtx",
+        "connect_mode": "under-reset",
+        "frequency": 1_000_000,
+    }
+
+
 def test_pyocd_flash_matches_cli_reset_sequence(monkeypatch, tmp_path: Path) -> None:
     calls: list[str] = []
     target = FakeTarget(calls)

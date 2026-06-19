@@ -7,24 +7,25 @@ import pytest
 from pyocd_debug_mcp import server
 from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig
+from pyocd_debug_mcp.probe_inventory import ProbeInfo, ProbeResolution
 from pyocd_debug_mcp.serial_resolver import SerialPortInfo
 from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult
 
 
 def make_board() -> BoardConfig:
     return BoardConfig(
-        board_id="nrf52840dk",
-        display_name="nRF52840-DK",
-        mcu_family="nrf52840",
+        board_id="nrf52833dk",
+        display_name="nRF52833 DK",
+        mcu_family="nrf52833",
         probe_family="jlink",
-        pyocd_target="nrf52840",
-        pack_name="nrf52840",
+        pyocd_target="nrf52833",
+        pack_name="nrf52833",
         probe_type="SEGGER J-Link",
         probe_hint_terms=("jlink", "segger"),
         serial_hint_terms=("jlink", "segger", "virtual com"),
         test_addr=0x10000000,
         silicon_id_addr=0x10000100,
-        silicon_id_expected=0x00052840,
+        silicon_id_expected=0x00052833,
         silicon_id_label="FICR.INFO.PART",
         default_baudrate=115200,
         requires_recover_validation=True,
@@ -34,8 +35,10 @@ def make_board() -> BoardConfig:
 
 
 def make_handle(board: BoardConfig | None) -> TargetSessionHandle:
+    session_board = type("SessionBoard", (), {"name": board.display_name if board else "Raw Target"})()
+    session = type("Session", (), {"board": session_board if board else None})()
     return TargetSessionHandle(
-        session=object(),
+        session=session,
         board=board,
         probe_uid="probe-123",
         route_used="pyocd-native",
@@ -230,10 +233,56 @@ def test_unlock_recover_delegates_when_confirmed(monkeypatch) -> None:
     result = server.unlock_recover(confirm=True)
 
     assert seen["handle"] is handle
-    assert result == "Recover completed via pyOCD API mass erase on nrf52840dk via pyocd-native."
+    assert result == "Recover completed via pyOCD API mass erase on nrf52833dk via pyocd-native."
 
 
 def test_unlock_recover_requires_loaded_board() -> None:
     server._session_handle = make_handle(None)
 
     assert server.unlock_recover(confirm=True) == server.NO_BOARD_CONFIG_MESSAGE
+
+
+def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
+    board = make_board()
+    seen: dict[str, object] = {}
+
+    monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.delenv("PYOCD_TARGET", raising=False)
+    monkeypatch.setattr(server, "resolve_board_config", lambda board_id, board_config: board)
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda board_arg, *, run_cmd, allow_single_fallback: ProbeResolution(
+            probe=ProbeInfo(
+                uid="685400693",
+                description="Segger J-Link OB-SAM3U128-V2-NordicSem",
+                raw="probe row",
+                state="n/a",
+            ),
+            note="",
+            probes=tuple(),
+        ),
+    )
+
+    def fake_open_session(*, board, unique_id, target):
+        seen["board"] = board
+        seen["unique_id"] = unique_id
+        seen["target"] = target
+        return TargetSessionHandle(
+            session=type("Session", (), {"board": type("Board", (), {"name": "nRF52833 DK"})()})(),
+            board=board,
+            probe_uid=unique_id,
+            route_used="pyocd-native",
+            target_override=target,
+        )
+
+    monkeypatch.setattr(server.target_control, "open_session", fake_open_session)
+
+    result = server.connect(board_id="nrf52833dk")
+
+    assert seen["board"] is board
+    assert seen["unique_id"] == "685400693"
+    assert seen["target"] == "nrf52833"
+    assert "Connected to board" in result
+    assert "685400693" in result
+    assert "[board config: nrf52833dk]" in result

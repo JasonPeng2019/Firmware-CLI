@@ -31,6 +31,7 @@ from pyocd_debug_mcp.board_config import (
     load_selected_board_configs,
 )
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.probe_inventory import resolve_probe_for_board
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.serial_resolver import (
     BoardLike,
@@ -131,6 +132,35 @@ def build_session_options(board: BoardConfig | None, target: str | None) -> dict
     return target_control.build_session_options(board, target)
 
 
+def _resolve_probe_uid_for_connect(
+    board: BoardConfig | None,
+    unique_id: str | None,
+) -> str | None:
+    if unique_id is not None:
+        return unique_id
+    env_uid = os.environ.get("PYOCD_PROBE_UID") or None
+    if env_uid is not None:
+        return env_uid
+    if board is None:
+        return None
+
+    resolution = resolve_probe_for_board(
+        board,
+        run_cmd=_run_cmd,
+        allow_single_fallback=True,
+    )
+    if resolution.probe is None:
+        raise RuntimeError(
+            f"Probe resolution failed for {board.display_name}: {resolution.note}"
+        )
+    if not resolution.probe.uid:
+        raise RuntimeError(
+            f"Probe resolution for {board.display_name} did not yield a unique id. "
+            "Rerun with unique_id=... or set PYOCD_PROBE_UID."
+        )
+    return resolution.probe.uid
+
+
 def _handle() -> TargetSessionHandle:
     """Return the live session handle or raise if not connected."""
     if _session_handle is None:
@@ -170,7 +200,7 @@ def connect(
             return "Already connected. Call `disconnect` first to switch probes."
 
         board = resolve_board_config(board_id, board_config)
-        uid = unique_id or os.environ.get("PYOCD_PROBE_UID") or None
+        uid = _resolve_probe_uid_for_connect(board, unique_id)
         tgt = (
             target
             or (board.pyocd_target if board else None)

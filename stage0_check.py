@@ -18,7 +18,6 @@ not hardcoded board entries in this script.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -32,7 +31,6 @@ if SRC_DIR.is_dir():
 
 from pyocd_debug_mcp.board_config import (  # noqa: E402
     DEFAULT_BOARD_CONFIG_DIR,
-    PROBE_FAMILY_HINTS,
     RECOVER_MODE_MANUAL_ONLY,
     RECOVER_MODE_NRF_PYOCD_UNLOCK,
     BoardConfig,
@@ -42,6 +40,11 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
     validate_width_bits,
 )
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.probe_inventory import (  # noqa: E402
+    ProbeInfo,
+    list_connected_probes,
+    pick_probe_for_board,
+)
 from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
     SerialPortInfo,
     command_exists,
@@ -68,18 +71,6 @@ SUMMARY_FAIL = "fail"
 SUMMARY_MANUAL = "manual"
 
 load_local_env()
-
-
-@dataclass(frozen=True)
-class ProbeInfo:
-    uid: str
-    description: str
-    raw: str
-    state: str = ""
-
-    @property
-    def searchable_text(self) -> str:
-        return f"{self.uid} {self.description} {self.raw}".lower()
 
 
 @dataclass(frozen=True)
@@ -137,10 +128,6 @@ def log(status: str, message: str):
 def check(ok: bool, message: str) -> bool:
     log(PASS if ok else FAIL, message)
     return ok
-
-
-def score_terms(text: str, terms: tuple[str, ...]) -> int:
-    return sum(1 for term in terms if term in text)
 
 
 def board_cli_label(board: BoardConfig) -> str:
@@ -240,43 +227,6 @@ def check_pyserial_installed() -> bool:
     return ok
 
 
-def list_probes() -> list[ProbeInfo]:
-    rc, out, _ = run(["pyocd", "list", "--output", "json"])
-    if rc != 0 or not out.strip():
-        _, out, _ = run(["pyocd", "list"])
-        probes: list[ProbeInfo] = []
-        for line in out.splitlines():
-            stripped = line.strip()
-            if (
-                stripped
-                and not stripped.startswith("#")
-                and not stripped.lower().startswith("no")
-                and not re.fullmatch(r"-+", stripped)
-            ):
-                probes.append(ProbeInfo(uid="", description=stripped.lower(), raw=stripped))
-        return probes
-
-    try:
-        data = json.loads(out)
-        boards = data.get("boards", data) if isinstance(data, dict) else data
-        probes = []
-        for item in boards:
-            description = " ".join(
-                part for part in [item.get("description", ""), item.get("board_name", "")] if part
-            )
-            probes.append(
-                ProbeInfo(
-                    uid=item.get("unique_id", item.get("uid", "")),
-                    description=description,
-                    state=item.get("state", ""),
-                    raw=str(item),
-                )
-            )
-        return probes
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return []
-
-
 def list_target_names() -> set[str]:
     _, out, _ = run(["pyocd", "list", "--targets"])
     names: set[str] = set()
@@ -336,35 +286,9 @@ def read_memory_value(
     return last_result
 
 
-def pick_probe(
-    board: BoardConfig, probes: list[ProbeInfo], allow_single_fallback: bool
-) -> tuple[ProbeInfo | None, str]:
-    scored = []
-    for probe in probes:
-        score = score_terms(probe.searchable_text, board.probe_hint_terms)
-        if score > 0:
-            scored.append((score, probe))
-
-    if scored:
-        best_score = max(score for score, _ in scored)
-        best = [probe for score, probe in scored if score == best_score]
-        if len(best) == 1:
-            return best[0], ""
-        return None, "multiple matching probes found; disconnect extras or refine probe_hint_terms"
-
-    if allow_single_fallback and len(probes) == 1:
-        probe = probes[0]
-        family_terms = tuple(PROBE_FAMILY_HINTS.get(board.probe_family, set()))
-        if family_terms and score_terms(probe.searchable_text, family_terms) > 0:
-            return probe, "single connected probe assumed for this board"
-        return None, "single connected probe does not match the expected probe family"
-
-    return None, "no matching probe found"
-
-
 def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | None]:
     header("Connected probes")
-    probes = list_probes()
+    probes = list_connected_probes(lambda cmd: run(cmd))
 
     if not probes:
         _, out, _ = run(["pyocd", "list"])
@@ -384,7 +308,13 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
     results: dict[str, ProbeInfo | None] = {}
     allow_single_fallback = len(probes) == 1 and len(boards_to_check) == 1
     for board in boards_to_check:
-        probe, note = pick_probe(board, probes, allow_single_fallback)
+        resolution = pick_probe_for_board(
+            board,
+            probes,
+            allow_single_fallback=allow_single_fallback,
+        )
+        probe = resolution.probe
+        note = resolution.note
         if probe:
             detail = f"{board.display_name} ({board.probe_type}) probe visible"
             if note:

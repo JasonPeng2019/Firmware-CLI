@@ -43,19 +43,26 @@ def test_all_tracked_board_configs_load() -> None:
         assert boards_by_source[filename].board_id == expected_board_id
 
 
-def test_nrf52833_board_profile_has_exact_identity_check() -> None:
+def test_nrf52833_board_profile_matches_frozen_official_contract() -> None:
     [board] = load_board_configs_from_paths([BOARD_DIR / "nrf52833dk.yaml"])
 
     assert board.board_id == "nrf52833dk"
+    assert board.display_name == "nRF52833 DK"
+    assert board.mcu_family == "nrf52833"
     assert board.pyocd_target == "nrf52833"
     assert board.probe_family == "jlink"
+    assert board.pack_name == "nrf52833"
+    assert board.default_baudrate == 115200
+    assert board.test_addr == 0x10000000
     assert board.recover_mode == "nrf_pyocd_unlock"
     assert board.silicon_id_addr == 0x10000100
     assert board.silicon_id_expected == 0x00052833
     assert board.silicon_id_label == "FICR.INFO.PART"
+    assert board.expected_uart_substring == "boot ok"
+    assert board.requires_recover_validation is True
 
 
-def test_nrf52840_board_profile_matches_frozen_official_contract() -> None:
+def test_nrf52840_board_profile_loads_as_retained_alternate_profile() -> None:
     [board] = load_board_configs_from_paths([BOARD_DIR / "nrf52840dk.yaml"])
 
     assert board.board_id == "nrf52840dk"

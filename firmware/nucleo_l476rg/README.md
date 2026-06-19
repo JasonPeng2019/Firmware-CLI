@@ -68,7 +68,7 @@ Verified:
 - `uv run python host_bootstrap.py --board-id nucleo_l476rg` passed on this Mac
   host with:
   - probe UID `0668FF514988525067213913`
-  - serial port `/dev/cu.usbmodem143303`
+  - serial port `/dev/cu.usbmodem144403`
   - confirmed target `stm32l476rgtx`
   - confirmed pack token `stm32l476`
   - generic serial matching working even without `STM32_Programmer_CLI`
@@ -83,7 +83,7 @@ Verified:
   - target-memory readback of `0x1234ABCD`
   - UART capture of `boot ok` through the shared UART service
 - The human operator confirmed that the visible ST-Link debug probe and the
-  visible `/dev/cu.usbmodem143303` virtual COM port were exposed by the same
+  visible `/dev/cu.usbmodem144403` virtual COM port were exposed by the same
   physical USB-attached `nucleo_l476rg` board during the final STM32 bench run.
 
 Out of scope for this board package:

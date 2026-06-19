@@ -66,13 +66,13 @@ brew install uv
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52840dk
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
 
 macOS:
 
 ```bash
-bash ./setup_host.sh --board-id nrf52840dk
+bash ./setup_host.sh --board-id nrf52833dk
 ```
 
 Use `--board-id <board>` or `-BoardId <board>` when only one physical bench board is attached and you do
@@ -87,7 +87,7 @@ uv run python host_bootstrap.py
 For one board:
 
 ```bash
-uv run python host_bootstrap.py --board-id nrf52840dk
+uv run python host_bootstrap.py --board-id nrf52833dk
 ```
 
 ### Step 4: Run Stage 0 board validation
@@ -99,7 +99,7 @@ uv run python stage0_check.py
 For one board:
 
 ```bash
-uv run python stage0_check.py --board-id nrf52840dk
+uv run python stage0_check.py --board-id nrf52833dk
 ```
 
 ### Step 5: Start the MCP server after Stage 0 is acceptable
@@ -319,8 +319,8 @@ Verified:
 - this operator guide's sequence, branch points, handoffs, and per-script essentials match the current
   `setup_host`, `host_bootstrap.py`, and `stage0_check.py` roles, flags, and output
 - this flow matches the current `stage0_check.py` CLI shape and shared board loader behavior
-- the supplemental `nrf52833dk` flash, UART, and recover path is bench-verified on this Mac host when a
-  reference artifact is supplied
+- the scoped `nrf52833dk` flash, UART, and recover path is bench-verified on
+  this Mac host when a reference artifact is supplied
 - the `nucleo_l476rg` flash and UART path is now bench-verified on this Mac host through the shared
   target-control and UART services
 - the STM32 bench truth is fully closed in repo status, including the
@@ -330,5 +330,5 @@ Verified:
 
 Pending verification:
 
-- the official `nrf52840dk` board still needs the same end-to-end shared-service proof on current
-  hardware
+- `nrf52840dk` remains a retained alternate Nordic profile and still needs live
+  proof if future support for that board becomes a project goal
