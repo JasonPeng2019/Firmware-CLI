@@ -17,8 +17,11 @@ Design notes
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import threading
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
@@ -30,9 +33,10 @@ from pyocd_debug_mcp.board_config import (
     BoardConfig,
     load_selected_board_configs,
 )
+from pyocd_debug_mcp.guardrails.flash_gate import resolve_flash_request
+from pyocd_debug_mcp.guardrails.recover_gate import authorize_recover
 from pyocd_debug_mcp.local_env import load_local_env
 from pyocd_debug_mcp.probe_inventory import resolve_probe_for_board
-from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.serial_resolver import (
     BoardLike,
     ProbeLike,
@@ -40,8 +44,32 @@ from pyocd_debug_mcp.serial_resolver import (
     list_serial_ports,
     resolve_serial_port,
 )
+from pyocd_debug_mcp.services.convergence_watcher import (
+    ConvergenceWatcher,
+    FLASH_TOOL,
+    RECOVER_TOOL,
+    UART_TOOL,
+)
+from pyocd_debug_mcp.services.session_runtime import (
+    ActionContext,
+    InMemorySessionStore,
+    PolicyRefusal,
+    SessionRecord,
+    ToolEvent,
+    ToolOutcome,
+    WatcherBlocked,
+    utc_now_text,
+)
 from pyocd_debug_mcp.services import target_control
 from pyocd_debug_mcp.services.uart_capture import capture_uart_output
+from pyocd_debug_mcp.target_errors import (
+    LockedTargetError,
+    ProbeNotFoundError,
+    ReferenceArtifactError,
+    SymbolLookupError,
+    TargetConnectionError,
+    UnsupportedArtifactError,
+)
 
 load_local_env()
 
@@ -51,6 +79,9 @@ mcp = FastMCP("pyocd-debug")
 _lock = threading.Lock()
 # The single live session, or None when disconnected.
 _session_handle: TargetSessionHandle | None = None
+_runtime_session: SessionRecord | None = None
+_session_store = InMemorySessionStore()
+_watcher = ConvergenceWatcher()
 NO_BOARD_CONFIG_MESSAGE = (
     "No board config loaded for this session. Pass `board_id` to `connect` "
     "(or set PYOCD_BOARD_ID) to load boards/<board>.yaml facts."
@@ -60,6 +91,114 @@ NO_BOARD_CONFIG_MESSAGE = (
 class _ProbeHint:
     def __init__(self, uid: str) -> None:
         self.uid = uid
+
+
+def _next_event_id() -> str:
+    return f"evt-{secrets.token_hex(6)}"
+
+
+def _duration_ms(started: float) -> int:
+    return max(0, int(round((time.monotonic() - started) * 1000)))
+
+
+def _jsonable_args(values: Mapping[str, object]) -> dict[str, object]:
+    output: dict[str, object] = {}
+    for key, value in values.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            output[key] = value
+        elif isinstance(value, Path):
+            output[key] = str(value)
+        else:
+            output[key] = str(value)
+    return output
+
+
+def _error_code(exc: Exception) -> str:
+    if isinstance(exc, ProbeNotFoundError):
+        return "probe/not-found"
+    if isinstance(exc, LockedTargetError):
+        return "target/locked"
+    if isinstance(exc, TargetConnectionError):
+        return "target/connection-failure"
+    if isinstance(exc, UnsupportedArtifactError):
+        return "flash/unsupported-artifact"
+    if isinstance(exc, ReferenceArtifactError):
+        return "flash/reference-artifact"
+    if isinstance(exc, SymbolLookupError):
+        return "symbols/lookup-failure"
+    if isinstance(exc, RuntimeError) and str(exc) == "Not connected to a probe. Call `connect` first.":
+        return "server/not-connected"
+    return f"runtime/{type(exc).__name__}"
+
+
+def _active_session_id() -> str | None:
+    return _runtime_session.session_id if _runtime_session is not None else None
+
+
+def _action_context(tool_name: str) -> ActionContext:
+    return ActionContext(source="server", action_name=tool_name, session_id=_active_session_id())
+
+
+def _record_event(
+    tool_name: str,
+    normalized_args: Mapping[str, object],
+    *,
+    outcome_kind: ToolOutcome,
+    error_code: str | None,
+    duration_ms: int,
+    details: dict[str, object] | None = None,
+    session: SessionRecord | None = None,
+    board_id: str | None = None,
+    probe_uid: str | None = None,
+    route_used: str | None = None,
+) -> ToolEvent:
+    runtime = session or _runtime_session
+    event = ToolEvent(
+        event_id=_next_event_id(),
+        session_id=runtime.session_id if runtime is not None else None,
+        timestamp=utc_now_text(),
+        tool_name=tool_name,
+        board_id=board_id if board_id is not None else (runtime.board_id if runtime is not None else None),
+        probe_uid=probe_uid if probe_uid is not None else (runtime.probe_uid if runtime is not None else None),
+        route_used=route_used if route_used is not None else (runtime.route_used if runtime is not None else None),
+        normalized_args=_jsonable_args(normalized_args),
+        outcome_kind=outcome_kind,
+        error_code=error_code,
+        duration_ms=duration_ms,
+        details=details or {},
+    )
+    if runtime is None:
+        _session_store.append_global_event(event)
+    else:
+        _session_store.append_event(runtime, event)
+    return event
+
+
+def _format_refusal(refusal: PolicyRefusal, *, session_id: str | None) -> str:
+    return f"Refused [{refusal.code}]: {refusal.message} session_id={session_id or '(none)'}"
+
+
+def _format_block(blocked: WatcherBlocked, *, session_id: str | None) -> str:
+    return f"Blocked [{blocked.code}]: {blocked.message} session_id={session_id or '(none)'}"
+
+
+def _record_blocked_event(
+    tool_name: str,
+    normalized_args: Mapping[str, object],
+    blocked: WatcherBlocked,
+    *,
+    started: float,
+    session: SessionRecord | None,
+) -> ToolEvent:
+    return _record_event(
+        tool_name,
+        normalized_args,
+        outcome_kind=ToolOutcome.BLOCKED,
+        error_code=blocked.code,
+        duration_ms=_duration_ms(started),
+        details={"message": blocked.message},
+        session=session,
+    )
 
 
 def _parse_int(text: str) -> int:
@@ -194,38 +333,126 @@ def connect(
             ``boards/`` directory, for a custom board. Defaults to the
             ``PYOCD_BOARD_CONFIG`` environment variable.
     """
-    global _session_handle
+    global _session_handle, _runtime_session
     with _lock:
+        started = time.monotonic()
+        normalized_args: dict[str, object] = {
+            "unique_id": unique_id,
+            "target": target,
+            "board_id": board_id,
+            "board_config": board_config,
+        }
         if _session_handle is not None:
-            return "Already connected. Call `disconnect` first to switch probes."
+            result = "Already connected. Call `disconnect` first to switch probes."
+            _record_event(
+                "connect",
+                normalized_args,
+                outcome_kind=ToolOutcome.SUCCESS,
+                error_code=None,
+                duration_ms=_duration_ms(started),
+                details={"status": "already-connected"},
+            )
+            return result
 
-        board = resolve_board_config(board_id, board_config)
-        uid = _resolve_probe_uid_for_connect(board, unique_id)
-        tgt = (
-            target
-            or (board.pyocd_target if board else None)
-            or os.environ.get("PYOCD_TARGET")
-            or None
-        )
-        handle = target_control.open_session(board=board, unique_id=uid, target=tgt)
+        board = None
+        uid = None
+        tgt = None
+        try:
+            board = resolve_board_config(board_id, board_config)
+            uid = _resolve_probe_uid_for_connect(board, unique_id)
+            tgt = (
+                target
+                or (board.pyocd_target if board else None)
+                or os.environ.get("PYOCD_TARGET")
+                or None
+            )
+            handle = target_control.open_session(board=board, unique_id=uid, target=tgt)
+        except Exception as exc:  # noqa: BLE001 - preserve the original connect error
+            _record_event(
+                "connect",
+                normalized_args,
+                outcome_kind=ToolOutcome.FAILED,
+                error_code=_error_code(exc),
+                duration_ms=_duration_ms(started),
+                details={"message": str(exc)[:300]},
+                board_id=board.board_id if board else None,
+                probe_uid=uid,
+                route_used=None,
+            )
+            raise
+
         _session_handle = handle
+        _runtime_session = _session_store.start_session(
+            board_id=board.board_id if board else None,
+            probe_uid=handle.probe_uid,
+            route_used=handle.route_used,
+        )
         suffix = f" [board config: {board.board_id}]" if board else ""
         board_name = handle.session.board.name if handle.session.board is not None else "<unknown>"
-        return (
+        result = (
             f"Connected to board '{board_name}' via probe "
-            f"{handle.probe_uid or '(unknown)'} via {handle.route_used}.{suffix}"
+            f"{handle.probe_uid or '(unknown)'} via {handle.route_used}.{suffix} "
+            f"session_id={_runtime_session.session_id}"
         )
+        _record_event(
+            "connect",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            details={"board_name": board_name},
+            session=_runtime_session,
+        )
+        return result
 
 
 @mcp.tool()
 def disconnect() -> str:
     """Close the active debug session and release the probe."""
-    global _session_handle
+    global _session_handle, _runtime_session
     with _lock:
         if _session_handle is None:
-            return "Not connected."
-        target_control.close_session(_session_handle)
+            started = time.monotonic()
+            result = "Not connected."
+            _record_event(
+                "disconnect",
+                {},
+                outcome_kind=ToolOutcome.SUCCESS,
+                error_code=None,
+                duration_ms=_duration_ms(started),
+                details={"status": "not-connected"},
+            )
+            return result
+
+        started = time.monotonic()
+        handle = _session_handle
+        runtime_session = _runtime_session
+        try:
+            target_control.close_session(handle)
+        except Exception as exc:  # noqa: BLE001 - preserve the original disconnect error
+            _record_event(
+                "disconnect",
+                {},
+                outcome_kind=ToolOutcome.FAILED,
+                error_code=_error_code(exc),
+                duration_ms=_duration_ms(started),
+                details={"message": str(exc)[:300]},
+                session=runtime_session,
+            )
+            raise
+
+        _record_event(
+            "disconnect",
+            {},
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            session=runtime_session,
+        )
+        if runtime_session is not None:
+            _session_store.close_session(runtime_session)
         _session_handle = None
+        _runtime_session = None
         return "Disconnected."
 
 
@@ -240,13 +467,16 @@ def get_board_info() -> str:
     facts were not loaded.
     """
     with _lock:
-        handle = _session_handle
-        if handle is None:
-            return "Not connected. Call `connect` first."
-        b = handle.board
-        if b is None:
-            return NO_BOARD_CONFIG_MESSAGE
-        return format_board_info(b)
+        def operation() -> str:
+            handle = _session_handle
+            if handle is None:
+                return "Not connected. Call `connect` first."
+            b = handle.board
+            if b is None:
+                return NO_BOARD_CONFIG_MESSAGE
+            return format_board_info(b)
+
+        return _run_logged_tool("get_board_info", {}, operation)
 
 
 def _require_loaded_board(handle: TargetSessionHandle) -> BoardConfig:
@@ -282,35 +512,91 @@ def _resolve_serial_port_for_session(
     return resolution.port
 
 
+def _handle_mutation_event(event: ToolEvent) -> None:
+    if _runtime_session is None:
+        return
+    decision = _watcher.observe_event(_runtime_session, event)
+    if decision is not None:
+        _session_store.set_block(
+            _runtime_session,
+            decision.action_family,
+            decision.code,
+            decision.message,
+        )
+
+
+def _run_logged_tool(
+    tool_name: str,
+    normalized_args: Mapping[str, object],
+    operation: Callable[[], str],
+) -> str:
+    started = time.monotonic()
+    try:
+        result = operation()
+    except Exception as exc:  # noqa: BLE001 - preserve the original tool failure
+        _record_event(
+            tool_name,
+            normalized_args,
+            outcome_kind=ToolOutcome.FAILED,
+            error_code=_error_code(exc),
+            duration_ms=_duration_ms(started),
+            details={"message": str(exc)[:300]},
+        )
+        raise
+
+    _record_event(
+        tool_name,
+        normalized_args,
+        outcome_kind=ToolOutcome.SUCCESS,
+        error_code=None,
+        duration_ms=_duration_ms(started),
+    )
+    return result
+
+
+def _complete_effect(effect: Callable[[], None], result: str) -> str:
+    effect()
+    return result
+
+
 @mcp.tool()
 def get_state() -> str:
     """Return the current core run state (e.g. HALTED, RUNNING, RESET)."""
     with _lock:
-        return target_control.get_state(_handle())
+        def operation() -> str:
+            return target_control.get_state(_handle())
+
+        return _run_logged_tool("get_state", {}, operation)
 
 
 @mcp.tool()
 def halt() -> str:
     """Halt the core."""
     with _lock:
-        target_control.halt(_handle())
-        return "Halted."
+        def operation() -> str:
+            return _complete_effect(lambda: target_control.halt(_handle()), "Halted.")
+
+        return _run_logged_tool("halt", {}, operation)
 
 
 @mcp.tool()
 def resume() -> str:
     """Resume execution of the core."""
     with _lock:
-        target_control.resume(_handle())
-        return "Resumed."
+        def operation() -> str:
+            return _complete_effect(lambda: target_control.resume(_handle()), "Resumed.")
+
+        return _run_logged_tool("resume", {}, operation)
 
 
 @mcp.tool()
 def step() -> str:
     """Single-step one instruction and return the new program counter."""
     with _lock:
-        pc = target_control.step(_handle())
-        return f"Stepped. pc=0x{pc:08X}"
+        def operation() -> str:
+            return f"Stepped. pc=0x{target_control.step(_handle()):08X}"
+
+        return _run_logged_tool("step", {}, operation)
 
 
 @mcp.tool()
@@ -322,10 +608,13 @@ def reset(halt_after: bool = True) -> str:
             If False, reset and let the target run.
     """
     with _lock:
-        target_control.reset(_handle(), halt_after=halt_after)
-        if halt_after:
-            return "Reset and halted."
-        return "Reset and running."
+        def operation() -> str:
+            return _complete_effect(
+                lambda: target_control.reset(_handle(), halt_after=halt_after),
+                "Reset and halted." if halt_after else "Reset and running.",
+            )
+
+        return _run_logged_tool("reset", {"halt_after": halt_after}, operation)
 
 
 @mcp.tool()
@@ -335,15 +624,23 @@ def read_core_register(name: str) -> str:
     Returns the value as a hex string.
     """
     with _lock:
-        return f"0x{target_control.read_core_register(_handle(), name):08X}"
+        def operation() -> str:
+            return f"0x{target_control.read_core_register(_handle(), name):08X}"
+
+        return _run_logged_tool("read_core_register", {"name": name}, operation)
 
 
 @mcp.tool()
 def write_core_register(name: str, value: str) -> str:
     """Write a core register by name. ``value`` may be hex (0x...) or decimal."""
     with _lock:
-        target_control.write_core_register(_handle(), name, _parse_int(value))
-        return f"Wrote {value} to {name}."
+        def operation() -> str:
+            return _complete_effect(
+                lambda: target_control.write_core_register(_handle(), name, _parse_int(value)),
+                f"Wrote {value} to {name}.",
+            )
+
+        return _run_logged_tool("write_core_register", {"name": name, "value": value}, operation)
 
 
 @mcp.tool()
@@ -355,9 +652,15 @@ def read_memory(address: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
-        value = target_control.read_memory(_handle(), _parse_int(address), word_size)
-        width = word_size // 4
-        return f"0x{value:0{width}X}"
+        def operation() -> str:
+            value = target_control.read_memory(_handle(), _parse_int(address), word_size)
+            return f"0x{value:0{word_size // 4}X}"
+
+        return _run_logged_tool(
+            "read_memory",
+            {"address": address, "word_size": word_size},
+            operation,
+        )
 
 
 @mcp.tool()
@@ -367,8 +670,11 @@ def read_memory_block(address: str, length: int) -> str:
     Returns the bytes as a space-separated hex string.
     """
     with _lock:
-        data = target_control.read_memory_block(_handle(), _parse_int(address), length)
-        return " ".join(f"{b:02X}" for b in data)
+        def operation() -> str:
+            values = target_control.read_memory_block(_handle(), _parse_int(address), length)
+            return " ".join(f"{byte:02X}" for byte in values)
+
+        return _run_logged_tool("read_memory_block", {"address": address, "length": length}, operation)
 
 
 @mcp.tool()
@@ -381,24 +687,48 @@ def write_memory(address: str, value: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
-        target_control.write_memory(_handle(), _parse_int(address), _parse_int(value), word_size)
-        return f"Wrote {value} to {address}."
+        def operation() -> str:
+            return _complete_effect(
+                lambda: target_control.write_memory(
+                    _handle(),
+                    _parse_int(address),
+                    _parse_int(value),
+                    word_size,
+                ),
+                f"Wrote {value} to {address}.",
+            )
+
+        return _run_logged_tool(
+            "write_memory",
+            {"address": address, "value": value, "word_size": word_size},
+            operation,
+        )
 
 
 @mcp.tool()
 def set_breakpoint(address: str) -> str:
     """Set a hardware/software breakpoint at ``address``."""
     with _lock:
-        target_control.set_breakpoint(_handle(), _parse_int(address))
-        return f"Breakpoint set at {address}."
+        def operation() -> str:
+            return _complete_effect(
+                lambda: target_control.set_breakpoint(_handle(), _parse_int(address)),
+                f"Breakpoint set at {address}.",
+            )
+
+        return _run_logged_tool("set_breakpoint", {"address": address}, operation)
 
 
 @mcp.tool()
 def remove_breakpoint(address: str) -> str:
     """Remove the breakpoint at ``address``."""
     with _lock:
-        target_control.remove_breakpoint(_handle(), _parse_int(address))
-        return f"Breakpoint removed at {address}."
+        def operation() -> str:
+            return _complete_effect(
+                lambda: target_control.remove_breakpoint(_handle(), _parse_int(address)),
+                f"Breakpoint removed at {address}.",
+            )
+
+        return _run_logged_tool("remove_breakpoint", {"address": address}, operation)
 
 
 @mcp.tool()
@@ -413,21 +743,81 @@ def flash_firmware(path: str | None = None, halt_after_reset: bool = False) -> s
             If False, reset and let it run.
     """
     with _lock:
-        handle = _handle()
-        if path is None:
-            if handle.board is None:
-                return NO_BOARD_CONFIG_MESSAGE
-            artifact = resolve_reference_artifacts(handle.board).flash_artifact
-        else:
-            artifact = Path(path).expanduser().resolve()
+        started = time.monotonic()
+        runtime = _runtime_session
+        normalized_args: dict[str, object] = {
+            "path": path,
+            "halt_after_reset": halt_after_reset,
+            "artifact_source": "default" if path is None else "explicit",
+            "artifact_path": path,
+        }
+        if runtime is not None:
+            try:
+                _watcher.ensure_allowed(runtime, FLASH_TOOL)
+            except WatcherBlocked as blocked:
+                _record_blocked_event(
+                    "flash_firmware",
+                    normalized_args,
+                    blocked,
+                    started=started,
+                    session=runtime,
+                )
+                return _format_block(blocked, session_id=runtime.session_id)
 
-        flashed = target_control.flash_firmware(
-            handle,
-            artifact,
-            halt_after_reset=halt_after_reset,
-        )
+        handle = _session_handle
+        try:
+            request = resolve_flash_request(
+                handle,
+                explicit_path=path,
+                action_context=_action_context("flash_firmware"),
+            )
+            active_handle = _handle()
+            normalized_args.update(request.identity.as_log_fields())
+            flashed = target_control.flash_firmware(
+                active_handle,
+                request.artifact_path,
+                halt_after_reset=halt_after_reset,
+            )
+        except PolicyRefusal as exc:
+            event = _record_event(
+                "flash_firmware",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=exc.code,
+                duration_ms=_duration_ms(started),
+                details={"message": exc.message},
+                session=runtime,
+            )
+            if runtime is not None:
+                _handle_mutation_event(event)
+            return _format_refusal(exc, session_id=_active_session_id())
+        except Exception as exc:  # noqa: BLE001 - preserve backend failure text
+            event = _record_event(
+                "flash_firmware",
+                normalized_args,
+                outcome_kind=ToolOutcome.FAILED,
+                error_code=_error_code(exc),
+                duration_ms=_duration_ms(started),
+                details={"message": str(exc)[:300]},
+                session=runtime,
+            )
+            if runtime is not None:
+                _handle_mutation_event(event)
+            raise
+
         state = "halted" if halt_after_reset else "running"
-        return f"Flashed {flashed} via {handle.route_used}; target left {state}."
+        event = _record_event(
+            "flash_firmware",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            details={"target_state": state},
+            session=runtime,
+        )
+        if runtime is not None:
+            _handle_mutation_event(event)
+        return f"Flashed {flashed} via {active_handle.route_used}; target left {state}."
 
 
 @mcp.tool()
@@ -447,6 +837,28 @@ def read_serial(
     is captured deterministically.
     """
     with _lock:
+        started = time.monotonic()
+        runtime = _runtime_session
+        if runtime is not None:
+            try:
+                _watcher.ensure_allowed(runtime, UART_TOOL)
+            except WatcherBlocked as blocked:
+                blocked_args: dict[str, object] = {
+                    "port": port,
+                    "baudrate": baudrate,
+                    "expected_text": expected_text,
+                    "read_seconds": read_seconds,
+                    "reset_on_open": reset_on_open,
+                }
+                _record_blocked_event(
+                    "read_serial",
+                    blocked_args,
+                    blocked,
+                    started=started,
+                    session=runtime,
+                )
+                return _format_block(blocked, session_id=runtime.session_id)
+
         handle = _handle()
         if handle.board is None:
             return NO_BOARD_CONFIG_MESSAGE
@@ -455,6 +867,13 @@ def read_serial(
         resolved_port = _resolve_serial_port_for_session(handle, override=port)
         resolved_baudrate = baudrate or board.default_baudrate
         resolved_expected_text = expected_text if expected_text is not None else board.expected_uart_substring
+        normalized_args: dict[str, object] = {
+            "port": resolved_port.device,
+            "baudrate": resolved_baudrate,
+            "expected_text": resolved_expected_text,
+            "read_seconds": read_seconds,
+            "reset_on_open": reset_on_open,
+        }
 
         on_port_open = None
         if reset_on_open:
@@ -476,11 +895,28 @@ def read_serial(
         )
         verdict = "matched" if capture.matched else "did not match"
         excerpt = capture.excerpt or "(none)"
-        return (
+        result = (
             f"UART {verdict} on {resolved_port.device} at {resolved_baudrate} baud via {handle.route_used}; "
             f"{expectation_label}; reopen_count={capture.reopen_count}; "
             f"duration={capture.duration_seconds:.2f}s; excerpt={excerpt}"
         )
+        event = _record_event(
+            "read_serial",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS if capture.matched else ToolOutcome.FAILED,
+            error_code=None if capture.matched else "uart/no-match",
+            duration_ms=_duration_ms(started),
+            details={
+                "matched": capture.matched,
+                "reopen_count": capture.reopen_count,
+                "capture_duration_seconds": round(capture.duration_seconds, 3),
+                "excerpt": excerpt,
+            },
+            session=runtime,
+        )
+        if runtime is not None:
+            _handle_mutation_event(event)
+        return result
 
 
 @mcp.tool()
@@ -492,14 +928,79 @@ def unlock_recover(confirm: bool = False) -> str:
     ``recover_mode`` fail deterministically instead of pretending success.
     """
     with _lock:
-        handle = _handle()
-        if handle.board is None:
-            return NO_BOARD_CONFIG_MESSAGE
-        if not confirm:
-            return "Refusing to run recover without confirm=True. This operation may erase flash."
+        started = time.monotonic()
+        runtime = _runtime_session
+        if runtime is not None:
+            try:
+                _watcher.ensure_allowed(runtime, RECOVER_TOOL)
+            except WatcherBlocked as blocked:
+                blocked_args: dict[str, object] = {"confirm": confirm}
+                _record_blocked_event(
+                    "unlock_recover",
+                    blocked_args,
+                    blocked,
+                    started=started,
+                    session=runtime,
+                )
+                return _format_block(blocked, session_id=runtime.session_id)
 
-        backend = target_control.recover_target(handle)
-        return f"Recover completed via {backend} on {handle.board.board_id} via {handle.route_used}."
+        handle = _session_handle
+        normalized_args: dict[str, object] = {"confirm": confirm}
+        try:
+            authorize_recover(
+                handle,
+                confirm=confirm,
+                recover_already_completed=bool(runtime and runtime.recover_completed),
+                action_context=_action_context("unlock_recover"),
+            )
+            active_handle = _handle()
+            backend = target_control.recover_target(active_handle)
+        except PolicyRefusal as exc:
+            event = _record_event(
+                "unlock_recover",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=exc.code,
+                duration_ms=_duration_ms(started),
+                details={"message": exc.message},
+                session=runtime,
+            )
+            if runtime is not None:
+                _handle_mutation_event(event)
+            return _format_refusal(exc, session_id=_active_session_id())
+        except Exception as exc:  # noqa: BLE001 - preserve backend failure text
+            event = _record_event(
+                "unlock_recover",
+                normalized_args,
+                outcome_kind=ToolOutcome.FAILED,
+                error_code=_error_code(exc),
+                duration_ms=_duration_ms(started),
+                details={"message": str(exc)[:300]},
+                session=runtime,
+            )
+            if runtime is not None:
+                _handle_mutation_event(event)
+            raise
+
+        if runtime is not None:
+            _session_store.mark_recover_completed(runtime)
+        event = _record_event(
+            "unlock_recover",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            details={"backend": backend},
+            session=runtime,
+        )
+        if runtime is not None:
+            _handle_mutation_event(event)
+        board = active_handle.board
+        assert board is not None
+        return (
+            f"Recover completed via {backend} on {board.board_id} "
+            f"via {active_handle.route_used}."
+        )
 
 
 def main() -> None:

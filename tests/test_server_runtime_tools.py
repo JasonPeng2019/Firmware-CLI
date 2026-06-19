@@ -9,6 +9,8 @@ from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig
 from pyocd_debug_mcp.probe_inventory import ProbeInfo, ProbeResolution
 from pyocd_debug_mcp.serial_resolver import SerialPortInfo
+from pyocd_debug_mcp.services.convergence_watcher import UART_TOOL
+from pyocd_debug_mcp.services.session_runtime import InMemorySessionStore
 from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult
 
 
@@ -47,12 +49,19 @@ def make_handle(board: BoardConfig | None) -> TargetSessionHandle:
 
 
 @pytest.fixture(autouse=True)
-def restore_session_handle():
-    original = server._session_handle
+def restore_session_handle(tmp_path: Path):
+    original_handle = server._session_handle
+    original_runtime = server._runtime_session
+    original_store = server._session_store
+    server._session_handle = None
+    server._runtime_session = None
+    server._session_store = InMemorySessionStore(tmp_path / "runs")
     try:
         yield
     finally:
-        server._session_handle = original
+        server._session_handle = original_handle
+        server._runtime_session = original_runtime
+        server._session_store = original_store
 
 
 def test_flash_firmware_uses_default_board_artifact(monkeypatch, tmp_path: Path) -> None:
@@ -65,8 +74,29 @@ def test_flash_firmware_uses_default_board_artifact(monkeypatch, tmp_path: Path)
     server._session_handle = handle
     monkeypatch.setattr(
         server,
-        "resolve_reference_artifacts",
-        lambda board_arg: type("Pair", (), {"flash_artifact": artifact})(),
+        "resolve_flash_request",
+        lambda handle_arg, *, explicit_path, action_context: type(
+            "ResolvedFlashRequest",
+            (),
+            {
+                "artifact_path": artifact,
+                "identity": type(
+                    "FlashIdentity",
+                    (),
+                    {
+                        "as_log_fields": staticmethod(
+                            lambda: {
+                                "artifact_path": str(artifact),
+                                "artifact_suffix": ".hex",
+                                "artifact_size_bytes": artifact.stat().st_size,
+                                "artifact_sha256": "sha",
+                                "artifact_source": "default",
+                            }
+                        )
+                    },
+                )(),
+            },
+        )(),
     )
 
     def fake_flash(handle_arg, path_arg, *, halt_after_reset: bool):
@@ -113,7 +143,17 @@ def test_flash_firmware_uses_explicit_path_without_board_config(
 def test_flash_firmware_requires_loaded_board_for_default_artifact() -> None:
     server._session_handle = make_handle(None)
 
-    assert server.flash_firmware() == server.NO_BOARD_CONFIG_MESSAGE
+    assert (
+        server.flash_firmware()
+        == "Refused [flash/no-board-config]: Default flash resolution requires a loaded board config. session_id=(none)"
+    )
+
+
+def test_flash_firmware_requires_active_session() -> None:
+    assert (
+        server.flash_firmware()
+        == "Refused [flash/no-session]: Flash requires an active connected session. session_id=(none)"
+    )
 
 
 def test_read_serial_defaults_to_board_contract(monkeypatch) -> None:
@@ -214,7 +254,7 @@ def test_unlock_recover_refuses_without_confirmation() -> None:
 
     assert (
         server.unlock_recover()
-        == "Refusing to run recover without confirm=True. This operation may erase flash."
+        == "Refused [recover/confirmation-required]: Recover requires confirm=True. This operation may erase flash. session_id=(none)"
     )
 
 
@@ -239,7 +279,17 @@ def test_unlock_recover_delegates_when_confirmed(monkeypatch) -> None:
 def test_unlock_recover_requires_loaded_board() -> None:
     server._session_handle = make_handle(None)
 
-    assert server.unlock_recover(confirm=True) == server.NO_BOARD_CONFIG_MESSAGE
+    assert (
+        server.unlock_recover(confirm=True)
+        == "Refused [recover/no-board-config]: Recover requires a loaded board config with a supported recover_mode. session_id=(none)"
+    )
+
+
+def test_unlock_recover_requires_active_session() -> None:
+    assert (
+        server.unlock_recover(confirm=True)
+        == "Refused [recover/no-session]: Recover requires an active connected session. session_id=(none)"
+    )
 
 
 def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
@@ -286,3 +336,27 @@ def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
     assert "Connected to board" in result
     assert "685400693" in result
     assert "[board config: nrf52833dk]" in result
+    assert "session_id=" in result
+    assert server._runtime_session is not None
+
+
+def test_read_serial_returns_blocked_message_for_watcher_state() -> None:
+    runtime = server._session_store.start_session(
+        board_id="nrf52833dk",
+        probe_uid="probe-123",
+        route_used="pyocd-native",
+    )
+    server._runtime_session = runtime
+    server._session_store.set_block(
+        runtime,
+        UART_TOOL,
+        "watch/uart-miss-repetition",
+        "Repeated identical UART misses detected. Disconnect and reconnect before trying again.",
+    )
+
+    result = server.read_serial()
+
+    assert result == (
+        "Blocked [watch/uart-miss-repetition]: Repeated identical UART misses detected. "
+        f"Disconnect and reconnect before trying again. session_id={runtime.session_id}"
+    )
