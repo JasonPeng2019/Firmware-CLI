@@ -39,6 +39,8 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
     parse_int,
     validate_width_bits,
 )
+from pyocd_debug_mcp.guardrails.flash_gate import resolve_flash_request  # noqa: E402
+from pyocd_debug_mcp.guardrails.recover_gate import authorize_recover  # noqa: E402
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
 from pyocd_debug_mcp.probe_inventory import (  # noqa: E402
     ProbeInfo,
@@ -52,6 +54,7 @@ from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
     list_serial_ports,
     resolve_serial_port,
 )
+from pyocd_debug_mcp.services.session_runtime import ActionContext, PolicyRefusal  # noqa: E402
 from pyocd_debug_mcp.services import target_control  # noqa: E402
 from pyocd_debug_mcp.services.uart_capture import capture_uart_output  # noqa: E402
 from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle  # noqa: E402
@@ -202,6 +205,10 @@ def resolve_firmware_path(path_value: str | None, base_dir: Path | None = None) 
     if not path.is_absolute() and base_dir is not None:
         path = base_dir / path
     return path.resolve()
+
+
+def action_context(action_name: str) -> ActionContext:
+    return ActionContext(source="stage0_check", action_name=action_name, session_id=None)
 
 
 def check_pyocd_installed() -> bool:
@@ -647,14 +654,23 @@ def flash_reference_firmware(
             unique_id=probe.uid or None,
             target=board.pyocd_target,
         )
+        request = resolve_flash_request(
+            handle,
+            explicit_path=reference_firmware_path,
+            action_context=action_context("flash_reference_firmware"),
+        )
         flashed_path = target_control.flash_firmware(
             handle,
-            reference_firmware_path,
+            request.artifact_path,
             halt_after_reset=True,
         )
         check(True, f"Flashed reference firmware: {flashed_path}")
         keep_session_open = True
         return FlashResult(True, session_handle=handle)
+    except PolicyRefusal as exc:
+        check(False, f"Flash refused for {reference_firmware_path}")
+        print(f"      refusal: [{exc.code}] {exc.message}")
+        return FlashResult(False)
     except UnsupportedArtifactError as exc:
         check(False, f"Flash failed for {reference_firmware_path}")
         print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")
@@ -752,10 +768,6 @@ def run_recover_test(
     if not target_ok:
         check(False, "Skipped - target pack not installed")
         return RecoverResult(False)
-    if board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
-        check(False, "Skipped - this board's recover_mode is manual_only")
-        return RecoverResult(False)
-
     print("  Running destructive recover command. This may erase flash on the target.")
     print(f"  Attempting: pyOCD API recover via {probe.uid or 'auto-selected probe'}")
     handle = None
@@ -765,7 +777,17 @@ def run_recover_test(
             unique_id=probe.uid or None,
             target=board.pyocd_target,
         )
+        authorize_recover(
+            handle,
+            confirm=True,
+            recover_already_completed=False,
+            action_context=action_context("run_recover_test"),
+        )
         completed_via = target_control.recover_target(handle)
+    except PolicyRefusal as exc:
+        check(False, "Recover policy refused this operation")
+        print(f"      refusal: [{exc.code}] {exc.message}")
+        return RecoverResult(False)
     except Exception as exc:  # noqa: BLE001 - preserve the backend failure
         check(False, "Recover flow failed")
         print(f"      stderr: {type(exc).__name__}: {str(exc)[:300]}")

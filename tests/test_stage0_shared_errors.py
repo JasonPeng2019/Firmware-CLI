@@ -11,6 +11,7 @@ for entry in (REPO_ROOT, SRC_ROOT):
 
 import stage0_check  # noqa: E402
 from pyocd_debug_mcp.board_config import BoardConfig  # noqa: E402
+from pyocd_debug_mcp.services.session_runtime import PolicyRefusal  # noqa: E402
 from pyocd_debug_mcp.serial_resolver import SerialPortInfo  # noqa: E402
 from pyocd_debug_mcp.target_errors import LockedTargetError, TargetConnectionError  # noqa: E402
 
@@ -27,6 +28,35 @@ def make_board() -> BoardConfig:
         probe_hint_terms=("stlink",),
         serial_hint_terms=("stlink",),
         test_addr=0x08000000,
+    )
+
+
+def make_nordic_board() -> BoardConfig:
+    return BoardConfig(
+        board_id="nrf52833dk",
+        display_name="nRF52833 DK",
+        mcu_family="nrf52833",
+        probe_family="jlink",
+        pyocd_target="nrf52833",
+        pack_name="nrf52833",
+        probe_type="SEGGER J-Link",
+        probe_hint_terms=("jlink",),
+        serial_hint_terms=("jlink",),
+        test_addr=0x10000000,
+        requires_recover_validation=True,
+        recover_mode="nrf_pyocd_unlock",
+    )
+
+
+def make_handle(board: BoardConfig) -> stage0_check.TargetSessionHandle:
+    session_board = type("SessionBoard", (), {"name": board.display_name})()
+    session = type("Session", (), {"board": session_board})()
+    return stage0_check.TargetSessionHandle(
+        session=session,
+        board=board,
+        probe_uid="probe-123",
+        route_used="pyocd-native",
+        target_override=board.pyocd_target,
     )
 
 
@@ -98,3 +128,54 @@ def test_read_uart_output_preserves_typed_failure_context(monkeypatch, capsys) -
     assert "RuntimeError: port busy" in captured
     assert "/dev/cu.usbmodem144403" in captured
     assert "Expected: boot ok" in captured
+
+
+def test_flash_reference_firmware_surfaces_policy_refusal(monkeypatch, tmp_path: Path, capsys) -> None:
+    board = make_nordic_board()
+    probe = stage0_check.ProbeInfo("685400693", "J-Link", "raw")
+    artifact = tmp_path / "firmware.elf"
+    artifact.write_text("elf", encoding="utf-8")
+
+    monkeypatch.setattr(stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board))
+    monkeypatch.setattr(
+        stage0_check,
+        "resolve_flash_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            PolicyRefusal("flash/unsupported-suffix", "Unsupported flash artifact type '.bin'.")
+        ),
+    )
+
+    result = stage0_check.flash_reference_firmware(
+        board,
+        probe,
+        True,
+        True,
+        artifact,
+    )
+
+    assert result.status is False
+    captured = capsys.readouterr().out
+    assert "Flash refused" in captured
+    assert "[flash/unsupported-suffix]" in captured
+
+
+def test_run_recover_test_surfaces_policy_refusal(monkeypatch, capsys) -> None:
+    board = make_nordic_board()
+    probe = stage0_check.ProbeInfo("685400693", "J-Link", "raw")
+
+    monkeypatch.setattr(stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board))
+    monkeypatch.setattr(
+        stage0_check,
+        "authorize_recover",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            PolicyRefusal("recover/manual-only", "nRF52833 DK uses manual_only recover handling.")
+        ),
+    )
+
+    result = stage0_check.run_recover_test(board, probe, True, True)
+
+    assert result is not None
+    assert result.completed is False
+    captured = capsys.readouterr().out
+    assert "Recover policy refused" in captured
+    assert "[recover/manual-only]" in captured
