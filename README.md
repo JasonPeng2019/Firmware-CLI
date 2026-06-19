@@ -15,10 +15,10 @@ shared board-validation logic that is callable from `stage0_check.py`, future
 MCP tools, and local programmer flows; only raw host bootstrap remains
 pre-server.
 
-The current roadmap frontier is `R10 / G5`: the scoped `R0-R9` substrate for
-`nrf52833dk + nucleo_l476rg` is frozen, and the repo is now adding runtime
-safety policy, structured session logs, and first-pass convergence blocking on
-top of that substrate.
+The scoped pair is now green through `R10 / G5`: `nrf52833dk +
+nucleo_l476rg` have passed the current safety/runtime validation, and `R11`
+benchmark implementation is now in progress through the tracked Codex-driven
+benchmark spec, corpus, and runner.
 
 ## What Phase A Delivers
 
@@ -82,8 +82,12 @@ Firmware-CLI/
 |   |-- README.md
 |   |-- fixtures/
 |   |-- cases/
+|   |   |-- README.md
+|   |   |-- suites.yaml
+|   |   `-- r11_result_schema.json
 |   `-- harness/
-|       `-- stage1_smoke.py
+|       |-- stage1_smoke.py
+|       `-- r11_benchmark.py
 |-- src/
 |   `-- pyocd_debug_mcp/
 |       |-- adapters/
@@ -114,6 +118,7 @@ Firmware-CLI/
 `-- markdowns/
     |-- ROADMAP.md
     |-- r10_contract.md
+    |-- r11_benchmark_spec.md
     |-- firmware_agent_build_plan_concrete (10).md
     |-- firmware_agent_mcp_architecture.md
     |-- current-progress.md
@@ -307,17 +312,28 @@ Verified:
   `write_core_register`, `read_memory`, `read_memory_block`, `write_memory`,
   `set_breakpoint`, `remove_breakpoint`, `flash_firmware`, `read_serial`, and
   `unlock_recover`
+- `connect(...)` now creates a visible `session_id`, and the runtime session
+  writes `runs/<session_id>/logs/events.jsonl` plus
+  `runs/<session_id>/run-metadata/session.json`
+- flash guardrails are live-proven on the scoped pair:
+  default tracked baseline flash, explicit valid `.elf`, and explicit valid
+  `.hex` all succeed; missing-path and invalid-suffix inputs refuse
+  deterministically
+- recover guardrails are live-proven on the scoped pair:
+  Nordic recover succeeds with `confirm=true`, while STM32 recover refuses
+  deterministically because no supported recover mode is tracked
+- mutation watchers are live-proven on the scoped pair:
+  repeated flash failures block only `flash_firmware`, repeated UART misses
+  block only `read_serial`, repeated recover failures block only
+  `unlock_recover`, and disconnect/reconnect clears block state
 - the current scoped gates are now green:
-  `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), and `G4` (`R9`)
-- the project has now entered `R10 / G5` work:
-  `markdowns/r10_contract.md` locks the first safety/runtime contract, and the
-  repo now carries shared runtime session logging, shared flash/recover
-  guardrails, and a first mutation-focused convergence watcher
+  `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), `G4` (`R9`), and `G5`
+  (`R10`)
+- `markdowns/r10_contract.md` is now live-backed by the scoped bench proof, and
+  `R11` benchmark implementation is in progress
 
 Pending verification:
 
 - `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
   source/build assets, but it still needs its own live bench proof if future
   support for that alternate board becomes a project goal
-- `R10 / G5` itself is not yet claimed green; the new safety/runtime layer
-  still needs its live scoped-pair validation before `R11` can begin

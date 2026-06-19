@@ -2,7 +2,7 @@
 
 ## Current Position
 
-The repo is now in active `R10 / G5` work for the scoped board pair:
+The repo is now green through `R10 / G5` for the scoped board pair:
 
 - scoped board pair: `nrf52833dk + nucleo_l476rg`
 - `R0` through `R5`: effectively closed for the scoped pair
@@ -10,27 +10,60 @@ The repo is now in active `R10 / G5` work for the scoped board pair:
 - `R7`: closed for the scoped pair
 - `R8`: closed for the scoped pair
 - `R9`: closed for the scoped pair
+- `R10`: closed for the scoped pair
 - green gates:
   - `G1` (`R2` + `R3`)
   - `G3` (`R6` + `R7` + `R8`)
   - `G4` (`R9`)
+  - `G5` (`R10`)
 - active frontier:
-  - `R10`
-  - `G5`
+  - `R11`
+  - `G6`
 
-That means the scoped substrate is frozen through `R9`, and the current work
-is the first safety/runtime layer on top of that substrate.
+That means the scoped substrate is now frozen through `R10`, and `R11`
+benchmark implementation is underway. The remaining work is to run the live
+Codex benchmark pilot and turn the first corpus into real product-validation
+evidence.
 
 `nrf52840dk` is still retained in the repo, but it is now an alternate/future
 Nordic profile rather than the official blocker for the current Phase A /
 Phase B path.
 
-## `R10 / G5` Status
+## `R10 / G5` Verification Summary
 
 The implementation source of truth for this pass is
 `markdowns/r10_contract.md`.
 
-What has landed so far:
+Verified on `2026-06-18` on the current macOS bench host, using the live
+scoped pair and the real `server.py` tool functions in-terminal:
+
+- boards:
+  - `nucleo_l476rg`
+  - `nrf52833dk`
+- session creation:
+  - `connect(board_id=..., unique_id=None)` produced visible `session_id=...`
+  - `runs/<session_id>/logs/events.jsonl` and
+    `runs/<session_id>/run-metadata/session.json` were created
+- flash guardrails:
+  - default tracked baseline flash succeeded on both boards
+  - explicit valid `.elf` succeeded on both boards
+  - explicit valid `.hex` succeeded on both boards
+  - missing-path flash refused deterministically
+  - invalid-suffix `.bin` flash refused deterministically
+- recover policy:
+  - `nrf52833dk` refused without confirmation, succeeded with
+    `confirm=true`, then accepted baseline restore + UART reconfirmation
+  - `nucleo_l476rg` refused without confirmation and refused
+    deterministically with `confirm=true` because no supported recover mode is
+    tracked
+- mutation watchers:
+  - repeated identical flash failures blocked only `flash_firmware`
+  - repeated identical UART misses blocked only `read_serial`
+  - repeated identical recover failures blocked only `unlock_recover`
+  - read-only tools still worked after the block
+  - `disconnect()` then new `connect()` cleared block state
+
+What landed in code and was then live-proven:
 
 - `R10b` runtime substrate:
   - single active runtime session model
@@ -52,12 +85,184 @@ What has landed so far:
   - repeated recover failures block only `unlock_recover`
   - block state clears when the session ends and a new session starts
 
-What is not yet being claimed:
+## Manual `R10 / G5` Validation Checklist
 
-- `G5` is not yet green
-- no `R11+` work has started
-- the new safety/runtime behavior still needs its live scoped-pair validation
-  before the roadmap can move past `R10`
+Status: verified on `2026-06-18` on the current macOS host via real
+`server.py` tool-function calls. Keep this checklist as the rerun procedure for
+future benches and regressions.
+
+Use this checklist exactly when re-validating `R10 / G5` on a future host or
+after a regression fix.
+
+### Preflight from repo root
+
+Run these first and stop if any fail:
+
+```bash
+uv run pytest -q
+uv run ruff check .
+uv run mypy src
+uv run python host_bootstrap.py --board-id nucleo_l476rg
+uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg
+uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk
+uv run python -m tests.harness.stage1_smoke --board-id nrf52833dk
+printf 'not firmware\n' > /tmp/r10-guardrail.bin
+```
+
+Known bench facts for reruns only, not as the primary selection path:
+
+- `nucleo_l476rg`
+  - probe UID: `0668FF514988525067213913`
+  - serial port: `/dev/cu.usbmodem144403`
+- `nrf52833dk`
+  - probe UID: `685400693`
+  - serial port: `/dev/cu.usbmodem0006854006931`
+
+### Inspector launch
+
+Run:
+
+```bash
+uv run mcp dev src/pyocd_debug_mcp/server.py
+```
+
+Use `connect(board_id=..., unique_id=None)` as the primary validation path.
+Only pass `unique_id` for debugging reruns.
+
+### STM32 session: safe path + recover-policy + flash watcher
+
+1. `connect(board_id="nucleo_l476rg")`
+2. Verify success text contains:
+   - `Connected to board`
+   - `[board config: nucleo_l476rg]`
+   - `via pyocd-native`
+   - `session_id=`
+3. Extract `session_id` and verify:
+   - `runs/<session_id>/logs/events.jsonl`
+   - `runs/<session_id>/run-metadata/session.json`
+4. `get_board_info()`
+5. `flash_firmware()`
+   - expect `Flashed ... via pyocd-native; target left running.`
+6. `flash_firmware(path="<repo-root>/firmware/nucleo_l476rg/reference/build/firmware.elf", halt_after_reset=true)`
+   - expect `target left halted`
+7. `flash_firmware(path="<repo-root>/firmware/nucleo_l476rg/reference/build/firmware.hex")`
+   - expect success
+8. `halt()`
+9. `read_core_register(name="pc")`
+10. `read_memory(address="0x08000000", word_size=32)`
+11. `resume()`
+12. `read_serial(reset_on_open=true)`
+   - expect `UART matched ... expected='boot ok'`
+13. `unlock_recover(confirm=false)`
+   - expect `Refused [recover/confirmation-required]: ... session_id=<id>`
+14. `unlock_recover(confirm=true)`
+   - expect deterministic refusal with code `recover/unsupported-mode`
+15. `unlock_recover(confirm=true)` again
+   - expect the same deterministic refusal
+16. `unlock_recover(confirm=true)` a third time
+   - expect `Blocked [watch/recover-repetition]: ... session_id=<same id>`
+17. `read_memory(address="0x08000000", word_size=32)`
+   - must still work
+18. `disconnect()`
+19. New session: `connect(board_id="nucleo_l476rg")`
+   - verify a new `session_id`
+20. `flash_firmware(path="/tmp/r10-missing.elf")`
+   - expect refusal with code `flash/missing-file`
+21. `flash_firmware(path="/tmp/r10-missing.elf")` again
+   - expect the same refusal
+22. `flash_firmware(path="/tmp/r10-missing.elf")` a third time
+   - expect `Blocked [watch/flash-repetition]: ...`
+23. `read_memory(address="0x08000000", word_size=32)`
+   - must still work
+24. `disconnect()`
+
+### Nordic session: safe path + real recover
+
+1. `connect(board_id="nrf52833dk")`
+2. Verify success text contains:
+   - `Connected to board`
+   - `[board config: nrf52833dk]`
+   - `via pyocd-native`
+   - `session_id=`
+3. Verify:
+   - `runs/<session_id>/logs/events.jsonl`
+   - `runs/<session_id>/run-metadata/session.json`
+4. `get_board_info()`
+5. `flash_firmware()`
+   - expect default tracked baseline success
+6. `flash_firmware(path="<repo-root>/firmware/nrf52833dk/reference/build/firmware.elf", halt_after_reset=true)`
+   - expect `target left halted`
+7. `flash_firmware(path="<repo-root>/firmware/nrf52833dk/reference/build/firmware.hex")`
+   - expect success
+8. `halt()`
+9. `read_core_register(name="pc")`
+10. `read_memory(address="0x10000000", word_size=32)`
+11. `resume()`
+12. `read_serial(reset_on_open=true)`
+   - expect `UART matched ... expected='boot ok'`
+13. `unlock_recover(confirm=false)`
+   - expect `Refused [recover/confirmation-required]: ... session_id=<id>`
+14. `unlock_recover(confirm=true)`
+   - expect `Recover completed via ... on nrf52833dk via pyocd-native.`
+15. `flash_firmware()`
+   - restore the baseline immediately after recover
+16. `read_serial(reset_on_open=true)`
+   - reconfirm `boot ok`
+17. `disconnect()`
+
+### Nordic session: UART watcher
+
+1. `connect(board_id="nrf52833dk")`
+2. `read_serial(expected_text="__never_matches__", reset_on_open=true, read_seconds=3.0)`
+   - expect a non-match summary, not a crash
+3. Repeat the same call a second time
+   - expect the same non-match summary
+4. Repeat the same call a third time
+   - expect the same non-match summary and watcher state to be armed
+5. Repeat the same call a fourth time
+   - expect `Blocked [watch/uart-miss-repetition]: ...`
+6. `get_state()` or `read_memory(address="0x10000000", word_size=32)`
+   - must still work
+7. `disconnect()`
+8. New session: `connect(board_id="nrf52833dk")`
+   - verify a new `session_id`
+9. `read_serial(reset_on_open=true)`
+   - must succeed again
+10. `flash_firmware(path="/tmp/r10-guardrail.bin")`
+    - expect refusal with code `flash/unsupported-suffix`
+11. `disconnect()`
+
+### Expected response shapes
+
+- `connect(...)`
+  - contains `Connected to board`
+  - contains `[board config: <board_id>]`
+  - contains `via pyocd-native`
+  - contains `session_id=<id>`
+- `flash_firmware(...)` success
+  - `Flashed <path> via pyocd-native; target left running.`
+  - or `Flashed <path> via pyocd-native; target left halted.`
+- `read_serial(...)` success
+  - `UART matched on <port> at <baud> baud via pyocd-native; expected='boot ok'; reopen_count=<n>; duration=<s>; excerpt=<text>`
+- `unlock_recover(...)` refusal
+  - `Refused [<code>]: <message> session_id=<id>`
+- watcher block
+  - `Blocked [<code>]: <message> session_id=<id>`
+
+### Promotion rule
+
+If any live check fails:
+
+- keep `R10 / G5` in progress
+- record:
+  - failing step
+  - board id
+  - observed response
+  - expected response
+- fix only the minimal code needed to match `markdowns/r10_contract.md`
+- rerun the full affected board session plus one clean sanity pass on the other board
 
 ## What Changed In This Pass
 
@@ -243,9 +448,72 @@ For the scoped board pair:
 - `R7`: closed for the scoped pair
 - `R8`: closed for the scoped pair
 - `R9`: closed for the scoped pair
+- `R10`: closed for the scoped pair
 
-The next meaningful project work is not more Phase A cleanup. It is the
-roadmap's `R10` safety/runtime substrate.
+The next meaningful project work is the live `R11` benchmark pilot over the
+now-tracked spec, corpus, and runner.
+
+## `R11` Benchmark Implementation Status
+
+The implementation source of truth for this phase is
+`markdowns/r11_benchmark_spec.md`.
+
+What is now tracked in-repo:
+
+- frozen case contract under `tests/cases/<case_id>/case.yaml`
+- frozen Codex result schema under `tests/cases/r11_result_schema.json`
+- frozen pilot suite ordering under `tests/cases/suites.yaml`
+- first corpus:
+  - 2 known-good cases
+  - 4 injected code-bug cases
+  - 2 host-induced observability-fault cases
+- tracked bug fixtures under `firmware/<board>/bugs/<id>__<slug>/`
+- canonical runner at `tests/harness/r11_benchmark.py`
+
+Runner prerequisites:
+
+```bash
+codex mcp add pyocd-debug -- uv run pyocd-debug-mcp
+codex mcp get pyocd-debug
+```
+
+Runner entrypoints:
+
+```bash
+uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green
+uv run python -m tests.harness.r11_benchmark --suite pilot_v1
+```
+
+Frozen pilot order:
+
+1. `nucleo_l476rg__k001_reference_green`
+2. `nrf52833dk__k001_reference_green`
+3. `nucleo_l476rg__b001_wrong_boot_text`
+4. `nrf52833dk__b001_wrong_boot_text`
+5. `nucleo_l476rg__b002_wrong_known_value`
+6. `nrf52833dk__b002_wrong_known_value`
+7. `nucleo_l476rg__f001_halted_target_silent_uart`
+8. `nrf52833dk__f001_halted_target_silent_uart`
+
+Implementation validation completed locally:
+
+- `uv run pytest -q` passed with the full repo test suite green
+- `uv run ruff check .` passed
+- `uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py tests/test_r11_benchmark.py`
+  passed
+- `uv run pytest -q tests/test_r11_benchmark.py` passed
+- `uv run python -m tests.harness.r11_benchmark --help` passed
+
+Current live-pilot blocker on this host:
+
+- `codex mcp get pyocd-debug` still reports no registered MCP server named
+  `pyocd-debug`
+- live `R11` pilot runs remain pending until this prerequisite is completed:
+
+```bash
+codex mcp add pyocd-debug -- uv run pyocd-debug-mcp
+codex mcp get pyocd-debug
+```
 
 ## Still Open
 
@@ -257,6 +525,12 @@ Not blockers for the scoped gates, but still real work:
 - a Windows follow-up for the official `nrf52833dk` bench path would further
   strengthen the new scope decision, even though repo-level `R0` is already
   considered proven
+- `R11` implementation has started, but no live Codex pilot results are being
+  claimed yet in this pass
+- the first live benchmark run still needs to prove:
+  - one-session-per-case capture works under real `codex exec`
+  - benchmark artifacts land correctly under `runs/<session_id>/...`
+  - the pilot scoring/rubric is interpretable on real outcomes
 
 ## Short Resume Note
 
@@ -265,5 +539,7 @@ If resuming later:
 > The official scoped pair is now `nrf52833dk + nucleo_l476rg`. Both boards are
 > green through Stage 0, the tracked Stage 1 smoke harness, and the current MCP
 > tool surface. The multi-probe J-Link/ST-Link selection bug is fixed through
-> shared `pyocd list --probes` inventory. The next roadmap frontier is `R10`,
-> not more scoped Phase A / Phase B bring-up.
+> shared `pyocd list --probes` inventory. `R11` benchmark implementation is now
+> in the repo through the frozen case format, first corpus, Codex result
+> schema, and `tests/harness/r11_benchmark.py`. The next meaningful step is the
+> live Codex pilot, not more scoped bring-up work.

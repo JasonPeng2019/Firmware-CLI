@@ -31,7 +31,7 @@ from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
     resolve_serial_port,
 )
 from pyocd_debug_mcp.services import target_control  # noqa: E402
-from pyocd_debug_mcp.services.symbols import read_symbol_u32  # noqa: E402
+from pyocd_debug_mcp.services.symbols import ResolvedSymbol, read_symbol_u32  # noqa: E402
 from pyocd_debug_mcp.services.uart_capture import capture_uart_output  # noqa: E402
 
 PASS = "PASS"
@@ -44,6 +44,38 @@ KNOWN_SYMBOL_VALUE = 0x1234ABCD
 @dataclass(frozen=True)
 class ProbeHint:
     uid: str
+
+
+@dataclass
+class BoardPortView:
+    board_id: str
+    display_name: str
+    mcu_family: str
+    probe_family: str
+    serial_hint_terms: tuple[str, ...]
+
+
+@dataclass
+class ProbePortView:
+    uid: str
+
+
+@dataclass(frozen=True)
+class Stage1SmokeResult:
+    board: BoardConfig
+    probe_uid: str
+    route_used: str
+    flash_artifact: Path
+    symbol_artifact: Path
+    serial_port: SerialPortInfo
+    baudrate: int
+    expected_text: str
+    pc: int
+    resolved_symbol: ResolvedSymbol
+    capture_text: str
+    capture_excerpt: str
+    capture_reopen_count: int
+    capture_duration_seconds: float
 
 
 def log(status: str, message: str) -> None:
@@ -100,9 +132,16 @@ def resolve_port(
         raise RuntimeError("No serial ports detected")
 
     allow_single_fallback = len(ports) == 1
-    probe = ProbeHint(probe_uid) if probe_uid else None
+    board_view = BoardPortView(
+        board_id=board.board_id,
+        display_name=board.display_name,
+        mcu_family=board.mcu_family,
+        probe_family=board.probe_family,
+        serial_hint_terms=board.serial_hint_terms,
+    )
+    probe = ProbePortView(probe_uid) if probe_uid else None
     resolution = resolve_serial_port(
-        board=board,
+        board=board_view,
         ports=ports,
         probe=probe,
         override=override,
@@ -115,136 +154,160 @@ def resolve_port(
     return resolution.port
 
 
-def main() -> int:
+def run_stage1_smoke(
+    *,
+    board_id: str,
+    probe_uid: str | None = None,
+    port: str | None = None,
+    flash_artifact: str | Path | None = None,
+    elf: str | Path | None = None,
+    baudrate: int | None = None,
+    serial_read_seconds: float = 3.0,
+) -> Stage1SmokeResult:
     load_local_env()
-    parser = build_parser()
-    args = parser.parse_args()
-    requested_board_id = args.board_id.strip().lower()
-    handle = None
-    board: BoardConfig | None = None
-    probe_uid = args.probe_uid or os.environ.get("PYOCD_PROBE_UID") or None
-    baudrate: int | None = None
-    artifact_pair = None
-    serial_port: SerialPortInfo | None = None
-    expected_text: str | None = None
-    capture = None
-    try:
-        board = load_board(requested_board_id)
-        if probe_uid is None:
-            resolution = resolve_probe_for_board(
-                board,
-                run_cmd=run_cmd,
-                allow_single_fallback=True,
-            )
-            if resolution.probe is None:
-                raise RuntimeError(
-                    f"Probe resolution failed for {board.display_name}: {resolution.note}"
-                )
-            if not resolution.probe.uid:
-                raise RuntimeError(
-                    f"Probe resolution for {board.display_name} did not yield a unique id. "
-                    "Rerun with --probe-uid."
-                )
-            probe_uid = resolution.probe.uid
-        baudrate = args.baudrate or board.default_baudrate
-        artifact_pair = resolve_reference_artifacts(
+    board = load_board(board_id.strip().lower())
+    resolved_probe_uid = probe_uid or os.environ.get("PYOCD_PROBE_UID") or None
+    if resolved_probe_uid is None:
+        resolution = resolve_probe_for_board(
             board,
-            flash_artifact=args.flash_artifact,
-            elf_path=args.elf,
+            run_cmd=run_cmd,
+            allow_single_fallback=True,
         )
-        serial_port = resolve_port(board, probe_uid=probe_uid, override=args.port)
-        expected_text = board.expected_uart_substring or "boot ok"
+        if resolution.probe is None:
+            raise RuntimeError(
+                f"Probe resolution failed for {board.display_name}: {resolution.note}"
+            )
+        if not resolution.probe.uid:
+            raise RuntimeError(
+                f"Probe resolution for {board.display_name} did not yield a unique id. "
+                "Rerun with --probe-uid."
+            )
+        resolved_probe_uid = resolution.probe.uid
 
-        print(f"\nStage 1 smoke harness — {board.display_name} ({board.board_id})")
-        print(f"flash artifact: {artifact_pair.flash_artifact}")
-        print(f"symbol artifact: {artifact_pair.symbol_artifact}")
-        print(f"serial port: {serial_port.device}")
-
-        header("Flash and control")
+    resolved_baudrate = baudrate or board.default_baudrate
+    artifact_pair = resolve_reference_artifacts(
+        board,
+        flash_artifact=flash_artifact,
+        elf_path=elf,
+    )
+    serial_port = resolve_port(board, probe_uid=resolved_probe_uid, override=port)
+    expected_text = board.expected_uart_substring or "boot ok"
+    handle = None
+    try:
         handle = target_control.open_session(
             board=board,
-            unique_id=probe_uid,
+            unique_id=resolved_probe_uid,
             target=board.pyocd_target,
         )
-        log(INFO, f"Opened session via {handle.route_used} on {handle.probe_uid or '(unknown probe)'}")
-        target_control.flash_firmware(handle, artifact_pair.flash_artifact, halt_after_reset=True)
-        log(PASS, f"Flashed {artifact_pair.flash_artifact.name}")
-
-        pc = target_control.read_core_register(handle, "pc")
-        log(PASS, f"Read pc=0x{pc:08X}")
-
-        resolved = read_symbol_u32(handle, artifact_pair.symbol_artifact, KNOWN_SYMBOL_NAME)
-        log(
-            PASS,
-            f"Resolved {resolved.name} @0x{resolved.address:08X} size={resolved.size} type={resolved.type}",
+        target_control.flash_firmware(
+            handle,
+            artifact_pair.flash_artifact,
+            halt_after_reset=True,
         )
-        if resolved.value_u32 != KNOWN_SYMBOL_VALUE:
+        pc = target_control.read_core_register(handle, "pc")
+        resolved_symbol = read_symbol_u32(
+            handle,
+            artifact_pair.symbol_artifact,
+            KNOWN_SYMBOL_NAME,
+        )
+        if resolved_symbol.value_u32 != KNOWN_SYMBOL_VALUE:
             raise RuntimeError(
-                f"{resolved.name} value mismatch: actual=0x{resolved.value_u32:08X} "
+                f"{resolved_symbol.name} value mismatch: actual=0x{resolved_symbol.value_u32:08X} "
                 f"expected=0x{KNOWN_SYMBOL_VALUE:08X}"
             )
-        log(PASS, f"Read {resolved.name}=0x{resolved.value_u32:08X}")
 
-        header("UART")
         def on_port_open() -> None:
             target_control.reset(handle, halt_after=False)
 
         capture = capture_uart_output(
             serial_port.device,
-            baudrate,
-            args.serial_read_seconds,
+            resolved_baudrate,
+            serial_read_seconds,
             expected_text,
             on_port_open=on_port_open,
         )
-        log(PASS, "Reset and resumed target")
         if not capture.matched:
             raise RuntimeError(
                 f"UART output did not contain '{expected_text}'. Captured: {capture.excerpt or '(none)'}"
             )
-        log(PASS, f"UART matched '{expected_text}'")
-        if capture.excerpt:
-            print(f"      Captured: {capture.excerpt}")
-    except Exception as exc:  # noqa: BLE001 - surface the concrete harness failure
-        header("Summary")
-        log(FAIL, f"{type(exc).__name__}: {exc}")
-        flash_label = (
-            str(artifact_pair.flash_artifact)
-            if artifact_pair is not None
-            else str(Path(args.flash_artifact).expanduser().resolve())
-            if args.flash_artifact
-            else "(unresolved)"
+        return Stage1SmokeResult(
+            board=board,
+            probe_uid=resolved_probe_uid,
+            route_used=handle.route_used,
+            flash_artifact=artifact_pair.flash_artifact,
+            symbol_artifact=artifact_pair.symbol_artifact,
+            serial_port=serial_port,
+            baudrate=resolved_baudrate,
+            expected_text=expected_text,
+            pc=pc,
+            resolved_symbol=resolved_symbol,
+            capture_text=capture.text,
+            capture_excerpt=capture.excerpt,
+            capture_reopen_count=capture.reopen_count,
+            capture_duration_seconds=capture.duration_seconds,
         )
-        symbol_label = (
-            str(artifact_pair.symbol_artifact)
-            if artifact_pair is not None
-            else str(Path(args.elf).expanduser().resolve())
-            if args.elf
-            else "(unresolved)"
-        )
-        serial_label = serial_port.device if serial_port is not None else (args.port or "(unresolved)")
-        print(f"      board_id: {requested_board_id}")
-        print(f"      flash_artifact: {flash_label}")
-        print(f"      symbol_artifact: {symbol_label}")
-        print(f"      serial_port: {serial_label}")
-        print(f"      baudrate: {baudrate if baudrate is not None else '(unresolved)'}")
-        print(f"      expected_text: {expected_text!r}")
-        if handle is not None:
-            print(f"      route_used: {handle.route_used}")
-        if capture is not None:
-            print(f"      reopen_count: {capture.reopen_count}")
-            print(f"      capture_duration: {capture.duration_seconds:.2f}s")
-            print(f"      excerpt: {capture.excerpt or '(none)'}")
-        else:
-            print("      reopen_count: (unavailable)")
-            print("      capture_duration: (unavailable)")
-            print("      excerpt: (unavailable)")
-        return 1
     finally:
         if handle is not None:
             try:
                 target_control.close_session(handle)
-            except Exception:  # noqa: BLE001 - do not hide the real harness result
+            except Exception:  # noqa: BLE001 - verification result already determined
                 pass
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    requested_board_id = args.board_id.strip().lower()
+    try:
+        result = run_stage1_smoke(
+            board_id=requested_board_id,
+            probe_uid=args.probe_uid,
+            port=args.port,
+            flash_artifact=args.flash_artifact,
+            elf=args.elf,
+            baudrate=args.baudrate,
+            serial_read_seconds=args.serial_read_seconds,
+        )
+
+        print(f"\nStage 1 smoke harness — {result.board.display_name} ({result.board.board_id})")
+        print(f"flash artifact: {result.flash_artifact}")
+        print(f"symbol artifact: {result.symbol_artifact}")
+        print(f"serial port: {result.serial_port.device}")
+
+        header("Flash and control")
+        log(INFO, f"Opened session via {result.route_used} on {result.probe_uid}")
+        log(PASS, f"Flashed {result.flash_artifact.name}")
+        log(PASS, f"Read pc=0x{result.pc:08X}")
+        log(
+            PASS,
+            "Resolved "
+            f"{result.resolved_symbol.name} @0x{result.resolved_symbol.address:08X} "
+            f"size={result.resolved_symbol.size} type={result.resolved_symbol.type}",
+        )
+        log(PASS, f"Read {result.resolved_symbol.name}=0x{result.resolved_symbol.value_u32:08X}")
+
+        header("UART")
+        log(PASS, "Reset and resumed target")
+        log(PASS, f"UART matched '{result.expected_text}'")
+        if result.capture_excerpt:
+            print(f"      Captured: {result.capture_excerpt}")
+    except Exception as exc:  # noqa: BLE001 - surface the concrete harness failure
+        header("Summary")
+        log(FAIL, f"{type(exc).__name__}: {exc}")
+        flash_label = str(Path(args.flash_artifact).expanduser().resolve()) if args.flash_artifact else "(unresolved)"
+        symbol_label = str(Path(args.elf).expanduser().resolve()) if args.elf else "(unresolved)"
+        serial_label = args.port or "(unresolved)"
+        print(f"      board_id: {requested_board_id}")
+        print(f"      flash_artifact: {flash_label}")
+        print(f"      symbol_artifact: {symbol_label}")
+        print(f"      serial_port: {serial_label}")
+        print(f"      baudrate: {args.baudrate if args.baudrate is not None else '(unresolved)'}")
+        print("      expected_text: (unresolved)")
+        print("      route_used: (unavailable)")
+        print("      reopen_count: (unavailable)")
+        print("      capture_duration: (unavailable)")
+        print("      excerpt: (unavailable)")
+        return 1
 
     header("Summary")
     log(PASS, "Stage 1 smoke harness passed")
