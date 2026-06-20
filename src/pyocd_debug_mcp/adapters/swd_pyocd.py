@@ -8,8 +8,9 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, TextIO, cast
 
 from pyocd.core.exceptions import TransferError  # type: ignore[import-untyped]
 from pyocd.core.helpers import ConnectHelper  # type: ignore[import-untyped]
@@ -40,7 +41,7 @@ def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
 
 
 @contextlib.contextmanager
-def _quiet_backend_streams():
+def _quiet_backend_streams() -> Iterator[None]:
     """Keep backend chatter off the MCP stdio transport.
 
     On Windows, the pyOCD J-Link path can misbehave when the process stdout/stderr
@@ -49,7 +50,7 @@ def _quiet_backend_streams():
     avoids both protocol corruption and the attach hang/failure seen under stdio.
     """
 
-    redirected: list[tuple[object, int]] = []
+    redirected: list[tuple[TextIO, int]] = []
     temp_files: list[io.BufferedRandom] = []
     try:
         for stream in (sys.stdout, sys.stderr):
@@ -148,7 +149,7 @@ class PyOCDSWDInterface(SWDInterface):
         *,
         probe_uid: str | None,
         options: dict[str, object] | None,
-    ):
+    ) -> Any:
         return ConnectHelper.session_with_chosen_probe(
             blocking=False,
             return_first=True,

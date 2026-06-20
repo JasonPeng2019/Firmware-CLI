@@ -266,6 +266,81 @@ def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     assert "+after" in diff_text
 
 
+def test_run_codex_uses_noninteractive_full_access_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    captured: dict[str, object] = {}
+    session_dirs = [{}, {"20260620T000000Z-deadbeef": tmp_path / "20260620T000000Z-deadbeef"}]
+
+    def fake_session_dirs() -> dict[str, Path]:
+        return session_dirs.pop(0)
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        return 0, '{"type":"done"}\n', ""
+
+    monkeypatch.setattr(r11, "_session_dirs", fake_session_dirs)
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+
+    run = r11._run_codex(case, workspace_root, "prompt text")
+
+    assert captured["cmd"] == [
+        "codex",
+        "-a",
+        "never",
+        "-s",
+        "danger-full-access",
+        "exec",
+        "-C",
+        str(workspace_root),
+        "--output-schema",
+        str(r11.RESULT_SCHEMA_PATH),
+        "--json",
+        "-o",
+        str(workspace_root / ".r11_codex_result.json"),
+        "prompt text",
+    ]
+    assert captured["cwd"] == r11.REPO_ROOT
+    assert run.exit_code == 0
+    assert run.new_session_dirs == (tmp_path / "20260620T000000Z-deadbeef",)
+
+
+def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+
+    prompt = r11._render_prompt(case)
+
+    assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
+    assert "`board_id` exactly as `nucleo_l476rg`" in prompt
+    assert "do not derive `case_id` from the workspace directory name" in prompt
+
+
+def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:
+    before_root = tmp_path / "before"
+    after_root = tmp_path / "after"
+    before_root.mkdir()
+    after_root.mkdir()
+    (before_root / "src").mkdir()
+    (after_root / "src").mkdir()
+    (before_root / "src" / "main.c").write_text("same\n", encoding="utf-8")
+    (after_root / "src" / "main.c").write_text("same\n", encoding="utf-8")
+    (after_root / ".r11_codex_result.json").write_text("{}", encoding="utf-8")
+    (after_root / ".r11_prompt.txt").write_text("prompt", encoding="utf-8")
+
+    changed = r11._changed_files(before_root, after_root)
+
+    assert changed == ()
+
+
 def test_run_case_fails_when_no_session_directory_is_created(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

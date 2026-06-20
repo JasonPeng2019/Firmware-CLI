@@ -494,12 +494,21 @@ def _prepare_target_state(prepared: PreparedCase) -> None:
 
 
 def _render_prompt(case: BenchmarkCase) -> str:
-    return case.prompt_template.format(
+    case_prompt = case.prompt_template.format(
         board_id=case.board_id,
+        case_id=case.case_id,
         build_command=case.allowed_actions.build_command or "(no local rebuild expected)",
         uart_substring=case.expected_observables.uart_substring,
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
+    )
+    return (
+        f"{case_prompt.rstrip()}\n\n"
+        "Structured result contract:\n\n"
+        f"- return `case_id` exactly as `{case.case_id}`\n"
+        f"- return `board_id` exactly as `{case.board_id}`\n"
+        "- return `session_id` exactly as reported by the successful `connect` tool call\n"
+        "- do not derive `case_id` from the workspace directory name or any copied temp path\n"
     )
 
 
@@ -522,6 +531,10 @@ def _run_codex(case: BenchmarkCase, workspace_root: Path, prompt_text: str) -> C
     prompt_path.write_text(prompt_text, encoding="utf-8")
     cmd = [
         "codex",
+        "-a",
+        "never",
+        "-s",
+        "danger-full-access",
         "exec",
         "-C",
         str(workspace_root),
@@ -602,6 +615,8 @@ def _relative_files(root: Path) -> dict[str, bytes]:
             continue
         relative = path.relative_to(root)
         if "build" in relative.parts:
+            continue
+        if relative.name.startswith(".r11_"):
             continue
         output[str(relative).replace("\\", "/")] = path.read_bytes()
     return output
