@@ -282,6 +282,12 @@ def _resolve_probe_uid_for_connect(
         return env_uid
     if board is None:
         return None
+    if board.probe_family == "jlink":
+        # On this Windows host, pre-running `pyocd list --probes` to auto-resolve
+        # a J-Link UID can poison the subsequent attach when the server itself is
+        # running over MCP stdio pipes. Let the shared backend choose the single
+        # attached J-Link unless the operator explicitly provided a UID.
+        return None
 
     resolution = resolve_probe_for_board(
         board,
@@ -830,11 +836,12 @@ def read_serial(
 ) -> str:
     """Capture bounded UART output through the shared serial-resolution and UART services.
 
-    Defaults come from the connected board config when available:
-    expected UART text, baudrate, and serial-port selection heuristics.
+    Defaults come from the connected board config only for baudrate and
+    serial-port selection heuristics. ``expected_text=None`` means no explicit
+    text expectation: any observed UART output counts as a match.
     Set ``port`` to override serial resolution explicitly. Set ``reset_on_open``
-    to trigger a target reset immediately after the UART port opens so boot text
-    is captured deterministically.
+    to trigger a target reset immediately after the UART port opens so early
+    boot text is captured deterministically.
     """
     with _lock:
         started = time.monotonic()
@@ -866,7 +873,7 @@ def read_serial(
         board = handle.board
         resolved_port = _resolve_serial_port_for_session(handle, override=port)
         resolved_baudrate = baudrate or board.default_baudrate
-        resolved_expected_text = expected_text if expected_text is not None else board.expected_uart_substring
+        resolved_expected_text = expected_text
         normalized_args: dict[str, object] = {
             "port": resolved_port.device,
             "baudrate": resolved_baudrate,
@@ -891,7 +898,7 @@ def read_serial(
         expectation_label = (
             f"expected='{resolved_expected_text}'"
             if resolved_expected_text is not None
-            else "expected=(any output)"
+            else "expected=(none)"
         )
         verdict = "matched" if capture.matched else "did not match"
         excerpt = capture.excerpt or "(none)"

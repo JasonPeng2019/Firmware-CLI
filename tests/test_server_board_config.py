@@ -59,6 +59,19 @@ def test_resolve_board_config_unknown_id_raises(monkeypatch) -> None:
         server.resolve_board_config("no_such_board", None)
 
 
+def test_resolve_probe_uid_skips_jlink_autoresolution_without_explicit_uid(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("resolve_probe_for_board should not run for implicit J-Link selection")
+
+    monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server, "resolve_probe_for_board", fail_if_called)
+
+    assert server._resolve_probe_uid_for_connect(board, None) is None
+
+
 def test_format_board_info_includes_silicon_and_recover() -> None:
     board = server.resolve_board_config("nrf52833dk", None)
     assert board is not None

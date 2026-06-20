@@ -1,5 +1,14 @@
 # Agentic Firmware Debug Tool — Concrete Build Plan (step-ordered)
 
+> **STATUS (2026-06): Stages 0–3 (roadmap R0–R10) are IMPLEMENTED and live-proven
+> on the scoped pair (`nrf52833dk` + `nucleo_l476rg`).** This is the original
+> design / decision record. Steps that describe building the substrate, the MCP
+> server, or the guardrails — including **Step 1.0d** (the API de-risk and
+> service-layer migration) — are **done**; read them as the rationale behind the
+> shipped code, not as pending work. The remaining active work is Stage 4 / `R11`
+> (the Codex benchmark). Live status: `current-progress.md`; file map:
+> `repo_file_index.md`.
+
 > **Scope of this document.** This is the *design + implementation plan* — what to build, in what
 > order, and the design decision behind each step. It deliberately stops short of writing the code
 > itself: where a design choice is straightforward, the "how" is stated plainly; where it isn't, the
@@ -403,9 +412,13 @@ pyocd list` sees each board's probe.
 ## Future Fix: after Step 1.0d is completed, since its not relevant to the ROADMAP or TO DO after it has been fixed, should be replaced with something that describes how the codebase has been formatted / what has been done, not what NEEDS to be done. In particular, the ROAMAP and the build_plan should detail how the codebase is now setup (server + script is a thin wrapper, another file contains the actual tools), and should detail what should be done, and how it should be formatted in the future; the future steps in ROADMAP and build_plan should also be edited to follow the codebase structure & mechanistic operations of how this step specifies it.
 
 ### Step 1.0d — Validate the pyOCD Python-API path and stand up the shared service layer (do FIRST, before any adapter)
+> **STATUS: COMPLETED (2026-06).** The API path was proven on hardware, `adapters/`+`services/`
+> were created, and both `stage0_check.py` and `server.py` are now thin callers over the shared
+> services. The discipline below is the record of how it was sequenced, not pending work.
+
 **Why this is the first code step in Stage 1 (current-state reality, not a hypothetical).** The
-repo already has TWO independent pyOCD callers, and together they are exactly the duplication
-Step 1.0 was written to prevent:
+repo (at the time this was written) had TWO independent pyOCD callers, and together they were
+exactly the duplication Step 1.0 was written to prevent:
 - `stage0_check.py` drives pyOCD by **subprocess** (`pyocd cmd -c "read32 …"`, `pyocd load`,
   `pyocd erase --mass`) and scrapes stdout with regex. This is the **only** target-control
   path validated on real hardware to date.

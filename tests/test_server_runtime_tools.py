@@ -7,7 +7,6 @@ import pytest
 from pyocd_debug_mcp import server
 from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig
-from pyocd_debug_mcp.probe_inventory import ProbeInfo, ProbeResolution
 from pyocd_debug_mcp.serial_resolver import SerialPortInfo
 from pyocd_debug_mcp.services.convergence_watcher import UART_TOOL
 from pyocd_debug_mcp.services.session_runtime import InMemorySessionStore
@@ -156,7 +155,7 @@ def test_flash_firmware_requires_active_session() -> None:
     )
 
 
-def test_read_serial_defaults_to_board_contract(monkeypatch) -> None:
+def test_read_serial_without_expected_text_accepts_any_output(monkeypatch) -> None:
     board = make_board()
     handle = make_handle(board)
     port = SerialPortInfo(
@@ -197,11 +196,11 @@ def test_read_serial_defaults_to_board_contract(monkeypatch) -> None:
     assert seen["device"] == "/dev/cu.usbmodem0001"
     assert seen["baudrate"] == 115200
     assert seen["read_seconds"] == 3.0
-    assert seen["expected_text"] == "boot ok"
+    assert seen["expected_text"] is None
     assert seen["has_hook"] is False
     assert result == (
         "UART matched on /dev/cu.usbmodem0001 at 115200 baud via pyocd-native; "
-        "expected='boot ok'; reopen_count=1; duration=0.50s; excerpt=boot ok"
+        "expected=(none); reopen_count=1; duration=0.50s; excerpt=boot ok"
     )
 
 
@@ -241,6 +240,40 @@ def test_read_serial_uses_port_override(monkeypatch) -> None:
     assert seen["override"] == "COM99"
     assert "COM7" in result
     assert "duration=0.25s" in result
+
+
+def test_read_serial_uses_explicit_expected_text(monkeypatch) -> None:
+    board = make_board()
+    handle = make_handle(board)
+    port = SerialPortInfo(
+        device="COM8",
+        description="J-Link",
+        manufacturer="SEGGER",
+        product="J-Link",
+        interface="VCOM",
+        hwid="USB VID:PID=1366:0105",
+    )
+    seen: dict[str, object] = {}
+
+    server._session_handle = handle
+
+    monkeypatch.setattr(server, "_resolve_serial_port_for_session", lambda handle_arg, *, override: port)
+
+    def fake_capture(device, baudrate, read_seconds, expected_text, *, on_port_open=None):
+        seen["expected_text"] = expected_text
+        return UARTCaptureResult(
+            text="boot ok\r\n",
+            expected_text=expected_text,
+            reopen_count=0,
+            duration_seconds=0.2,
+        )
+
+    monkeypatch.setattr(server, "capture_uart_output", fake_capture)
+
+    result = server.read_serial(expected_text="boot ok")
+
+    assert seen["expected_text"] == "boot ok"
+    assert "expected='boot ok'" in result
 
 
 def test_read_serial_requires_loaded_board() -> None:
@@ -292,7 +325,7 @@ def test_unlock_recover_requires_active_session() -> None:
     )
 
 
-def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
+def test_connect_lets_jlink_backend_choose_probe_when_uid_is_implicit(monkeypatch) -> None:
     board = make_board()
     seen: dict[str, object] = {}
 
@@ -302,15 +335,8 @@ def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
-        lambda board_arg, *, run_cmd, allow_single_fallback: ProbeResolution(
-            probe=ProbeInfo(
-                uid="685400693",
-                description="Segger J-Link OB-SAM3U128-V2-NordicSem",
-                raw="probe row",
-                state="n/a",
-            ),
-            note="",
-            probes=tuple(),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("resolve_probe_for_board should not run for implicit J-Link selection")
         ),
     )
 
@@ -331,10 +357,10 @@ def test_connect_uses_board_aware_auto_probe_selection(monkeypatch) -> None:
     result = server.connect(board_id="nrf52833dk")
 
     assert seen["board"] is board
-    assert seen["unique_id"] == "685400693"
+    assert seen["unique_id"] is None
     assert seen["target"] == "nrf52833"
     assert "Connected to board" in result
-    assert "685400693" in result
+    assert "probe (unknown)" in result
     assert "[board config: nrf52833dk]" in result
     assert "session_id=" in result
     assert server._runtime_session is not None

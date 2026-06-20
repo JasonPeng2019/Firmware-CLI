@@ -259,6 +259,11 @@ def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     assert (run_root / "logs" / "prompt.txt").read_text(encoding="utf-8") == "prompt"
     assert (run_root / "captured-serial" / "final_excerpt.txt").read_text(encoding="utf-8") == "boot ok\n"
     assert (run_root / "applied-patches" / "agent.diff").exists()
+    diff_text = (run_root / "applied-patches" / "agent.diff").read_text(encoding="utf-8")
+    assert "a/src/file.txt" in diff_text
+    assert "b/src/file.txt" in diff_text
+    assert "-before" in diff_text
+    assert "+after" in diff_text
 
 
 def test_run_case_fails_when_no_session_directory_is_created(

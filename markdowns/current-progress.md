@@ -93,11 +93,32 @@ Important architectural outcomes:
 - probe inventory no longer depends on unsupported `pyocd list --output json`
 - board-aware auto-selection now uses `pyocd list --probes`
 - the shared path preserves real probe UIDs for both J-Link and ST-Link
+- the shared SWD adapter now carries the J-Link serial-open quirk handling in
+  one place:
+  - always set pyOCD `jlink.non_interactive=false` for J-Link boards
+  - if J-Link open-by-UID still fails with the known
+    `No emulator with serial number ... found` error and exactly one matching
+    probe is visible, retry the session open once without forcing the UID
+- the MCP stdio path on this Windows host must not pre-run
+  `pyocd list --probes` to auto-resolve an implicit J-Link UID before the real
+  attach:
+  - when `connect()` is called for a J-Link board without an explicit
+    `unique_id` / `PYOCD_PROBE_UID`, the server now passes `unique_id=None`
+    through to the shared backend and lets pyOCD choose the single attached
+    probe directly
 - the shared path is used by:
   - `host_bootstrap.py`
   - `stage0_check.py`
   - `tests.harness.stage1_smoke`
   - `server.connect(...)`
+
+Rule for future files:
+
+- do **not** call `ConnectHelper` directly from new wrappers, harnesses, or
+  scripts
+- always go through the shared `target_control.open_session()` /
+  `adapters.swd_pyocd` path so probe-family-specific fixes such as the J-Link
+  option policy and the guarded uidless retry stay centralized
 
 ### Stage 1 Smoke Harness
 
@@ -361,7 +382,8 @@ Expected result:
 
 - `connect(...)` returns a `session_id`
 - default and explicit flash succeed for valid baseline artifacts
-- `read_serial(...)` reports `UART matched` with expected text `boot ok`
+- `read_serial(expected_text="boot ok", ...)` reports `UART matched` with
+  expected text `boot ok`
 - `unlock_recover(confirm=false)` refuses cleanly
 - `unlock_recover(confirm=true)` refuses cleanly because STM32 has no tracked
   recover mode
@@ -413,7 +435,8 @@ Expected result:
 
 - `connect(...)` returns a `session_id`
 - default and explicit flash succeed for valid baseline artifacts
-- `read_serial(...)` reports `UART matched` with expected text `boot ok`
+- `read_serial(expected_text="boot ok", ...)` reports `UART matched` with
+  expected text `boot ok`
 - `unlock_recover(confirm=false)` refuses cleanly
 - `unlock_recover(confirm=true)` succeeds
 - after recover, the baseline can be reflashed and UART can be re-verified
@@ -486,7 +509,9 @@ Why expected:
 
 `read_serial(...)` success should look like:
 
-- `UART matched on <port> at <baud> baud via pyocd-native; expected='boot ok'; reopen_count=<n>; duration=<s>; excerpt=<text>`
+- `UART matched on <port> at <baud> baud via pyocd-native; expected=(none); reopen_count=<n>; duration=<s>; excerpt=<text>`
+- or, when an explicit substring is requested:
+  `UART matched on <port> at <baud> baud via pyocd-native; expected='boot ok'; reopen_count=<n>; duration=<s>; excerpt=<text>`
 
 Why expected:
 
@@ -533,7 +558,7 @@ The benchmark phase is implemented in the repo, but it is not yet live-proven.
 
 What is already tracked:
 
-- benchmark spec in `markdowns/r11_benchmark_spec.md`
+- benchmark spec in `markdowns/curr/r11_benchmark_spec.md`
 - case format under `tests/cases/<case_id>/case.yaml`
 - Codex result schema under `tests/cases/r11_result_schema.json`
 - pilot suite ordering under `tests/cases/suites.yaml`
@@ -661,6 +686,52 @@ These are real tasks, but they are not the current blocker:
 - future live proof for `nrf52840dk` if that alternate profile becomes a real
   support target
 - corpus expansion after the first eight-case pilot is trustworthy
+
+## nRF52840 Bench-Check Prerequisites
+
+Before bench-checking `nrf52840dk`, do the following. These exist because the
+52840 has no committed reference artifact yet and because the toolchain choice
+must match what the agent will use when it rebuilds firmware.
+
+1. **Install NCS (nRF/Nordic only).** Install **nRF Connect SDK (NCS)** via the
+   nRF Connect for VS Code extension (Toolchain Manager). The GUI/IDE is only the
+   installer — builds run from `west` / the board build script afterward, so the
+   IDE is not otherwise needed. What you actually need is the **NCS workspace**
+   (the `zephyr/`, `nrf/`, `nrfxlib/` repos) plus a Zephyr SDK toolchain.
+2. **NCS is Nordic-only.** This applies to `nrf52840dk` (and other nRF boards),
+   **not** to the STM32 `nucleo_l476rg`, which stays on upstream Zephyr.
+3. **Why NCS.** It is the common production path for nRF (and required for the
+   SoftDevice Controller / Nordic BLE mesh later), and the agent rebuilds firmware
+   with whatever toolchain the board's build script targets — so testing on NCS
+   keeps your build and the agent's rebuild on the same toolchain. (A plain
+   upstream-Zephyr build also works for the trivial reference app, but standardize
+   on one toolchain per board.)
+4. **Produce a real 52840 reference artifact (cannot be downloaded).** The
+   `stage1_smoke` contract needs the firmware to print `boot ok` and expose
+   `stage1_known_value = 0x1234ABCD`; no prebuilt hex satisfies that. Create
+   `firmware/nrf52840dk/reference/` mirroring `firmware/nrf52833dk/reference/`
+   (`src/` + a `build_reference.sh` with `BOARD=nrf52840dk/nrf52840`), then build
+   it to `firmware/nrf52840dk/reference/build/firmware.{elf,hex}`.
+5. **Point the build at the NCS workspace with env vars, not code edits.** The
+   existing `build_*.sh` is already `west build` against `$WORKSPACE_DIR`:
+   - `ZEPHYR_WORKSPACE_DIR=<NCS workspace root>` — the directory that **contains**
+     `zephyr/`, `nrf/`, `nrfxlib/`, `.west/` (e.g. `~/ncs/<version>`), **not** the
+     inner `zephyr/` folder (pointing at the inner one loses the Nordic modules).
+   - `ZEPHYR_SDK_INSTALL_DIR=<NCS's bundled Zephyr SDK>` — set explicitly, because
+     the script's auto-detect only finds a standalone `zephyr-sdk-*`.
+   - If `west` complains about a version mismatch against the NCS manifest, use
+     NCS's own `west` instead of the script's pip-installed one.
+6. **Keep provenance consistent.** If you standardize nRF builds on NCS, rebuild
+   and re-verify the existing `nrf52833dk` baseline under NCS too, so committed
+   artifacts match what the agent rebuilds. Do not leave `nrf52833dk`
+   upstream-Zephyr-built while `nrf52840dk` is NCS-built (functionally equivalent
+   for these printk apps, but keep provenance consistent). Record the 52840
+   artifact's toolchain provenance in the "Live Bench Facts" section once proven.
+7. **Then run the standard validation** with `--board-id nrf52840dk`:
+   `host_bootstrap.py` → `stage0_check.py` (with `--reference-firmware` and, since
+   it is Nordic, `--recover-test`) → `tests.harness.stage1_smoke` → the MCP server
+   runtime/manual matrix. Note the host it was proven on (if it is this Windows
+   host, that also advances the open Windows-bench follow-up).
 
 ## Short Resume Note
 

@@ -1,5 +1,12 @@
 # ROADMAP
 
+> **STATUS (2026-06): R0–R10 COMPLETE and live-proven on the scoped pair
+> (`nrf52833dk` + `nucleo_l476rg`); `R11` is the active item.** This is the
+> original roadmap / decision record. Sections that describe R0–R10 work — including
+> the `R7` "Current-state reconciliation" and the Phase-B/C frontier notes — now
+> describe work that is **done**; read them as history, not as pending work. For
+> live status see `current-progress.md`; for the file map see `repo_file_index.md`.
+
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
 It is based on the current build plan in [firmware_agent_build_plan_concrete (10).md](./firmware_agent_build_plan_concrete%20%2810%29.md), but it is organized for implementation instead of product narration.
@@ -72,14 +79,12 @@ What this means:
   proven there is reused by the MCP tools, never rebuilt. The structural reason
   a capability can surface as a shell command today and an MCP tool later with
   no duplicated logic: same service underneath, different wrapper on top.
-- **Current-state caveat (this constraint is not yet satisfied).** The shared service does not
-  exist yet. Today `stage0_check.py` drives pyOCD by subprocess (the only hardware-validated path)
-  and `server.py` drives it via the pyOCD Python API (unvalidated) — two parallel implementations,
-  exactly what the bullet above forbids. Closing this gap is concrete early work, not just a
-  principle: prove the API path on the bench, stand up `adapters/`/`services/`, and thin both
-  callers onto it. It is scheduled as the front of Stage 1 code work (build-plan Step 1.0d, ROADMAP
-  `R7` "Current-state reconciliation") and pulled forward as a Phase-B preparation task because the
-  de-risk is cheap and only needs Stage-0 hardware truth.
+- **Current-state caveat (RESOLVED 2026-06).** This constraint is now satisfied. The shared service
+  layer exists (`adapters/` + `services/` + `guardrails/`), the pyOCD Python-API path was proven on
+  the bench, and both `stage0_check.py` and `server.py` are thin callers over the shared services —
+  the J-Link workaround lives in one place. The two-parallel-implementations state described in
+  earlier revisions of this bullet (and in `R7` "Current-state reconciliation" below) is history;
+  the migration completed as part of Stage 1. See `current-progress.md` for the live proof.
 - Documentation follows the same split (see the Doc-Sync and Tool-Description
   playbooks): an MCP tool's contract lives in its **docstring** — the
   description the client reads over the protocol, never a sidecar `.md`; the
@@ -877,9 +882,14 @@ This item creates the abstract hardware control API and its pyOCD implementation
   V9.50, reconfirm on version changes
 - keep the interface board-agnostic even if the backend has board quirks
 
-### Current-state reconciliation (do this before adapter coding)
+### Current-state reconciliation (COMPLETED 2026-06)
 
-The repo today has TWO independent pyOCD callers, which is the duplication this item must
+> This section is historical. The reconciliation below is **done**: the API path was proven on
+> hardware, `adapters/`+`services/` were stood up, and both `stage0_check.py` and `server.py` are
+> now thin callers over the shared services. The text is kept as the record of how the migration
+> was sequenced.
+
+The repo (at the time this was written) had TWO independent pyOCD callers, which this item had to
 collapse, not extend:
 
 - `stage0_check.py` drives pyOCD by **subprocess** (`pyocd cmd`, `pyocd load`,

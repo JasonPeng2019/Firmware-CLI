@@ -1,5 +1,12 @@
 # Agentic Firmware Debug Tool — MCP-Centered Architecture & Build Plan
 
+> **STATUS (2026-06): the architecture described here is IMPLEMENTED** for the
+> local **stdio** server on the scoped pair — the adapters/services/guardrails
+> split, the tools-vs-resources surface, deterministic guardrails below the
+> client, and session-keyed runtime state all exist in `src/pyocd_debug_mcp/`.
+> Still future: remote Streamable-HTTP + OAuth transport (`R13`) and the turnkey
+> brain + CLI (`R12`). Design doc; live status in `current-progress.md`.
+
 > This plan reformulates the project around the **MCP-server-as-core** design: one headless
 > server holding the hardware tools + deterministic guardrails + convergence watcher, with two
 > clients on top — the user's own agent (Claude Code, etc.) and your turnkey brain. It is the

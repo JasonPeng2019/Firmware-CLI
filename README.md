@@ -117,12 +117,14 @@ Firmware-CLI/
 |   `-- README.md
 `-- markdowns/
     |-- ROADMAP.md
-    |-- r10_contract.md
-    |-- r11_benchmark_spec.md
     |-- firmware_agent_build_plan_concrete (10).md
     |-- firmware_agent_mcp_architecture.md
     |-- current-progress.md
-    `-- build_plan_spec_gaps.md
+    |-- repo_file_index.md
+    |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
+    |   |-- r10_contract.md
+    |   `-- r11_benchmark_spec.md
+    `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
 
 ## Naming Rules
@@ -277,7 +279,7 @@ uv run pyocd-debug-mcp
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
-- `R10` contract: [markdowns/r10_contract.md](./markdowns/r10_contract.md)
+- `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
@@ -329,7 +331,7 @@ Verified:
 - the current scoped gates are now green:
   `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), `G4` (`R9`), and `G5`
   (`R10`)
-- `markdowns/r10_contract.md` is now live-backed by the scoped bench proof, and
+- `markdowns/curr/r10_contract.md` is now live-backed by the scoped bench proof, and
   `R11` benchmark implementation is in progress
 
 Pending verification:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import secrets
@@ -617,20 +618,43 @@ def _changed_files(before_root: Path, after_root: Path) -> tuple[str, ...]:
     return tuple(changed)
 
 
+def _decode_diff_text(data: bytes) -> tuple[list[str], bool]:
+    try:
+        return data.decode("utf-8").splitlines(keepends=True), False
+    except UnicodeDecodeError:
+        return [], True
+
+
 def _write_diff(before_root: Path, after_root: Path, output_path: Path) -> None:
-    exit_code, stdout, stderr = _run_cmd(
-        [
-            "diff",
-            "-ru",
-            "--exclude=build",
-            str(before_root),
-            str(after_root),
-        ]
-    )
-    if exit_code not in {0, 1}:
-        raise RuntimeError(f"diff failed: {stderr or stdout}")
+    before = _relative_files(before_root)
+    after = _relative_files(after_root)
+    chunks: list[str] = []
+
+    for relative in sorted(set(before) | set(after)):
+        before_bytes = before.get(relative)
+        after_bytes = after.get(relative)
+        if before_bytes == after_bytes:
+            continue
+
+        before_lines, before_binary = _decode_diff_text(before_bytes or b"")
+        after_lines, after_binary = _decode_diff_text(after_bytes or b"")
+        if before_binary or after_binary:
+            chunks.append(f"Binary files a/{relative} and b/{relative} differ\n")
+            continue
+
+        diff_lines = difflib.unified_diff(
+            before_lines,
+            after_lines,
+            fromfile=f"a/{relative}",
+            tofile=f"b/{relative}",
+            lineterm="",
+        )
+        rendered = "\n".join(diff_lines)
+        if rendered:
+            chunks.append(rendered + "\n")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(stdout, encoding="utf-8")
+    output_path.write_text("".join(chunks), encoding="utf-8")
 
 
 def _run_final_verification(prepared: PreparedCase) -> VerificationSummary:

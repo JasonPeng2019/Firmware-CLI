@@ -1,5 +1,12 @@
 # Firmware Agent Build Plan: Step-By-Step Specification Gaps
 
+> **STATUS (2026-06): MOSTLY RESOLVED.** This was a pre-implementation gap list.
+> The cross-cutting definitions and the Stage 0–3 gaps it raises have since been
+> settled in code (board schema + loader, typed error taxonomy, structured
+> logging, session state, flash/recover guardrails, convergence watcher, MCP tool
+> surface). Treat items here as historical unless `current-progress.md` still
+> lists them as open. Kept as the record of what was once unspecified.
+
 This document is a step-indexed pass over the build plan.
 
 For each stage item, it answers one question:

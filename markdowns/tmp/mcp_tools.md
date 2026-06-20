@@ -1,5 +1,11 @@
 # Per-User Dynamic Tools in an MCP Server
 
+> **STATUS: FORWARD-LOOKING REFERENCE — not the current architecture.** The
+> shipped server is a single-user local **stdio** server. The per-user /
+> multi-tenant HTTP + OAuth tool-listing patterns below are **not implemented**
+> and are kept only as reference for a possible future hosted tier (`R13`). Do not
+> read this as a description of how the current server works.
+
 A guide to exposing different tools to different users from a single MCP server,
 based on each user's identity, plan, permissions, or connected integrations.
 

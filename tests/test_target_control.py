@@ -218,6 +218,115 @@ def test_adapter_open_raises_probe_not_found_when_no_probe_matches(monkeypatch) 
         adapter.open(board=None, unique_id="missing", target="stm32l476rgtx")
 
 
+def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monkeypatch) -> None:
+    board = BoardConfig(
+        board_id="nrf52840dk",
+        display_name="nRF52840-DK",
+        mcu_family="nrf52840",
+        probe_family="jlink",
+        pyocd_target="nrf52840",
+        pack_name="nrf52840",
+        probe_type="SEGGER J-Link",
+        probe_hint_terms=("segger",),
+        serial_hint_terms=("segger",),
+        test_addr=0x10000000,
+    )
+
+    class FakeProbe:
+        unique_id = "1050263657"
+
+    class FakeBoard:
+        name = "Nordic nRF52840 DK"
+
+    class FailingSession:
+        def __init__(self) -> None:
+            self.probe = FakeProbe()
+            self.board = FakeBoard()
+
+        def open(self) -> None:
+            raise RuntimeError("No emulator with serial number 1050263657 found.")
+
+        def close(self) -> None:
+            return None
+
+    class PassingSession:
+        def __init__(self) -> None:
+            self.probe = FakeProbe()
+            self.board = FakeBoard()
+
+        def open(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    calls: list[dict[str, object]] = []
+    sessions = [FailingSession(), PassingSession()]
+
+    def fake_choose_probe(**kwargs):
+        calls.append(dict(kwargs))
+        return sessions.pop(0)
+
+    monkeypatch.setattr(
+        swd_pyocd.ConnectHelper,
+        "session_with_chosen_probe",
+        staticmethod(fake_choose_probe),
+    )
+    monkeypatch.setattr(
+        swd_pyocd,
+        "list_connected_probes",
+        lambda run_cmd: [
+            type(
+                "ProbeRow",
+                (),
+                {
+                    "uid": "1050263657",
+                    "description": "SEGGER J-Link",
+                    "raw": "0  SEGGER J-Link  1050263657  ok",
+                    "searchable_text": "1050263657 segger j-link",
+                },
+            )(),
+            type(
+                "ProbeRow",
+                (),
+                {
+                    "uid": "0668FF514988525067213913",
+                    "description": "ST-Link",
+                    "raw": "1  ST-Link  0668FF514988525067213913  ok",
+                    "searchable_text": "0668ff514988525067213913 st-link stm32",
+                },
+            )(),
+        ],
+    )
+
+    adapter = swd_pyocd.PyOCDSWDInterface()
+    handle = adapter.open(board=board, unique_id="1050263657", target="nrf52840")
+
+    assert handle.probe_uid == "1050263657"
+    assert calls == [
+        {
+            "blocking": False,
+            "return_first": True,
+            "unique_id": "1050263657",
+            "auto_open": False,
+            "options": {
+                "target_override": "nrf52840",
+                "jlink.non_interactive": False,
+            },
+        },
+        {
+            "blocking": False,
+            "return_first": True,
+            "unique_id": None,
+            "auto_open": False,
+            "options": {
+                "target_override": "nrf52840",
+                "jlink.non_interactive": False,
+            },
+        },
+    ]
+
+
 def test_adapter_read_memory_raises_typed_connection_error() -> None:
     class FailingTarget:
         def read_memory(self, address: int, width_bits: int) -> int:
