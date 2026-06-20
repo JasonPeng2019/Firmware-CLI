@@ -131,13 +131,40 @@ def read_word(session, address: int, width_bits: int) -> int:
     return session.target.read_memory(address, width_bits)
 
 
-def do_flash(session, firmware: Path) -> bool:
-    """Flash an artifact through pyOCD's Python API (FileProgrammer).
+def flash_base(session, board: BoardConfig) -> int:
+    """Flash base address for read-back verification.
+
+    Prefer pyOCD's own memory map (board-agnostic); fall back to a family default
+    if the map query is unavailable on this pyOCD version.
+    """
+    try:
+        region = session.target.get_memory_map().get_boot_memory()
+        if region is not None:
+            return region.start
+    except Exception:  # noqa: BLE001 — fall back rather than fail verification
+        pass
+    fam = board.mcu_family.lower()
+    if fam.startswith("nrf"):
+        return 0x00000000
+    if fam.startswith("stm32"):
+        return 0x08000000
+    raise RuntimeError(f"Cannot determine flash base for {board.mcu_family}")
+
+
+def do_flash(session, board: BoardConfig, firmware: Path) -> bool:
+    """Flash an artifact through pyOCD's Python API (FileProgrammer), then verify
+    at the PROGRAMMING layer — independent of whether the firmware runs correctly.
 
     Oracle: `stage0_check.py` flashes via the `pyocd load <path>` subprocess. This
     is the API equivalent and the specific thing Step 1.0d must prove on hardware.
     FileProgrammer infers format from the extension (.hex/.elf); a raw .bin would
     need a base address, which is intentionally not supported here.
+
+    Verification does NOT require execution (so a wrong-chip image still proves the
+    flash mechanism):
+      1. read-back at flash base is no longer erased (0xFFFFFFFF) after programming
+      2. the reset vector (base+4) is a sane address, not erased
+      3. after reset_and_halt, PC lands at the image's reset vector
     """
     header(f"Flash (API) — {firmware.name}")
     if not firmware.exists():
@@ -149,11 +176,35 @@ def do_flash(session, firmware: Path) -> bool:
 
     from pyocd.flash.file_programmer import FileProgrammer
 
+    base = flash_base(session, board)
+    before_sp = read_word(session, base, 32)
+    log(INFO, f"Before flash: [0x{base:08X}]=0x{before_sp:08X} (0xFFFFFFFF = erased)")
+
     log(INFO, f"Programming {firmware} ...")
     FileProgrammer(session).program(str(firmware))
+
+    # 1 + 2: read-back proves bytes physically landed, no execution needed.
+    after_sp = read_word(session, base, 32)
+    after_rv = read_word(session, base + 4, 32)
+    log(INFO, f"After flash:  [0x{base:08X}]=0x{after_sp:08X} (initial SP)")
+    log(INFO, f"              [0x{base + 4:08X}]=0x{after_rv:08X} (reset vector)")
+    landed = after_sp != 0xFFFFFFFF and after_rv != 0xFFFFFFFF
+    if not landed:
+        log(FAIL, "Read-back still erased — bytes did not land.")
+        return False
+    log(PASS, "Read-back verified: image bytes are present in flash.")
+
+    # 3: core boots to the image's reset vector (thumb bit cleared for comparison).
     session.target.reset_and_halt()
-    log(PASS, f"Flashed and reset-halted: {firmware}")
-    return True
+    pc = session.target.read_core_register("pc")
+    expected = after_rv & ~1
+    pc_ok = pc != 0xFFFFFFFF and (pc & ~1) == expected
+    log(
+        PASS if pc_ok else FAIL,
+        f"Post-reset PC=0x{pc:08X} vs reset vector 0x{expected:08X} "
+        f"({'lands at image' if pc_ok else 'did NOT land at image'})",
+    )
+    return landed and pc_ok
 
 
 def do_recover(session, board: BoardConfig) -> bool:
@@ -256,7 +307,8 @@ def main() -> int:
         if args.silicon_id:
             results.append(("silicon-id", check_silicon_id(session, board)))
         if args.flash:
-            results.append(("flash", do_flash(session, Path(args.firmware).expanduser().resolve())))
+            fw = Path(args.firmware).expanduser().resolve()
+            results.append(("flash", do_flash(session, board, fw)))
         if args.recover:
             results.append(("recover", do_recover(session, board)))
     except Exception as exc:  # noqa: BLE001 — harness wants the raw failure surfaced
