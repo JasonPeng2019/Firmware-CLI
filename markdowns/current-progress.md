@@ -43,24 +43,97 @@ On a real **`nrf52840dk`** board:
 ## Harness Results — Bench-Confirmed (nrf52840dk)
 
 The throwaway API harness (`scratch/api_target_control_harness.py`) was run on the
-real **`nrf52840dk`** and **passed** for the two operations testable on that board:
+real **`nrf52840dk`** and **passed** for all three operations:
 
 - pyOCD Python-API **silicon-ID read** — ✅ PASS (`FICR.INFO.PART` = `0x00052840`,
   matching board config and oracle'd against `stage0_check.py`)
 - pyOCD Python-API **recover / unlock** — ✅ PASS (mass-erase via the API, with a
   successful post-erase re-read)
+- pyOCD Python-API **flash** — ✅ PASS (programmed `firmware/nrf52840dk/reference/build/firmware.elf`
+  via `FileProgrammer`; confirmed running correctly afterward, not just written —
+  see "Flash Validated" below)
 
 This proves the pyOCD **Python-API** path does what `stage0_check.py`'s subprocess
-path does for silicon-ID and recover on Nordic/J-Link hardware.
+path does for silicon-ID, recover, and flash on Nordic/J-Link hardware. All three
+target-control operations not yet in `server.py` are now bench-proven on this
+probe family.
+
+## Flash Validated (nrf52840dk) — exact steps run
+
+The `nrf52840dk` on the bench turned out to already have flash artifacts
+(`firmware/nrf52840dk/reference/build/firmware.{elf,bin}`, plus source under
+`firmware/nrf52840dk/reference/src/`: an LED-chase + UART blink firmware with no
+SDK/RTOS), so the "Bench gap to resolve before flashing Nordic" noted below was
+already closed — no new firmware had to be built.
+
+1. **Confirmed board identity.** `pyocd list` reported the probe as
+   `Segger J-Link OB-nRF5340-NordicSemi`, which looked like a mismatch against the
+   physical `nRF52840-DK` on the bench. Confirmed with the operator that the
+   physical board is genuinely the `nRF52840-DK` — the OB-firmware string is just a
+   stale/generic label, not the actual silicon. (Worth remembering: don't trust the
+   J-Link OB label over the operator's physical board ID.)
+
+2. **First oracle attempt failed — probe already open.**
+   ```
+   uv run python stage0_check.py --board-id nrf52840dk \
+     --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf
+   ```
+   Failed with `J-Link is already open.` — caused by a leftover MCP Inspector
+   session (`mcp dev src/pyocd_debug_mcp/server.py`) and a stray
+   `mcp run src/pyocd_debug_mcp/server.py` process from earlier manual testing,
+   both still holding the probe open via an un-`disconnect`-ed session. Killed both
+   process groups to free the probe. **Lesson:** an MCP client that calls `connect`
+   and never calls `disconnect` (or a crashed/abandoned Inspector tab) will block
+   any other tool — including `stage0_check.py` — from opening the same probe.
+
+3. **Re-ran the oracle — surfaced APPROTECT.**
+   ```
+   uv run python stage0_check.py --board-id nrf52840dk \
+     --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf \
+     --port nrf52840dk=/dev/cu.usbmodem0010502864801 \
+     --expect nrf52840dk="blink firmware starting"
+   ```
+   This time it ran cleanly but failed on connect/silicon-ID with:
+   `NRF52840 APPROTECT enabled: not automatically unlocking`. This is the same
+   root cause behind the earlier `"No cores were discovered!"` error seen from MCP
+   Inspector's `connect` tool on this chip — the debug AP was locked, not a wiring
+   or workaround problem.
+
+4. **Recover/unlock via the API harness (destructive — confirmed with the operator
+   first, since it mass-erases).**
+   ```
+   uv run python scratch/api_target_control_harness.py --board-id nrf52840dk \
+     --recover --confirm-recover
+   ```
+   Result: `[PASS] Mass erase completed.` and
+   `[PASS] Re-read after erase OK: 0x52840 @0x10000100` — the chip was unlocked and
+   immediately readable again.
+
+5. **Silicon-ID + flash via the API harness.**
+   ```
+   uv run python scratch/api_target_control_harness.py --board-id nrf52840dk \
+     --silicon-id --flash --firmware firmware/nrf52840dk/reference/build/firmware.elf
+   ```
+   Result: `[PASS] silicon-id`, `[PASS] flash`. The harness's `do_flash` leaves the
+   core **reset-and-halted** after programming, by design.
+
+6. **Real-world confirmation the flashed firmware actually runs**, not just that
+   bytes were written:
+   ```
+   uv run pyocd cmd -t nrf52840 -O jlink.non_interactive=false -c "reset"
+   ```
+   then read the UART directly (the harness/stage0 don't capture UART for this
+   board) — captured the LED-chase text the firmware's `main.c` prints
+   (`LED1 on (P0.13)`, `LED2 on (P0.14)`, ... repeating), confirming the flashed
+   image is genuinely executing on-target, matching the physical LED chase.
 
 ## What Is Still Not Proven
 
 Still pending for Step 1.0d:
 
-- pyOCD Python-API **flash** — harness written, **not yet run** (the `nrf52840dk`
-  on the bench has no flash artifact; needs an artifact or a different board)
 - the **STM32/ST-Link** API path — silicon-ID + flash not yet exercised on
-  `nucleo_l476rg`
+  `nucleo_l476rg` (this is now the *only* remaining hardware-validation gap before
+  the shared layer can be built with both probe families bench-confirmed)
 - the shared `adapters/` + `services/` layer — not created
 - migration of `server.py` and `stage0_check.py` onto shared services
 
@@ -80,32 +153,32 @@ once the operations are proven and migrated):
 - Verified to import and parse (`--help`); **not run against hardware** — that is a
   bench action for the operator.
 
-### Bench gap to resolve before flashing Nordic
+### Bench gap to resolve before flashing Nordic — CLOSED
 
 Flash artifacts (`reference/build/firmware.{elf,hex}`) exist for **`nucleo_l476rg`**
-and **`nrf52833dk`**, but **NOT for `nrf52840dk`** (the board connect/read was proven
-on — only `.gitkeep` there). Build an artifact for whichever Nordic board is on the
-bench before flashing it.
+and **`nrf52833dk`**, and it turned out **`nrf52840dk` already had one too**
+(`firmware/nrf52840dk/reference/build/firmware.{elf,bin}` plus source) — no new
+firmware had to be built. Flash through the pyOCD API is now proven on
+`nrf52840dk` (see "Flash Validated" above).
 
 ## Continue From Here
 
-Silicon-ID and recover are proven on `nrf52840dk`. What remains to close Step 1.0d's
-API-validation gate:
+Silicon-ID, recover, **and flash** are all proven on `nrf52840dk` (J-Link). What
+remains to close Step 1.0d's API-validation gate:
 
-1. **Prove flash through the API.** The bench `nrf52840dk` has no artifact, so either
-   build/point at an nRF52840 `.hex`/`.elf`, or prove flash on a board that has one.
-2. **Run the harness on STM32/ST-Link (`nucleo_l476rg`)** — it has a flash artifact
-   and no destructive recover, and it closes the second probe-family gap:
+1. **Run the harness on STM32/ST-Link (`nucleo_l476rg`)** — it has a flash artifact
+   and no destructive recover, and it closes the only remaining probe-family gap:
    - `uv run python stage0_check.py --board-id nucleo_l476rg` (subprocess truth)
    - `uv run python scratch/api_target_control_harness.py --board-id nucleo_l476rg --silicon-id`
    - `... --flash --firmware firmware/nucleo_l476rg/reference/build/firmware.elf`
-   (Doing flash here covers item 1 too — proving flash on either probe family suffices,
-   though proving it on both is stronger.)
-3. Once flash is green on both probe families, **create
+   - Note: unlike the Nordic boards, ST-Link has no destructive recover path here —
+     `do_recover` no-ops (`INFO`, not a failure) for any `recover_mode` other than
+     `nrf_pyocd_unlock`, so the ST-Link harness run skips that step by design.
+2. Once flash is green on both probe families, **create
    `src/pyocd_debug_mcp/adapters/` and `src/pyocd_debug_mcp/services/`**.
-4. **Implement the proven target-control operations in the shared layer**, not
+3. **Implement the proven target-control operations in the shared layer**, not
    directly in `server.py`.
-5. **Thin both `server.py` and `stage0_check.py`** onto those shared services.
+4. **Thin both `server.py` and `stage0_check.py`** onto those shared services.
 
 ## Discipline: keep the probe abstraction honest (one-probe-family risk)
 
@@ -144,7 +217,9 @@ If resuming work later:
 
 > `server.py` is bench-validated on `nrf52840dk` for connect/read/control. The API
 > harness (`scratch/api_target_control_harness.py`) has now PASSED on `nrf52840dk`
-> for **silicon-ID read** and **recover/unlock**. Only **flash** through the API is
-> still unproven (the bench 52840 has no artifact). Next: prove flash — easiest on
-> `nucleo_l476rg`, which also covers the STM32/ST-Link path — then build the shared
-> `adapters/` / `services/` layer and thin both wrappers onto it.
+> for **silicon-ID read**, **recover/unlock**, and **flash** (flashed firmware was
+> confirmed running via live UART output, not just written). The chip needed
+> APPROTECT recover/unlock before any of this worked — `do_recover` mass-erases it.
+> The only remaining hardware-validation gap is the **STM32/ST-Link** path on
+> `nucleo_l476rg` — once that's green, build the shared `adapters/` / `services/`
+> layer and thin both wrappers onto it.
