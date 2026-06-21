@@ -166,8 +166,9 @@ Use these override layers:
   `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG` to have the server resolve a board's
   facts from `boards/<board>.yaml` through the shared loader (then `connect`
   needs no raw target; the `get_board_info` tool reports the loaded facts).
-  The same file also carries the turnkey brain's BYOK settings:
-  `OPENAI_API_KEY` and optionally `PYOCD_TURNKEY_MODEL`.
+  The same file also carries the turnkey brain's provider settings:
+  `PYOCD_TURNKEY_PROVIDER`, optional `PYOCD_TURNKEY_MODEL`, and provider
+  credentials such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 - `pyocd.local.yaml`
   Optional, gitignored, for per-developer pyOCD tweaks once needed.
 - `pyocd.yaml`
@@ -192,6 +193,8 @@ uv run python stage0_check.py --board-id nrf52833dk
 uv run pyocd-debug-mcp
 uv run pyocd-debug-brain --help
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green --model <model>
 uv run pytest
 uv run ruff check .
@@ -203,6 +206,19 @@ Turnkey notes:
 
 - `pyocd-debug-brain` launches the local MCP server itself; do not pre-launch
   the server for the normal turnkey path.
+- Valid turnkey providers are:
+  - `openai-api`
+  - `anthropic-api`
+  - `codex-cli`
+  - `claude-cli`
+- API-backed providers use native SDK credentials:
+  - `OPENAI_API_KEY` for `openai-api`
+  - `ANTHROPIC_API_KEY` for `anthropic-api`
+- CLI-backed providers inherit the CLI's own auth:
+  - `codex-cli` can use the existing Codex/ChatGPT subscription or Codex's
+    API-key login
+  - `claude-cli` can use the existing Claude subscription/OAuth token or
+    `ANTHROPIC_API_KEY`
 - Freeform `run` mode is diagnose/verify only unless you also supply both:
   - `--workspace-root`
   - `--build-command`

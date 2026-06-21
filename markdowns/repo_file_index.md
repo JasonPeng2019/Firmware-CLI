@@ -56,10 +56,16 @@ a glance before relying on detail.
 | `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
 | `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
 | `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
-| `brain/config.py` | BYOK/provider config loading plus the `TurnkeyInvocation` model. |
+| `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
 | `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
 | `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
+| `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation. |
+| `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`. |
+| `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`. |
+| `brain/provider_factory.py` | Factory that maps provider config to the correct decision backend. |
 | `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
+| `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
+| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn` and `DecisionProvider`. |
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering. |
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |

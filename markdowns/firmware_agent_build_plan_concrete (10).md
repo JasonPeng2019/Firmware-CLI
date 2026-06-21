@@ -725,9 +725,14 @@ anti-thrash, on both boards, zero UI written. *This is a shippable BYO-agent pro
 Frozen implementation choices for the first pass:
 
 1. **Build the brain as a native Python MCP client** of the same server (reuses Stages 1–3 wholesale).
-   Do **not** wrap Codex CLI for the turnkey product.
-2. **Use OpenAI first via BYOK** (`OPENAI_API_KEY` + model from CLI/env) through the official Python SDK
-   and the Responses API. Keep the provider wrapper isolated so future providers remain possible.
+   Do **not** hand ownership of the loop to Codex CLI or Claude Code; if those CLIs are used, they
+   act only as interchangeable decision backends under the brain's control.
+2. **Keep the provider layer isolated.** The implemented R12 brain now supports:
+   - `openai-api` via the official OpenAI SDK + Responses API
+   - `anthropic-api` via the official Anthropic SDK + Messages API
+   - `codex-cli` via local `codex exec`
+   - `claude-cli` via local `claude --print`
+   This lets the same turnkey loop run on either API credits or existing coding-agent subscriptions.
 3. **Own the orchestration loop directly** in the brain. Do not delegate loop ownership to the Agents SDK
    in the first pass.
 4. **Add board-aware skills injection** as YAML data under `skills/`:
@@ -750,7 +755,7 @@ Frozen implementation choices for the first pass:
    parity on that corpus plus lower operator burden, not a harder corpus or a new benchmark taxonomy.
 
 **Exit criteria:** `pyocd-debug-brain` runs the full loop turnkey on the scoped pair (`nrf52833dk` +
-`nucleo_l476rg`), reuses the 12-case benchmark corpus, avoids Codex/MCP-registration setup, and
+`nucleo_l476rg`), reuses the 12-case benchmark corpus, avoids required Codex/MCP-registration setup, and
 proves parity + lower operator burden against the BYO-agent path.
 
 ---

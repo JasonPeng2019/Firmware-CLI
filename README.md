@@ -22,7 +22,7 @@ shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
 in-progress turnkey product layer:
 
 - native Python brain package
-- BYOK OpenAI provider path
+- multi-provider decision backends
 - turnkey CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
@@ -124,7 +124,13 @@ Firmware-CLI/
 |       |   |-- config.py
 |       |   |-- loop.py
 |       |   |-- mcp_client.py
+|       |   |-- provider_anthropic.py
+|       |   |-- provider_claude_cli.py
+|       |   |-- provider_codex_cli.py
+|       |   |-- provider_factory.py
 |       |   |-- provider_openai.py
+|       |   |-- provider_parsing.py
+|       |   |-- provider_types.py
 |       |   |-- skills.py
 |       |   |-- state.py
 |       |   `-- workspace.py
@@ -189,8 +195,11 @@ Firmware-CLI/
   - `PYOCD_PROBE_UID`
   - `PYOCD_TARGET`
   - optional `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG`
-  - `OPENAI_API_KEY` for the turnkey brain
-  - `PYOCD_TURNKEY_MODEL` for the turnkey brain's default model
+  - `PYOCD_TURNKEY_PROVIDER` for the turnkey brain backend:
+    `openai-api`, `anthropic-api`, `codex-cli`, or `claude-cli`
+  - `PYOCD_TURNKEY_MODEL` for an optional explicit model override
+  - `OPENAI_API_KEY` for the native OpenAI API provider
+  - `ANTHROPIC_API_KEY` for the native Anthropic API provider
 - With a board id set, the MCP server resolves that board's facts (target,
   recover policy, silicon id, baud) from `boards/<board>.yaml` through the
   shared loader, so `connect` needs no raw target and the `get_board_info`
@@ -282,6 +291,8 @@ Run the turnkey CLI in freeform verify/diagnose mode:
 
 ```bash
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 ```
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
@@ -289,10 +300,21 @@ Run the turnkey benchmark against one case or the full frozen 12-case suite:
 ```bash
 uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green
 uv run pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004
+uv run pyocd-debug-brain benchmark --provider anthropic-api --case-id nrf52833dk__k001_reference_green --model claude-sonnet-4-20250514
 ```
 
-The turnkey path requires `OPENAI_API_KEY` plus either `--model <model>` or
-`PYOCD_TURNKEY_MODEL`.
+Turnkey provider rules:
+
+- `openai-api` uses `OPENAI_API_KEY` and requires an explicit model from
+  `--model` or `PYOCD_TURNKEY_MODEL`
+- `anthropic-api` uses `ANTHROPIC_API_KEY` and requires an explicit model from
+  `--model` or `PYOCD_TURNKEY_MODEL`
+- `codex-cli` uses the locally installed `codex` CLI and inherits whatever
+  Codex auth you already configured there, including a ChatGPT/Codex
+  subscription or Codex's own API-key path
+- `claude-cli` uses the locally installed `claude` CLI and inherits whatever
+  Claude Code auth you already configured there, including a Claude
+  subscription or `ANTHROPIC_API_KEY`
 
 Windows PowerShell:
 

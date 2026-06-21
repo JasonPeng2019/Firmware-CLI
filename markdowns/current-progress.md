@@ -44,6 +44,11 @@ contains:
 - the native Python brain package under `src/pyocd_debug_mcp/brain/`
 - the top-level `skills/` tree
 - the `pyocd-debug-brain` CLI
+- multiple decision-provider backends:
+  - native OpenAI API
+  - native Anthropic API
+  - Codex CLI
+  - Claude Code CLI
 - the sibling turnkey benchmark path over the same 12-case corpus
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
 
@@ -194,7 +199,13 @@ Code that now exists:
 - `src/pyocd_debug_mcp/brain/config.py`
 - `src/pyocd_debug_mcp/brain/mcp_client.py`
 - `src/pyocd_debug_mcp/brain/state.py`
+- `src/pyocd_debug_mcp/brain/provider_factory.py`
 - `src/pyocd_debug_mcp/brain/provider_openai.py`
+- `src/pyocd_debug_mcp/brain/provider_anthropic.py`
+- `src/pyocd_debug_mcp/brain/provider_codex_cli.py`
+- `src/pyocd_debug_mcp/brain/provider_claude_cli.py`
+- `src/pyocd_debug_mcp/brain/provider_parsing.py`
+- `src/pyocd_debug_mcp/brain/provider_types.py`
 - `src/pyocd_debug_mcp/brain/actions.py`
 - `src/pyocd_debug_mcp/brain/workspace.py`
 - `src/pyocd_debug_mcp/brain/loop.py`
@@ -208,8 +219,19 @@ Code that now exists:
 What that code does:
 
 - launches the existing MCP server as a local stdio subprocess
-- talks to it directly without Codex CLI or manual MCP registration
-- loads BYOK provider config from `OPENAI_API_KEY` and `PYOCD_TURNKEY_MODEL`
+- talks to it directly without manual MCP registration
+- supports four decision-provider modes:
+  - `openai-api`
+  - `anthropic-api`
+  - `codex-cli`
+  - `claude-cli`
+- loads provider config from:
+  - `PYOCD_TURNKEY_PROVIDER`
+  - optional `PYOCD_TURNKEY_MODEL`
+  - `OPENAI_API_KEY` for `openai-api`
+  - `ANTHROPIC_API_KEY` for `anthropic-api`
+- can reuse existing Codex or Claude Code CLI auth for subscription-backed
+  turnkey runs
 - selects board-aware YAML skills
 - keeps local turnkey run state
 - supports freeform `run` mode and benchmark mode
@@ -719,14 +741,35 @@ the scoped pair.
 
 ### Turnkey Commands
 
-Set BYOK config first:
+Set turnkey provider config first.
+
+For native OpenAI API runs:
 
 ```bash
+export PYOCD_TURNKEY_PROVIDER=openai-api
 export OPENAI_API_KEY=...
 export PYOCD_TURNKEY_MODEL=...
 ```
 
-Or put those same values in the local gitignored `.env`.
+For native Anthropic API runs:
+
+```bash
+export PYOCD_TURNKEY_PROVIDER=anthropic-api
+export ANTHROPIC_API_KEY=...
+export PYOCD_TURNKEY_MODEL=...
+```
+
+For subscription-backed local CLI runs:
+
+```bash
+export PYOCD_TURNKEY_PROVIDER=codex-cli
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+
+export PYOCD_TURNKEY_PROVIDER=claude-cli
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+```
+
+Or put the same values in the local gitignored `.env`.
 
 Freeform verify/diagnose runs:
 
@@ -772,8 +815,9 @@ For the turnkey benchmark path, verify:
 
 - the same 12 benchmark cases are reused
 - each case runs from one turnkey CLI command
-- no Codex CLI dependency exists in the turnkey path
-- no manual `codex mcp add ...` step is needed
+- the API-backed paths do not require Codex CLI or manual MCP registration
+- the CLI-backed paths do not require manual MCP registration and inherit the
+  existing local Codex/Claude authentication state
 - known-good cases still reach full success
 - observability-fault cases still diagnose non-code/runtime-state problems
 - at least 6 of the 8 injected-bug cases reach full success

@@ -13,7 +13,7 @@ from pyocd_debug_mcp.brain.config import (
     load_provider_config,
     task_requires_code_fix,
 )
-from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_openai
+from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run one turnkey freeform task.")
     run_parser.add_argument("--board-id", required=True)
     run_parser.add_argument("--task", required=True)
+    run_parser.add_argument("--provider")
     run_parser.add_argument("--model")
     run_parser.add_argument("--port")
     run_parser.add_argument("--flash-artifact")
@@ -36,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_group = benchmark_parser.add_mutually_exclusive_group(required=True)
     benchmark_group.add_argument("--case-id")
     benchmark_group.add_argument("--suite")
+    benchmark_parser.add_argument("--provider")
     benchmark_parser.add_argument("--model")
     benchmark_parser.add_argument("--max-iters", type=int, default=12)
     benchmark_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
@@ -64,7 +66,7 @@ def _print_execution(execution: TurnkeyExecution) -> None:
 
 
 async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
-    provider = load_provider_config(args.model)
+    provider = load_provider_config(args.model, args.provider)
     if task_requires_code_fix(args.task) and not (args.workspace_root and args.build_command):
         raise BrainConfigError(
             "Refused [turnkey/missing-workspace-context]: this task appears to require a code fix, "
@@ -72,6 +74,7 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         )
     invocation = build_turnkey_invocation(
         mode="freeform",
+        provider=provider.provider,
         board_id=args.board_id,
         task=args.task,
         model=provider.model,
@@ -86,7 +89,7 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         allowed_edit_roots=("src",) if args.workspace_root and args.build_command else (),
         recover_allowed=True,
     )
-    return await run_turnkey_with_openai(invocation, api_key=provider.api_key)
+    return await run_turnkey_with_provider(invocation, provider_config=provider)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -98,10 +101,11 @@ def main(argv: list[str] | None = None) -> int:
             _print_execution(execution)
             return 0 if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"} else 1
 
-        provider = load_provider_config(args.model)
+        provider = load_provider_config(args.model, args.provider)
         if args.case_id:
             report = r12_benchmark.run_case(
                 args.case_id,
+                provider=provider.provider,
                 model=provider.model,
                 max_iters=args.max_iters,
                 serial_read_seconds=args.serial_read_seconds,
@@ -113,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
         reports = r12_benchmark.run_suite(
             args.suite,
+            provider=provider.provider,
             model=provider.model,
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,

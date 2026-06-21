@@ -11,8 +11,12 @@ from pathlib import Path
 import anyio
 
 from pyocd_debug_mcp.brain.actions import TurnkeyRunResult
-from pyocd_debug_mcp.brain.config import build_turnkey_invocation, load_provider_config
-from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_openai
+from pyocd_debug_mcp.brain.config import (
+    TurnkeyProviderKind,
+    build_turnkey_invocation,
+    load_provider_config,
+)
+from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
@@ -157,7 +161,8 @@ def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool
 async def run_case_async(
     case_id: str,
     *,
-    model: str,
+    provider: TurnkeyProviderKind | None = None,
+    model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
 ) -> r11.CaseRunReport:
@@ -167,11 +172,13 @@ async def run_case_async(
 
     prepared = r11._prepare_case(case)
     r11._prepare_target_state(prepared)
+    provider_config = load_provider_config(model, provider)
     invocation = build_turnkey_invocation(
         mode="benchmark",
+        provider=provider_config.provider,
         board_id=case.board_id,
         task=_render_case_task(case),
-        model=model,
+        model=provider_config.model,
         max_iters=max_iters,
         serial_read_seconds=serial_read_seconds,
         flash_artifact=prepared.flash_artifact,
@@ -187,8 +194,7 @@ async def run_case_async(
         allowed_edit_roots=case.allowed_actions.allowed_edit_roots,
         recover_allowed=case.allowed_actions.recover_allowed,
     )
-    provider_config = load_provider_config(model)
-    execution = await run_turnkey_with_openai(invocation, api_key=provider_config.api_key)
+    execution = await run_turnkey_with_provider(invocation, provider_config=provider_config)
 
     run_root = execution.run_root
     if execution.result.session_id is None or run_root is None:
@@ -283,13 +289,15 @@ async def run_case_async(
 def run_case(
     case_id: str,
     *,
-    model: str,
+    provider: TurnkeyProviderKind | None = None,
+    model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
 ) -> r11.CaseRunReport:
     return anyio.run(
         lambda: run_case_async(
             case_id,
+            provider=provider,
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
@@ -300,13 +308,15 @@ def run_case(
 def run_suite(
     suite_name: str,
     *,
-    model: str,
+    provider: TurnkeyProviderKind | None = None,
+    model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
 ) -> list[r11.CaseRunReport]:
     return [
         run_case(
             case.case_id,
+            provider=provider,
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
@@ -321,6 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     case_parser = subparsers.add_parser("case", help="Run exactly one turnkey benchmark case.")
     case_parser.add_argument("--case-id", required=True)
+    case_parser.add_argument("--provider", required=False)
     case_parser.add_argument("--model", required=False)
     case_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
     case_parser.add_argument(
@@ -331,6 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     suite_parser = subparsers.add_parser("suite", help="Run a named turnkey benchmark suite.")
     suite_parser.add_argument("--suite", required=True)
+    suite_parser.add_argument("--provider", required=False)
     suite_parser.add_argument("--model", required=False)
     suite_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
     suite_parser.add_argument(
@@ -343,10 +355,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    model = load_provider_config(args.model).model
+    provider_config = load_provider_config(args.model, getattr(args, "provider", None))
+    model = provider_config.model
+    provider = provider_config.provider
     if args.mode == "case":
         report = run_case(
             args.case_id,
+            provider=provider,
             model=model,
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
@@ -356,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
 
     reports = run_suite(
         args.suite,
+        provider=provider,
         model=model,
         max_iters=args.max_iters,
         serial_read_seconds=args.serial_read_seconds,

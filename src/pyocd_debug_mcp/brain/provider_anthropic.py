@@ -1,26 +1,23 @@
-"""OpenAI-backed decision provider for the turnkey brain."""
+"""Anthropic API-backed decision provider for the turnkey brain."""
 
 from __future__ import annotations
 
-from typing import Any, cast
-
+from anthropic import Anthropic
 import anyio
-from openai import OpenAI
 
-from pyocd_debug_mcp.brain.actions import TurnDecision
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 
 
 class ProviderResponseError(RuntimeError):
-    """Raised when the model does not return a valid structured action."""
+    """Raised when the Anthropic provider does not return a valid structured action."""
 
 
-class OpenAIDecisionProvider:
-    """Thin wrapper over the OpenAI Responses API."""
+class AnthropicDecisionProvider:
+    """Thin wrapper over the Anthropic Messages API."""
 
     def __init__(self, *, api_key: str, model: str) -> None:
-        self._client = OpenAI(api_key=api_key)
+        self._client = Anthropic(api_key=api_key)
         self._model = model
 
     async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
@@ -29,20 +26,14 @@ class OpenAIDecisionProvider:
     def _next_decision_sync(self, instructions: str, turn_prompt: str) -> ProviderTurn:
         last_error: Exception | None = None
         current_prompt = turn_prompt
-        response_format = {
-            "type": "json_schema",
-            "name": "turn_decision",
-            "strict": True,
-            "schema": TurnDecision.model_json_schema(),
-        }
         for _attempt in range(2):
-            response = self._client.responses.create(
+            response = self._client.messages.create(
                 model=self._model,
-                instructions=instructions,
-                input=current_prompt,
-                text=cast(Any, {"format": response_format}),
+                max_tokens=4096,
+                system=instructions,
+                messages=[{"role": "user", "content": current_prompt}],
             )
-            output_text = (response.output_text or "").strip()
+            output_text = _extract_text(response).strip()
             try:
                 decision = parse_turn_decision_json(output_text)
             except Exception as exc:  # noqa: BLE001 - preserve structured parse failures
@@ -59,5 +50,14 @@ class OpenAIDecisionProvider:
             )
 
         raise ProviderResponseError(
-            f"OpenAI provider did not return a valid turnkey action: {last_error}"
+            f"Anthropic provider did not return a valid turnkey action: {last_error}"
         )
+
+
+def _extract_text(response: object) -> str:
+    content = getattr(response, "content", ())
+    chunks: list[str] = []
+    for block in content:
+        if getattr(block, "type", None) == "text":
+            chunks.append(getattr(block, "text", ""))
+    return "".join(chunks)

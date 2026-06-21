@@ -19,8 +19,13 @@ This document is the implementation source of truth for `R12`.
 ## Frozen Product Decisions
 
 - The turnkey brain is a native Python client.
-- The turnkey brain is not a Codex CLI wrapper.
-- The first provider path is OpenAI-first with BYOK.
+- The turnkey brain is not a Codex CLI wrapper; it is a native Python client
+  that may optionally delegate decision turns to local coding CLIs.
+- The provider layer supports four backends:
+  - `openai-api`
+  - `anthropic-api`
+  - `codex-cli`
+  - `claude-cli`
 - The brain owns the orchestration loop directly.
 - The first CLI is dual-mode:
   - freeform task mode
@@ -31,7 +36,7 @@ This document is the implementation source of truth for `R12`.
 - The premium value in this pass is:
   - no user-authored prompt
   - no manual MCP registration
-  - no Codex CLI dependency
+  - no required Codex CLI dependency for the API-backed path
   - no explicit probe UID in the normal path
   - no explicit serial-port tuning in the normal path
 - The scoped pair remains `nrf52833dk + nucleo_l476rg`.
@@ -64,15 +69,34 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 
 ### Provider
 
-The first provider is OpenAI via the official Python SDK and the Responses API.
+The provider layer is now pluggable.
 
 Frozen provider rules:
 
-- `OPENAI_API_KEY` is required.
-- The model comes from `--model` or `PYOCD_TURNKEY_MODEL`.
-- The provider wrapper stays thin and isolated.
-- The model returns structured next-action outputs.
-- The model does not get raw unrestricted shell freedom.
+- `openai-api`
+  - native OpenAI SDK + Responses API
+  - requires `OPENAI_API_KEY`
+  - requires explicit model via `--model` or `PYOCD_TURNKEY_MODEL`
+- `anthropic-api`
+  - native Anthropic SDK + Messages API
+  - requires `ANTHROPIC_API_KEY`
+  - requires explicit model via `--model` or `PYOCD_TURNKEY_MODEL`
+- `codex-cli`
+  - shells out to local `codex exec`
+  - uses whatever auth Codex already has configured:
+    - ChatGPT/Codex subscription
+    - or Codex/OpenAI API-key login
+  - may use `--model` / `PYOCD_TURNKEY_MODEL` when explicitly supplied
+- `claude-cli`
+  - shells out to local `claude --print`
+  - uses whatever auth Claude Code already has configured:
+    - Claude subscription / OAuth token
+    - or `ANTHROPIC_API_KEY`
+  - may use `--model` / `PYOCD_TURNKEY_MODEL` when explicitly supplied
+- the provider wrapper stays isolated from the orchestration loop
+- every provider must return the same structured next-action shape
+- subscription-vs-API billing is owned by the chosen provider surface, not by
+  the R12 loop
 
 ### MCP Client
 
@@ -201,6 +225,7 @@ Required:
 
 Optional:
 
+- `--provider`
 - `--model`
 - `--port`
 - `--flash-artifact`
@@ -286,8 +311,8 @@ Frozen benchmark rules:
 The first turnkey benchmark proves product value through lower operator burden:
 
 - no custom prompt authoring
-- no `codex exec`
-- no `codex mcp add`
+- no required `codex exec`
+- no required `codex mcp add`
 - no explicit probe UID in the normal path
 - no explicit serial port in the normal path
 - no manual MCP server launch
@@ -334,16 +359,18 @@ uv run python -m tests.harness.stage1_smoke --board-id nrf52833dk
 Then validate:
 
 ```bash
-uv run pyocd-debug-brain run --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why." --model <model>
-uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why." --model <model>
-uv run pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004 --model <model>
+uv run pyocd-debug-brain run --provider openai-api --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why." --model <model>
+uv run pyocd-debug-brain run --provider anthropic-api --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why." --model <model>
+uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain benchmark --provider openai-api --suite pilot_v1_plus_b003_b004 --model <model>
 ```
 
 ## Out Of Scope For This Pass
 
 - no `nrf52840dk` critical-path work
 - no new MCP server tools
-- no provider abstraction beyond the first OpenAI wrapper
+- no additional provider surfaces beyond the four frozen backends above
 - no reconnect-tolerant benchmark accounting
 - no expanded benchmark corpus beyond the current 12 cases
 - no `R13+` work

@@ -4,6 +4,7 @@ import json
 from collections import deque
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, cast
 
 import anyio
 import pytest
@@ -13,11 +14,15 @@ from pyocd_debug_mcp.brain.actions import (
     FinalizeAction,
     ServerToolAction,
     TurnDecision,
+    TurnkeyRunResult,
     VerificationSnapshot,
 )
 from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation, load_provider_config
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey
+from pyocd_debug_mcp.brain.provider_claude_cli import _build_claude_command
+from pyocd_debug_mcp.brain.provider_codex_cli import _build_codex_command
 from pyocd_debug_mcp.brain.mcp_client import ToolTextResult
+from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.workspace import prepare_workspace_session
@@ -28,17 +33,13 @@ class FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> object:
+    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
         decision = self._decisions.popleft()
-        return type(
-            "ProviderTurn",
-            (),
-            {
-                "decision": decision,
-                "output_text": json.dumps(decision.model_dump(mode="json")),
-                "response_id": "resp-test",
-            },
-        )()
+        return ProviderTurn(
+            decision=decision,
+            output_text=json.dumps(decision.model_dump(mode="json")),
+            response_id="resp-test",
+        )
 
 
 class FakeClient:
@@ -60,7 +61,9 @@ class FakeClient:
 
 def test_load_provider_config_requires_api_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_MODEL", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_PROVIDER", raising=False)
 
     with pytest.raises(BrainConfigError):
         load_provider_config(None)
@@ -71,8 +74,42 @@ def test_load_provider_config_requires_api_key_and_model(monkeypatch: pytest.Mon
 
     monkeypatch.setenv("PYOCD_TURNKEY_MODEL", "gpt-test")
     config = load_provider_config(None)
+    assert config.provider == "openai-api"
     assert config.api_key == "test-key"
     assert config.model == "gpt-test"
+
+
+def test_load_provider_config_supports_anthropic_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("PYOCD_TURNKEY_PROVIDER", "anthropic-api")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-key")
+    monkeypatch.setenv("PYOCD_TURNKEY_MODEL", "claude-sonnet-test")
+
+    config = load_provider_config(None)
+    assert config.provider == "anthropic-api"
+    assert config.api_key == "anth-key"
+    assert config.model == "claude-sonnet-test"
+
+
+def test_load_provider_config_supports_cli_providers_without_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_MODEL", raising=False)
+    monkeypatch.setenv("PYOCD_TURNKEY_PROVIDER", "codex-cli")
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    codex = load_provider_config(None)
+    assert codex.provider == "codex-cli"
+    assert codex.api_key is None
+    assert codex.model is None
+
+    monkeypatch.setenv("PYOCD_TURNKEY_PROVIDER", "claude-cli")
+    claude = load_provider_config(None)
+    assert claude.provider == "claude-cli"
+    assert claude.api_key is None
+    assert claude.model is None
 
 
 def test_skill_loader_selects_common_and_family_skills_deterministically() -> None:
@@ -124,6 +161,7 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
     invocation = build_turnkey_invocation(
         mode="freeform",
+        provider="openai-api",
         board_id="nrf52833dk",
         task="Verify this reference firmware is healthy and explain why.",
         model="gpt-test",
@@ -173,7 +211,11 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     )
 
     execution = anyio.run(
-        lambda: run_turnkey(invocation, provider=provider, client_factory=client_factory)
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, client_factory),
+        )
     )
 
     assert execution.result.final_status == "healthy_confirmed"
@@ -213,10 +255,10 @@ def test_r12_benchmark_records_case_artifacts(
     (run_root / "logs").mkdir(parents=True)
     (run_root / "run-metadata").mkdir(parents=True)
 
-    monkeypatch.setattr(r12_benchmark.r11, "_prepare_case", lambda _case: prepared)
-    monkeypatch.setattr(r12_benchmark.r11, "_prepare_target_state", lambda _prepared: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
     monkeypatch.setattr(
-        r12_benchmark.r11,
+        r11,
         "_run_final_verification",
         lambda _prepared: r11.VerificationSummary(
             flash_ok=True,
@@ -228,20 +270,27 @@ def test_r12_benchmark_records_case_artifacts(
         ),
     )
     monkeypatch.setattr(
-        r12_benchmark.r11,
+        r11,
         "_changed_files",
         lambda _before, _after: (),
     )
     monkeypatch.setattr(
         r12_benchmark,
         "load_provider_config",
-        lambda _model: type("Cfg", (), {"api_key": "key", "model": "gpt-test"})(),
+        lambda *_args: type(
+            "Cfg",
+            (),
+            {"api_key": "key", "model": "gpt-test", "provider": "openai-api"},
+        )(),
     )
-    async def fake_run_turnkey_with_openai(_invocation: object, *, api_key: str) -> TurnkeyExecution:
+    async def fake_run_turnkey_with_provider(
+        _invocation: object, *, provider_config: object
+    ) -> TurnkeyExecution:
         return TurnkeyExecution(
             invocation=replace(
                 build_turnkey_invocation(
                     mode="benchmark",
+                    provider="openai-api",
                     board_id=case.board_id,
                     task="task",
                     model="gpt-test",
@@ -251,7 +300,7 @@ def test_r12_benchmark_records_case_artifacts(
                 case_id=case.case_id,
             ),
             board=board,
-            result=r12_benchmark.TurnkeyRunResult(
+            result=TurnkeyRunResult(
                 case_id=case.case_id,
                 board_id=case.board_id,
                 session_id=run_root.name,
@@ -288,12 +337,46 @@ def test_r12_benchmark_records_case_artifacts(
             brain_trace=(),
         )
 
-    monkeypatch.setattr(r12_benchmark, "run_turnkey_with_openai", fake_run_turnkey_with_openai)
+    monkeypatch.setattr(r12_benchmark, "run_turnkey_with_provider", fake_run_turnkey_with_provider)
 
-    report = anyio.run(lambda: r12_benchmark.run_case_async(case.case_id, model="gpt-test"))
+    report = anyio.run(
+        lambda: r12_benchmark.run_case_async(
+            case.case_id,
+            provider="openai-api",
+            model="gpt-test",
+        )
+    )
 
     assert report.score_report.score == 100
     assert (run_root / "run-metadata" / "benchmark_case.json").exists()
     assert (run_root / "run-metadata" / "benchmark_result.json").exists()
     assert (run_root / "run-metadata" / "score.json").exists()
     assert (run_root / "run-metadata" / "firmware_identity.json").exists()
+
+
+def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path) -> None:
+    command = _build_codex_command(
+        model="gpt-5.5",
+        working_dir=tmp_path,
+        schema_path=tmp_path / "schema.json",
+        output_path=tmp_path / "out.json",
+    )
+    assert command[:2] == ["codex", "exec"]
+    assert "--output-schema" in command
+    assert "-o" in command
+    assert "--model" in command
+    assert "gpt-5.5" in command
+    assert "-C" in command
+    assert str(tmp_path) in command
+
+
+def test_claude_cli_command_supports_optional_model() -> None:
+    command = _build_claude_command(
+        model="claude-sonnet-4-20250514",
+        instructions="system",
+        prompt="prompt",
+    )
+    assert command[:4] == ["claude", "--print", "--output-format", "text"]
+    assert "--append-system-prompt" in command
+    assert "--model" in command
+    assert "claude-sonnet-4-20250514" in command

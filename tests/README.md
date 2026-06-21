@@ -28,7 +28,12 @@ Tracked benchmark metadata:
 Current benchmark split:
 
 - `R11`: BYO-agent benchmark path through Codex CLI
-- `R12`: turnkey benchmark path through the repo-owned native Python brain
+- `R12`: turnkey benchmark path through the repo-owned native Python brain,
+  with selectable decision backends:
+  - `openai-api`
+  - `anthropic-api`
+  - `codex-cli`
+  - `claude-cli`
 
 Both paths currently reuse the same 12-case corpus:
 

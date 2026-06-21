@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
@@ -26,9 +26,10 @@ from pyocd_debug_mcp.brain.actions import (
     TurnkeyRunResult,
     VerificationSnapshot,
 )
-from pyocd_debug_mcp.brain.config import TurnkeyInvocation
+from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
-from pyocd_debug_mcp.brain.provider_openai import OpenAIDecisionProvider, ProviderTurn
+from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
+from pyocd_debug_mcp.brain.provider_types import DecisionProvider, ProviderTurn
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
@@ -43,10 +44,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
-
-
-class DecisionProvider(Protocol):
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn: ...
 
 
 class TurnkeyLoopError(RuntimeError):
@@ -105,6 +102,7 @@ def _build_request_payload(
         "task": invocation.task,
         "case_id": invocation.case_id,
         "case_kind": invocation.case_kind,
+        "provider": invocation.provider,
         "model": invocation.model,
         "max_iters": invocation.max_iters,
         "serial_read_seconds": invocation.serial_read_seconds,
@@ -134,6 +132,8 @@ def _format_board_facts(board: BoardConfig, invocation: TurnkeyInvocation) -> st
         f"test_read_address=0x{board.test_addr:08X}",
         f"recover_mode={board.recover_mode or '(none)'}",
         f"requires_recover_validation={board.requires_recover_validation}",
+        f"provider={invocation.provider}",
+        f"model={invocation.model or '(provider default)'}",
     ]
     if board.expected_uart_substring:
         lines.append(f"default_uart_substring={board.expected_uart_substring}")
@@ -779,5 +779,14 @@ async def run_turnkey(
 
 
 async def run_turnkey_with_openai(invocation: TurnkeyInvocation, *, api_key: str) -> TurnkeyExecution:
-    provider = OpenAIDecisionProvider(api_key=api_key, model=invocation.model)
+    config = BrainProviderConfig(provider="openai-api", api_key=api_key, model=invocation.model)
+    return await run_turnkey_with_provider(invocation, provider_config=config)
+
+
+async def run_turnkey_with_provider(
+    invocation: TurnkeyInvocation,
+    *,
+    provider_config: BrainProviderConfig,
+) -> TurnkeyExecution:
+    provider = create_decision_provider(provider_config)
     return await run_turnkey(invocation, provider=provider)
