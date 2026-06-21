@@ -22,7 +22,7 @@ Source of truth for the app:
 Build recipe:
 
 ```bash
-./firmware/nucleo_l476rg/reference/build_reference.sh
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg
 ```
 
 After changing the tracked UART path or overlay for this board, rebuild the
@@ -32,13 +32,13 @@ artifacts are refreshed.
 
 What that script does:
 
-- bootstraps a small isolated `west + pyelftools` venv under
-  `~/.cache/firmware-cli-zephyr-west` by default
-- uses the Zephyr workspace at `~/zephyrproject` by default
-- requires a usable Zephyr SDK installation
+- uses the repo-owned `pyocd-zephyr-build` helper
+- reuses an existing Zephyr workspace or SDK when one is already present
+- otherwise bootstraps a managed upstream Zephyr workspace plus SDK in the
+  local cache
 - builds the app for `nucleo_l476rg`
-- cleans `reference/build/` back down to the canonical artifact surface before
-  copying outputs in
+- preserves the live Zephyr build tree inside `reference/build/` so repeated
+  agent rebuilds stay fast and remain under the no-hang watchdog
 - copies `zephyr/zephyr.elf` to the canonical `firmware.elf` name
 - copies `zephyr/zephyr.hex` to `firmware.hex` when present
 - defines one known Stage 1 symbol contract in the reference app:
@@ -66,11 +66,24 @@ If the benchmark corpus was changed too, rebuild the STM32 bug artifacts before
 running the expanded `R11` corpus:
 
 ```bash
-./firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build_bug.sh
-./firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build_bug.sh
-./firmware/nucleo_l476rg/bugs/b003__silent_uart/build_bug.sh
-./firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build_bug.sh
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/src --build-dir firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/bugs/b002__wrong_known_value/src --build-dir firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/bugs/b003__silent_uart/src --build-dir firmware/nucleo_l476rg/bugs/b003__silent_uart/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/src --build-dir firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build --board nucleo_l476rg
 ```
+
+The legacy `build_reference.sh` / `build_bug.sh` wrappers still exist for bash
+users, but they now delegate to the same `pyocd-zephyr-build` helper. `NCS` is
+optional: this board can rebuild either by reusing an existing `NCS` workspace
+or by letting the helper bootstrap upstream Zephyr itself.
+
+Bench diagnosis note:
+
+- if Stage 0 flash + SWD access pass but UART is still silent on Windows,
+  rebuild and flash upstream Zephyr `samples/hello_world` for
+  `nucleo_l476rg`
+- if that control sample is also silent, treat the failure as a bench UART
+  problem on the current host/board pair rather than a repo firmware regression
 
 Verified:
 
@@ -103,8 +116,8 @@ Verified:
 - The tracked STM32 reference and bug apps now bind their UART path explicitly
   to `USART2` and also pin Zephyr's chosen console to `usart2` through a shared
   overlay under `firmware/nucleo_l476rg/common/`.
-  This removes reliance on implicit `printk` routing when the STM32 artifacts
-  are rebuilt on another host.
+  The app-side UART helper now writes through the standard Zephyr console path
+  (`printk`) while keeping the board-level route fixed to `USART2`.
 
 Out of scope for this board package:
 

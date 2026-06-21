@@ -58,6 +58,9 @@ These scripts can:
 - repair or install the canonical repo environment
 - install or repair vendor helper tooling where automation exists
 - run `host_bootstrap.py --install-packs`
+- optionally provision the local Zephyr workspace and SDK needed for
+  repo-owned firmware rebuilds when you pass `-EnsureZephyrBuildEnv` on Windows
+  or `--ensure-zephyr-build-env` on macOS
 
 If the selected board needs Nordic `nrfjprog` and the Windows script cannot
 complete that installer because the host requires admin approval, do the
@@ -98,6 +101,56 @@ uv run pyocd-debug-mcp
 ```
 
 Windows PowerShell uses the same `uv run ...` commands from the repo root.
+
+### Rebuild-capable Zephyr bootstrap
+
+If the host must let an agent edit repo firmware, rebuild it, and flash it
+without assuming preinstalled `NCS`, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nucleo_l476rg -EnsureZephyrBuildEnv
+uv run pyocd-zephyr-build --ensure-only
+```
+
+```bash
+bash ./setup_host.sh --board-id nucleo_l476rg --ensure-zephyr-build-env
+uv run pyocd-zephyr-build --ensure-only
+```
+
+The helper resolves build prerequisites in this order:
+
+- reuse `ZEPHYR_WORKSPACE_DIR`
+- reuse the workspace implied by `ZEPHYR_BASE`
+- reuse a current `west` workspace above the working directory
+- reuse `~/zephyrproject`
+- reuse a detected `NCS` workspace when one already exists
+- otherwise bootstrap a managed upstream Zephyr workspace pinned to `v4.3.0`
+
+SDK resolution follows the same policy:
+
+- reuse `ZEPHYR_SDK_INSTALL_DIR`
+- reuse a workspace-adjacent SDK such as `ncs/toolchains/.../opt/zephyr-sdk`
+- reuse a standard Zephyr SDK location already on disk
+- otherwise install a managed SDK into the local cache with `west sdk install`
+
+Current support boundary:
+
+- Windows: managed bootstrap supported
+- macOS Apple Silicon: managed bootstrap supported
+- macOS Intel (`x86_64`): current Zephyr releases do not support managed SDK
+  install, so point `ZEPHYR_SDK_INSTALL_DIR` at a preinstalled older supported
+  SDK if you need local rebuilds on that host
+
+Reference build commands:
+
+```bash
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nrf52833dk/reference/src --build-dir firmware/nrf52833dk/reference/build --board nrf52833dk/nrf52833
+```
+
+The helper keeps the Zephyr build tree in place and defaults to incremental
+`--pristine auto` rebuilds. Use `--pristine always` only when an agent needs a
+forced clean reconfigure.
 
 ### What each step does
 

@@ -15,3 +15,4 @@ def test_server_module_import_matches_mcp_dev_style() -> None:
 
     assert hasattr(module, "mcp")
     assert hasattr(module, "connect")
+    assert hasattr(module, "read_symbol_u32")

@@ -35,7 +35,7 @@ SUITES_PATH = CASES_ROOT / "suites.yaml"
 RESULT_SCHEMA_PATH = CASES_ROOT / "r11_result_schema.json"
 WORKSPACES_ROOT = RUNS_ROOT / "_r11_workspaces"
 DEFAULT_SERIAL_READ_SECONDS = 3.0
-DEFAULT_CODEX_TIMEOUT_SECONDS = 180
+DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
 DEFAULT_SCORING_PROFILE = "r11_default_v1"
 FULL_MCP_TOOL_SURFACE = (
     "connect",
@@ -50,6 +50,7 @@ FULL_MCP_TOOL_SURFACE = (
     "write_core_register",
     "read_memory",
     "read_memory_block",
+    "read_symbol_u32",
     "write_memory",
     "set_breakpoint",
     "remove_breakpoint",
@@ -442,6 +443,15 @@ def _prepare_workspace(case: BenchmarkCase) -> PreparedWorkspace:
     snapshot_root = workspace_base / "snapshot"
     workspace_root.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_root, workspace_root)
+    firmware_root = REPO_ROOT / "firmware"
+    try:
+        relative_source_root = source_root.relative_to(firmware_root)
+    except ValueError:
+        relative_source_root = None
+    if relative_source_root is not None and relative_source_root.parts:
+        common_root = firmware_root / relative_source_root.parts[0] / "common"
+        if common_root.is_dir():
+            shutil.copytree(common_root, workspace_root / "common")
     shutil.copytree(workspace_root, snapshot_root)
     return PreparedWorkspace(
         source_root=source_root,
@@ -468,7 +478,11 @@ def _resolve_probe_uid(board: BoardConfig) -> str:
 
 
 def _run_build_command(command: str, workspace_root: Path) -> None:
-    exit_code, stdout, stderr = _run_cmd(["bash", "-lc", command], cwd=workspace_root)
+    if sys.platform == "win32":
+        cmd = ["cmd.exe", "/d", "/s", "/c", command]
+    else:
+        cmd = ["bash", "-lc", command]
+    exit_code, stdout, stderr = _run_cmd(cmd, cwd=workspace_root)
     if exit_code != 0:
         raise RuntimeError(
             f"Build command failed in {workspace_root}: {command}\nstdout:\n{stdout}\nstderr:\n{stderr}"
@@ -551,12 +565,18 @@ def _render_prompt(case: BenchmarkCase) -> str:
         board_id=case.board_id,
         case_id=case.case_id,
         build_command=case.allowed_actions.build_command or "(no local rebuild expected)",
+        symbol_artifact=case.artifacts.symbol_artifact,
         uart_substring=case.expected_observables.uart_substring,
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
     )
     return (
         f"{case_prompt.rstrip()}\n\n"
+        "Verification hints:\n\n"
+        f"- symbol artifact path: `{case.artifacts.symbol_artifact}`\n"
+        "- prefer `read_serial(expected_text=..., reset_on_open=true)` when you need fresh boot text\n"
+        "- verify the symbol directly with "
+        f"`read_symbol_u32(elf_path=\"{case.artifacts.symbol_artifact}\", symbol_name=\"{case.expected_observables.symbol_name}\")`\n\n"
         "Structured result contract:\n\n"
         f"- return `case_id` exactly as `{case.case_id}`\n"
         f"- return `board_id` exactly as `{case.board_id}`\n"
@@ -580,7 +600,13 @@ def _ensure_codex_registration() -> None:
     )
 
 
-def _run_codex(case: BenchmarkCase, workspace_root: Path, prompt_text: str) -> CodexRunArtifacts:
+def _run_codex(
+    case: BenchmarkCase,
+    workspace_root: Path,
+    prompt_text: str,
+    *,
+    timeout_seconds: float = DEFAULT_CODEX_TIMEOUT_SECONDS,
+) -> CodexRunArtifacts:
     before_dirs = set(_session_dirs())
     temp_result_path = workspace_root / ".r11_codex_result.json"
     prompt_path = workspace_root / ".r11_prompt.txt"
@@ -604,7 +630,7 @@ def _run_codex(case: BenchmarkCase, workspace_root: Path, prompt_text: str) -> C
     exit_code, stdout, stderr = _run_cmd(
         cmd,
         cwd=REPO_ROOT,
-        timeout_seconds=DEFAULT_CODEX_TIMEOUT_SECONDS,
+        timeout_seconds=timeout_seconds,
     )
     after_dirs = _session_dirs()
     new_names = sorted(set(after_dirs) - before_dirs)
@@ -1044,7 +1070,11 @@ def _record_case_artifacts(
     )
 
 
-def run_case(case_id: str) -> CaseRunReport:
+def run_case(
+    case_id: str,
+    *,
+    codex_timeout_seconds: float = DEFAULT_CODEX_TIMEOUT_SECONDS,
+) -> CaseRunReport:
     _ensure_codex_registration()
     case = load_case(case_id)
     if case.scoring_profile != DEFAULT_SCORING_PROFILE:
@@ -1053,7 +1083,12 @@ def run_case(case_id: str) -> CaseRunReport:
     _ensure_stage1_preflight(prepared.case.board_id, prepared.probe_uid)
     _prepare_target_state(prepared)
     prompt_text = _render_prompt(case)
-    codex_run = _run_codex(case, prepared.workspace.workspace_root, prompt_text)
+    codex_run = _run_codex(
+        case,
+        prepared.workspace.workspace_root,
+        prompt_text,
+        timeout_seconds=codex_timeout_seconds,
+    )
 
     try:
         agent_result = _parse_agent_result(codex_run.result_path)
@@ -1213,17 +1248,33 @@ def build_parser() -> argparse.ArgumentParser:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--case-id", help="Run exactly one benchmark case.")
     group.add_argument("--suite", help="Run a named benchmark suite.")
+    parser.add_argument(
+        "--codex-timeout-seconds",
+        type=float,
+        default=DEFAULT_CODEX_TIMEOUT_SECONDS,
+        help=(
+            "Per-case timeout for the embedded `codex exec` step. "
+            "Defaults to 45s so the runner fails cleanly before the bench-level "
+            "60s hang boundary."
+        ),
+    )
     return parser
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.codex_timeout_seconds <= 0:
+        parser.error("--codex-timeout-seconds must be greater than 0")
     if args.case_id:
-        report = run_case(args.case_id)
+        report = run_case(args.case_id, codex_timeout_seconds=args.codex_timeout_seconds)
         print_case_summary(report)
         return 0 if report.score_report.outcome_label == "full_success" else 1
 
-    reports = [run_case(case.case_id) for case in load_suite(args.suite)]
+    reports = [
+        run_case(case.case_id, codex_timeout_seconds=args.codex_timeout_seconds)
+        for case in load_suite(args.suite)
+    ]
     for report in reports:
         print_case_summary(report)
     print_suite_summary(args.suite, reports)

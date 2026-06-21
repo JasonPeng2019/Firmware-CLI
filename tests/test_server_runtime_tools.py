@@ -10,6 +10,7 @@ from pyocd_debug_mcp.board_config import BoardConfig
 from pyocd_debug_mcp.serial_resolver import SerialPortInfo
 from pyocd_debug_mcp.services.convergence_watcher import UART_TOOL
 from pyocd_debug_mcp.services.session_runtime import InMemorySessionStore
+from pyocd_debug_mcp.services.symbols import ResolvedSymbol
 from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult
 
 
@@ -274,6 +275,40 @@ def test_read_serial_uses_explicit_expected_text(monkeypatch) -> None:
 
     assert seen["expected_text"] == "boot ok"
     assert "expected='boot ok'" in result
+
+
+def test_read_symbol_u32_returns_resolved_target_value(monkeypatch, tmp_path: Path) -> None:
+    board = make_board()
+    handle = make_handle(board)
+    artifact = tmp_path / "firmware.elf"
+    artifact.write_text("elf", encoding="utf-8")
+
+    server._session_handle = handle
+    seen: dict[str, object] = {}
+
+    def fake_read_symbol(handle_arg, elf_path_arg, symbol_name_arg):
+        seen["handle"] = handle_arg
+        seen["elf_path"] = elf_path_arg
+        seen["symbol_name"] = symbol_name_arg
+        return ResolvedSymbol(
+            name="stage1_known_value",
+            address=0x20000010,
+            size=4,
+            type="OBJECT",
+            value_u32=0x1234ABCD,
+        )
+
+    monkeypatch.setattr(server, "read_symbol_u32_from_elf", fake_read_symbol)
+
+    result = server.read_symbol_u32(str(artifact), "stage1_known_value")
+
+    assert seen["handle"] is handle
+    assert seen["elf_path"] == str(artifact)
+    assert seen["symbol_name"] == "stage1_known_value"
+    assert result == (
+        f"Symbol stage1_known_value from {artifact.resolve()} "
+        "@0x20000010 size=4 type=OBJECT value_u32=0x1234ABCD"
+    )
 
 
 def test_read_serial_requires_loaded_board() -> None:

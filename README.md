@@ -121,6 +121,7 @@ Firmware-CLI/
 |       |-- reference_artifacts.py
 |       |-- serial_resolver.py
 |       |-- server.py
+|       |-- zephyr_build.py
 |       `-- target_errors.py
 |-- scratch/
 |   `-- README.md
@@ -223,6 +224,17 @@ On macOS, the preferred host bootstrap entry point is:
 bash ./setup_host.sh --board-id nrf52833dk
 ```
 
+When the machine must also rebuild the repo-owned Zephyr firmware locally, opt
+into the managed Zephyr bootstrap during host setup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nucleo_l476rg -EnsureZephyrBuildEnv
+```
+
+```bash
+bash ./setup_host.sh --board-id nucleo_l476rg --ensure-zephyr-build-env
+```
+
 Run host bootstrap for all tracked boards:
 
 ```bash
@@ -281,12 +293,56 @@ Start the MCP server:
 uv run pyocd-debug-mcp
 ```
 
+## Zephyr Rebuilds
+
+Repo-owned firmware rebuilds now go through one cross-platform entrypoint:
+
+```bash
+uv run pyocd-zephyr-build --ensure-only
+```
+
+What it does:
+
+- reuses an existing Zephyr workspace when `ZEPHYR_WORKSPACE_DIR`,
+  `ZEPHYR_BASE`, `~/zephyrproject`, or a detected NCS workspace is already
+  present
+- otherwise bootstraps a managed upstream Zephyr workspace under the local
+  cache and pins it to `zephyrproject-rtos/zephyr` tag `v4.3.0`
+- reuses `ZEPHYR_SDK_INSTALL_DIR` or an existing SDK when one is already on the
+  machine
+- otherwise installs the Zephyr SDK toolchain component it needs into the local
+  cache through `west sdk install`
+
+Direct board builds are then:
+
+```bash
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nrf52833dk/reference/src --build-dir firmware/nrf52833dk/reference/build --board nrf52833dk/nrf52833
+uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840
+```
+
+The helper preserves the live Zephyr build tree and defaults to incremental
+`west build -p auto` behavior so repeated agent rebuilds stay fast. Pass
+`--pristine always` when a full clean reconfigure is actually required.
+
+The per-board `build_reference.sh` / `build_bug.sh` wrappers now delegate to
+that same helper. `NCS` is optional: if it is already installed, the helper
+reuses it; if not, the helper can provision a managed upstream-Zephyr build
+path itself.
+
+Current limitation:
+
+- managed Zephyr SDK install is not supported on macOS `x86_64` by current
+  Zephyr releases, so Intel Macs must point `ZEPHYR_SDK_INSTALL_DIR` at a
+  preinstalled older supported SDK or use another supported host
+
 ## Docs
 
 - Setup and bootstrap: [init.md](./init.md)
 - Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
+- Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)

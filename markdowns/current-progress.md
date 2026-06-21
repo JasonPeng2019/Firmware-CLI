@@ -620,6 +620,10 @@ Runner guardrails:
 - if that preflight fails, the case aborts immediately with a host-bench error
   instead of spending minutes inside a non-converging Codex run
 - Codex execution is now time-bounded so a stuck case cannot hang indefinitely
+- the runner now defaults the embedded `codex exec` step to `45s`, which keeps
+  each case inside the bench-level `60s` hang boundary; override with
+  `--codex-timeout-seconds <seconds>` only when a deliberately longer run is
+  acceptable
 
 Single-case entrypoint:
 

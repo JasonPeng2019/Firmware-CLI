@@ -8,7 +8,11 @@ Rules:
 - connect with `connect(board_id="{board_id}")`
 - do not use a hard-coded probe UID
 - treat the current workspace as read-only
+- the runner already prepared the target state; do not rebuild or reflash unless
+  the MCP evidence proves the prepared state is wrong
 - do not edit source files
+- do not run local shell discovery commands such as `rg`, `ls`, or
+  `Get-ChildItem`; use the MCP tools directly for verification
 - do not use `unlock_recover` unless the evidence clearly justifies it
 - use MCP tools rather than guessing from static files alone
 

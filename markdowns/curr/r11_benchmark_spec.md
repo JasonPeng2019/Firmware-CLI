@@ -251,6 +251,14 @@ The canonical entrypoint is:
 uv run python -m tests.harness.r11_benchmark --suite pilot_v1
 ```
 
+Operational timeout contract:
+
+- the runner must expose `--codex-timeout-seconds`
+- the default embedded `codex exec` budget must stay below the bench-level
+  `60s` hang boundary; the tracked default is `45s`
+- longer time budgets are opt-in only, so automated agents can fail cleanly
+  instead of being killed externally without benchmark artifacts
+
 Required capabilities:
 
 - load and validate `case.yaml`

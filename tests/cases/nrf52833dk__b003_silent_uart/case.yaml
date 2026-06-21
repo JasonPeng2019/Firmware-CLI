@@ -20,7 +20,7 @@ allowed_actions:
   code_edits_allowed: true
   allowed_edit_roots:
     - src
-  build_command: ./build_bug.sh
+  build_command: uv run pyocd-zephyr-build --app-dir src --build-dir build --board nrf52833dk/nrf52833
   recover_allowed: false
 success_criteria:
   expected_classification: code_bug

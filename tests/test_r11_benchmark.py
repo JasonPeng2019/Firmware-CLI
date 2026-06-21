@@ -255,6 +255,19 @@ def test_prepare_workspace_keeps_tracked_bug_fixture_unchanged(
     assert copied_source.read_text(encoding="utf-8") == "changed\n"
 
 
+def test_prepare_workspace_copies_board_common_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(r11, "WORKSPACES_ROOT", tmp_path / "workspaces")
+    case = r11.load_case("nucleo_l476rg__b001_wrong_boot_text")
+
+    workspace = r11._prepare_workspace(case)
+
+    assert (workspace.workspace_root / "common" / "nucleo_l476rg.overlay").exists()
+    assert (workspace.workspace_root / "common" / "stage1_uart.h").exists()
+
+
 def test_stage1_preflight_caches_success(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str, float]] = []
     monkeypatch.setattr(r11, "_STAGE1_PREFLIGHT_CACHE", {})
@@ -427,11 +440,82 @@ def test_run_codex_uses_noninteractive_full_access_flags(
     assert run.new_session_dirs == (tmp_path / "20260620T000000Z-deadbeef",)
 
 
+def test_run_codex_honors_explicit_timeout_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        r11,
+        "_session_dirs",
+        lambda: {"20260620T000000Z-deadbeef": tmp_path / "20260620T000000Z-deadbeef"},
+    )
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
+    ) -> tuple[int, str, str]:
+        captured["timeout_seconds"] = timeout_seconds
+        return 0, '{"type":"done"}\n', ""
+
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+
+    r11._run_codex(case, workspace_root, "prompt text", timeout_seconds=42.0)
+
+    assert captured["timeout_seconds"] == 42.0
+
+
+def test_run_build_command_uses_cmd_on_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
+    ) -> tuple[int, str, str]:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["timeout_seconds"] = timeout_seconds
+        return 0, "", ""
+
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+    monkeypatch.setattr(r11.sys, "platform", "win32")
+
+    r11._run_build_command("uv run pyocd-zephyr-build --ensure-only", tmp_path)
+
+    assert captured["cmd"] == [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "uv run pyocd-zephyr-build --ensure-only",
+    ]
+    assert captured["cwd"] == tmp_path
+
+
+def test_build_parser_exposes_codex_timeout_override() -> None:
+    parser = r11.build_parser()
+
+    args = parser.parse_args(["--case-id", "nucleo_l476rg__k001_reference_green"])
+
+    assert args.codex_timeout_seconds == r11.DEFAULT_CODEX_TIMEOUT_SECONDS
+
+
 def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
     case = r11.load_case("nucleo_l476rg__k001_reference_green")
 
     prompt = r11._render_prompt(case)
 
+    assert "do not run local shell discovery commands" in prompt
+    assert "the runner already prepared the target state" in prompt
+    assert 'read_symbol_u32(elf_path="build/firmware.elf", symbol_name="stage1_known_value")' in prompt
     assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
     assert "`board_id` exactly as `nucleo_l476rg`" in prompt
     assert "do not derive `case_id` from the workspace directory name" in prompt
@@ -492,7 +576,7 @@ def test_run_case_fails_when_no_session_directory_is_created(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=1,
             stdout_text="",
             stderr_text="failed",
@@ -578,7 +662,7 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=0,
             stdout_text='{"type":"done"}\n',
             stderr_text="",
@@ -697,7 +781,7 @@ def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_d
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=0,
             stdout_text='{"type":"done"}\n',
             stderr_text="",
