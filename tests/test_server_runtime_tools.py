@@ -325,19 +325,24 @@ def test_unlock_recover_requires_active_session() -> None:
     )
 
 
-def test_connect_lets_jlink_backend_choose_probe_when_uid_is_implicit(monkeypatch) -> None:
+def test_connect_autoresolves_jlink_probe_on_non_windows_when_uid_is_implicit(
+    monkeypatch,
+) -> None:
     board = make_board()
     seen: dict[str, object] = {}
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
     monkeypatch.delenv("PYOCD_TARGET", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(server, "resolve_board_config", lambda board_id, board_config: board)
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("resolve_probe_for_board should not run for implicit J-Link selection")
-        ),
+        lambda *args, **kwargs: type(
+            "Resolution",
+            (),
+            {"probe": type("Probe", (), {"uid": "jlink-123"})()},
+        )(),
     )
 
     def fake_open_session(*, board, unique_id, target):
@@ -357,10 +362,10 @@ def test_connect_lets_jlink_backend_choose_probe_when_uid_is_implicit(monkeypatc
     result = server.connect(board_id="nrf52833dk")
 
     assert seen["board"] is board
-    assert seen["unique_id"] is None
+    assert seen["unique_id"] == "jlink-123"
     assert seen["target"] == "nrf52833"
     assert "Connected to board" in result
-    assert "probe (unknown)" in result
+    assert "probe jlink-123" in result
     assert "[board config: nrf52833dk]" in result
     assert "session_id=" in result
     assert server._runtime_session is not None

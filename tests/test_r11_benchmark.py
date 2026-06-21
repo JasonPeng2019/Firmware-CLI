@@ -21,7 +21,7 @@ def test_all_r11_case_manifests_load() -> None:
         if (case_dir / "case.yaml").exists():
             cases.append(r11.load_case(case_dir.name))
 
-    assert len(cases) == 8
+    assert len(cases) == 12
     assert {case.scoring_profile for case in cases} == {r11.DEFAULT_SCORING_PROFILE}
 
 
@@ -38,6 +38,40 @@ def test_pilot_suite_loads_in_frozen_order() -> None:
         "nucleo_l476rg__f001_halted_target_silent_uart",
         "nrf52833dk__f001_halted_target_silent_uart",
     ]
+
+
+def test_expanded_pilot_suite_loads_in_frozen_order() -> None:
+    cases = r11.load_suite("pilot_v1_plus_b003_b004")
+
+    assert [case.case_id for case in cases] == [
+        "nucleo_l476rg__k001_reference_green",
+        "nrf52833dk__k001_reference_green",
+        "nucleo_l476rg__b001_wrong_boot_text",
+        "nrf52833dk__b001_wrong_boot_text",
+        "nucleo_l476rg__b002_wrong_known_value",
+        "nrf52833dk__b002_wrong_known_value",
+        "nucleo_l476rg__f001_halted_target_silent_uart",
+        "nrf52833dk__f001_halted_target_silent_uart",
+        "nucleo_l476rg__b003_silent_uart",
+        "nrf52833dk__b003_silent_uart",
+        "nucleo_l476rg__b004_dual_signal_regression",
+        "nrf52833dk__b004_dual_signal_regression",
+    ]
+
+
+@pytest.mark.parametrize(
+    "case_id",
+    [
+        "nucleo_l476rg__b003_silent_uart",
+        "nrf52833dk__b003_silent_uart",
+        "nucleo_l476rg__b004_dual_signal_regression",
+        "nrf52833dk__b004_dual_signal_regression",
+    ],
+)
+def test_new_case_manifests_keep_default_scoring_profile(case_id: str) -> None:
+    case = r11.load_case(case_id)
+
+    assert case.scoring_profile == r11.DEFAULT_SCORING_PROFILE
 
 
 def test_r11_result_schema_golden_samples_parse() -> None:
@@ -82,7 +116,7 @@ def test_score_diagnosed_only_partial_case() -> None:
 
     score = r11._score_case(case, result, verification, ())
 
-    assert score.score == 70
+    assert score.score == 60
     assert score.outcome_label == "partial_success"
 
 
@@ -148,6 +182,44 @@ def test_score_wrong_diagnosis_cap() -> None:
 
     assert score.score == 60
     assert "wrong-diagnosis-cap:60" in score.penalties
+
+
+def test_runner_final_verification_is_authoritative() -> None:
+    case = r11.load_case("nrf52833dk__b004_dual_signal_regression")
+    result = load_fixture_result("fixed_success")
+    result = r11.ParsedAgentResult(
+        case_id=case.case_id,
+        board_id=case.board_id,
+        session_id=result.session_id,
+        final_status="fixed",
+        classification="code_bug",
+        root_cause=result.root_cause,
+        actions_taken=result.actions_taken,
+        mcp_tools_used=result.mcp_tools_used,
+        files_changed=("src/src/main.c",),
+        recover_used=False,
+        verification={
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        summary=result.summary,
+    )
+    verification = r11.VerificationSummary(
+        flash_ok=True,
+        uart_ok=True,
+        symbol_ok=False,
+        green_check_ok=False,
+        excerpt="boot ok",
+        error_text="RuntimeError: stage1_known_value value mismatch",
+    )
+
+    score = r11._score_case(case, result, verification, ("src/src/main.c",))
+
+    assert score.outcome_label == "partial_success"
+    assert score.score == 85
+    assert "Final verification failed: RuntimeError: stage1_known_value value mismatch" in score.reasons
 
 
 def test_score_blocked_case_caps_at_40() -> None:
@@ -264,6 +336,87 @@ def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     assert "b/src/file.txt" in diff_text
     assert "-before" in diff_text
     assert "+after" in diff_text
+    score_payload = json.loads((run_root / "run-metadata" / "score.json").read_text(encoding="utf-8"))
+    assert score_payload["canonical_session_id"] == run_root.name
+    assert score_payload["supporting_session_ids"] == []
+    assert score_payload["runner_warnings"] == []
+
+
+def test_run_codex_uses_noninteractive_full_access_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    captured: dict[str, object] = {}
+    session_dirs = [{}, {"20260620T000000Z-deadbeef": tmp_path / "20260620T000000Z-deadbeef"}]
+
+    def fake_session_dirs() -> dict[str, Path]:
+        return session_dirs.pop(0)
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        return 0, '{"type":"done"}\n', ""
+
+    monkeypatch.setattr(r11, "_session_dirs", fake_session_dirs)
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+
+    run = r11._run_codex(case, workspace_root, "prompt text")
+
+    assert captured["cmd"] == [
+        "codex",
+        "-a",
+        "never",
+        "-s",
+        "danger-full-access",
+        "exec",
+        "-C",
+        str(workspace_root),
+        "--output-schema",
+        str(r11.RESULT_SCHEMA_PATH),
+        "--json",
+        "-o",
+        str(workspace_root / ".r11_codex_result.json"),
+        "prompt text",
+    ]
+    assert captured["cwd"] == r11.REPO_ROOT
+    assert run.exit_code == 0
+    assert run.new_session_dirs == (tmp_path / "20260620T000000Z-deadbeef",)
+
+
+def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+
+    prompt = r11._render_prompt(case)
+
+    assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
+    assert "`board_id` exactly as `nucleo_l476rg`" in prompt
+    assert "do not derive `case_id` from the workspace directory name" in prompt
+    assert "do not pass a generic target override such as `cortex_m`" in prompt
+    assert "avoid reconnect churn unless the first session clearly attached to the wrong board" in prompt
+
+
+def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:
+    before_root = tmp_path / "before"
+    after_root = tmp_path / "after"
+    before_root.mkdir()
+    after_root.mkdir()
+    (before_root / "src").mkdir()
+    (after_root / "src").mkdir()
+    (before_root / "src" / "main.c").write_text("same\n", encoding="utf-8")
+    (after_root / "src" / "main.c").write_text("same\n", encoding="utf-8")
+    (after_root / ".r11_codex_result.json").write_text("{}", encoding="utf-8")
+    (after_root / ".r11_prompt.txt").write_text("prompt", encoding="utf-8")
+
+    changed = r11._changed_files(before_root, after_root)
+
+    assert changed == ()
 
 
 def test_run_case_fails_when_no_session_directory_is_created(
@@ -316,3 +469,210 @@ def test_run_case_fails_when_no_session_directory_is_created(
     assert report.final_status == "unresolved"
     assert report.score_report.score == 0
     assert report.run_root is None
+
+
+def test_run_case_uses_structured_final_session_as_canonical_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nrf52833dk__k001_reference_green")
+    board = r11._load_board(case.board_id)
+    workspace_root = tmp_path / "workspace"
+    snapshot_root = tmp_path / "snapshot"
+    workspace_root.mkdir()
+    snapshot_root.mkdir()
+    prepared = r11.PreparedCase(
+        case=case,
+        board=board,
+        workspace=r11.PreparedWorkspace(
+            source_root=workspace_root,
+            workspace_root=workspace_root,
+            snapshot_root=snapshot_root,
+        ),
+        probe_uid="probe-123",
+        flash_artifact=tmp_path / "firmware.hex",
+        symbol_artifact=tmp_path / "firmware.elf",
+    )
+    prepared.flash_artifact.write_text("hex", encoding="utf-8")
+    prepared.symbol_artifact.write_text("elf", encoding="utf-8")
+    prompt_path = workspace_root / ".r11_prompt.txt"
+    result_path = workspace_root / ".r11_codex_result.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    result_payload = {
+        "case_id": case.case_id,
+        "board_id": case.board_id,
+        "session_id": "20260620T000001Z-canonical",
+        "final_status": "healthy_confirmed",
+        "classification": "healthy",
+        "root_cause": "No issue found.",
+        "actions_taken": ["connect", "flash_firmware", "read_serial"],
+        "mcp_tools_used": ["connect", "flash_firmware", "read_serial"],
+        "files_changed": [],
+        "recover_used": False,
+        "verification": {
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        "summary": "Board remained healthy.",
+    }
+    result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+
+    supporting_root = tmp_path / "20260620T000000Z-supporting"
+    canonical_root = tmp_path / "20260620T000001Z-canonical"
+    for run_root, board_id in (
+        (supporting_root, "nucleo_l476rg"),
+        (canonical_root, case.board_id),
+    ):
+        (run_root / "run-metadata").mkdir(parents=True)
+        (run_root / "run-metadata" / "session.json").write_text(
+            json.dumps({"board_id": board_id, "probe_uid": "probe-123"}),
+            encoding="utf-8",
+        )
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
+    monkeypatch.setattr(
+        r11,
+        "_run_codex",
+        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+            exit_code=0,
+            stdout_text='{"type":"done"}\n',
+            stderr_text="",
+            result_path=result_path,
+            prompt_path=prompt_path,
+            new_session_dirs=(supporting_root, canonical_root),
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_run_final_verification",
+        lambda _prepared: r11.VerificationSummary(
+            flash_ok=True,
+            uart_ok=True,
+            symbol_ok=True,
+            green_check_ok=True,
+            excerpt="boot ok",
+            error_text=None,
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_score_case",
+        lambda _case, _agent_result, _verification, _changed_files: r11.ScoreReport(
+            score=100,
+            outcome_label="full_success",
+            diagnosis_points=40,
+            intervention_points=25,
+            verification_points=25,
+            safety_points=10,
+            penalties=(),
+            reasons=(),
+            actual_changed_files=(),
+            classification_correct=True,
+            intervention_correct=True,
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_record_case_artifacts",
+        lambda _prepared, _result, _codex_run, _verification, _score, run_root, session_selection=None: captured.update(
+            {
+                "run_root": run_root,
+                "session_selection": session_selection,
+            }
+        ),
+    )
+
+    report = r11.run_case(case.case_id)
+
+    assert report.final_status == "healthy_confirmed"
+    assert report.session_id == canonical_root.name
+    assert report.run_root == canonical_root
+    selection = captured["session_selection"]
+    assert isinstance(selection, r11.SessionSelection)
+    assert selection.canonical_run_root == canonical_root
+    assert selection.supporting_run_roots == (supporting_root,)
+    assert "supporting-session-count:1" in selection.runner_warnings
+    assert f"supporting-session-board-mismatch:{supporting_root.name}:nucleo_l476rg" in selection.runner_warnings
+
+
+def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_dirs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nrf52833dk__k001_reference_green")
+    board = r11._load_board(case.board_id)
+    workspace_root = tmp_path / "workspace"
+    snapshot_root = tmp_path / "snapshot"
+    workspace_root.mkdir()
+    snapshot_root.mkdir()
+    prepared = r11.PreparedCase(
+        case=case,
+        board=board,
+        workspace=r11.PreparedWorkspace(
+            source_root=workspace_root,
+            workspace_root=workspace_root,
+            snapshot_root=snapshot_root,
+        ),
+        probe_uid="probe-123",
+        flash_artifact=tmp_path / "firmware.hex",
+        symbol_artifact=tmp_path / "firmware.elf",
+    )
+    prepared.flash_artifact.write_text("hex", encoding="utf-8")
+    prepared.symbol_artifact.write_text("elf", encoding="utf-8")
+    prompt_path = workspace_root / ".r11_prompt.txt"
+    result_path = workspace_root / ".r11_codex_result.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    result_payload = {
+        "case_id": case.case_id,
+        "board_id": case.board_id,
+        "session_id": "20260620T000001Z-canonical",
+        "final_status": "healthy_confirmed",
+        "classification": "healthy",
+        "root_cause": "No issue found.",
+        "actions_taken": ["connect"],
+        "mcp_tools_used": ["connect"],
+        "files_changed": [],
+        "recover_used": False,
+        "verification": {
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        "summary": "Board remained healthy.",
+    }
+    result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+    unrelated_root = tmp_path / "20260620T000000Z-other"
+    unrelated_root.mkdir()
+
+    monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
+    monkeypatch.setattr(
+        r11,
+        "_run_codex",
+        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+            exit_code=0,
+            stdout_text='{"type":"done"}\n',
+            stderr_text="",
+            result_path=result_path,
+            prompt_path=prompt_path,
+            new_session_dirs=(unrelated_root,),
+        ),
+    )
+
+    report = r11.run_case(case.case_id)
+
+    assert report.final_status == "unresolved"
+    assert report.score_report.score == 0
+    assert report.run_root is None
+    assert (
+        report.verification.error_text
+        == "Structured benchmark result reported session_id=20260620T000001Z-canonical, but that session was not created under runs/ during this case."
+    )

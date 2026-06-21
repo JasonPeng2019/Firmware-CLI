@@ -4,7 +4,7 @@
 `pyOCD`, Stage 0 validation tooling, and an MCP server surface in
 `src/pyocd_debug_mcp/`.
 
-This `README.md` is the canonical Phase A source for repo layout and naming
+This `README.md` is the canonical repo-level source for layout and naming
 rules. Detailed bootstrap steps live in [init.md](./init.md). The bench/setup
 scripts are operated through the single guide [stage0_setup.md](./stage0_setup.md)
 (run a script with `--help` for its full flag list). The MCP server's runtime
@@ -15,16 +15,18 @@ shared board-validation logic that is callable from `stage0_check.py`, future
 MCP tools, and local programmer flows; only raw host bootstrap remains
 pre-server.
 
-The scoped pair is now green through `R10 / G5`: `nrf52833dk +
-nucleo_l476rg` have passed the current safety/runtime validation, and `R11`
-benchmark implementation is now in progress through the tracked Codex-driven
-benchmark spec, corpus, and runner.
+The scoped pair is now green through `R11 / G6`: `nrf52833dk +
+nucleo_l476rg` have passed the current safety/runtime validation, the frozen
+first Codex-driven benchmark pilot, and the final minimal pre-`R12` bug-family
+hardening cases. The next roadmap frontier is `R12`: the turnkey brain,
+skills, CLI, and premium acceptance benchmark.
 
-## What Phase A Delivers
+## What The Repo Currently Delivers
 
-Phase A freezes the repo shape, the local development environment, and the
-basic board-validation workflow so later stages can build on one stable
-standard.
+The repo still inherits the Phase A layout and naming decisions, but the
+working baseline is now broader than Phase A alone. It includes the stable
+board-control substrate, the runtime/safety layer, and the first live benchmark
+proof on the scoped pair.
 
 Today that means:
 
@@ -34,6 +36,8 @@ Today that means:
 - untracked runtime-output space in `runs/`
 - test and harness scaffolding in `tests/`
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
+- a shared Stage 1 smoke harness
+- a tracked Codex benchmark corpus and benchmark runner
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -333,11 +337,24 @@ Verified:
   repeated flash failures block only `flash_firmware`, repeated UART misses
   block only `read_serial`, repeated recover failures block only
   `unlock_recover`, and disconnect/reconnect clears block state
-- the current scoped gates are now green:
-  `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), `G4` (`R9`), and `G5`
-  (`R10`)
-- `markdowns/curr/r10_contract.md` is now live-backed by the scoped bench proof, and
-  `R11` benchmark implementation is in progress
+- the current scoped milestones are now green through product #1:
+  `G1` (`R2` + `R3`), `G3` (`R6` + `R7` + `R8`), `G4` (`R9`), `G5`
+  (`R10`), and `G6` (`R11`)
+- the tracked Codex benchmark pilot is now live-proven on the scoped pair:
+  the frozen `pilot_v1` suite passed 8/8 cases with `full_success=8`,
+  `partial_success=0`, `fail=0`, and `average_score=100.0`
+- the final minimal `R11` hardening expansion is also live-proven:
+  `b003_silent_uart` and `b004_dual_signal_regression` both reached
+  `FULL_SUCCESS` on `nucleo_l476rg` and `nrf52833dk`
+- benchmark session accounting is now hardened for real Codex behavior:
+  the final structured `session_id` is the canonical case root, and extra
+  MCP sessions are recorded as runner warnings rather than automatic failures
+- benchmark scoring now treats the runner-owned final verification as
+  authoritative, and the `b004` bug fixtures preserve the stable Stage 1
+  symbol-access pattern so Nordic runs cannot “look green” while violating the
+  symbol contract
+- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof,
+  and the next implementation frontier is `R12`
 
 Pending verification:
 

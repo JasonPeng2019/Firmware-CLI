@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import secrets
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -271,6 +272,17 @@ def build_session_options(board: BoardConfig | None, target: str | None) -> dict
     return target_control.build_session_options(board, target)
 
 
+def _should_bypass_jlink_probe_resolution(
+    board: BoardConfig | None,
+    *,
+    platform_name: str | None = None,
+) -> bool:
+    if board is None or board.probe_family != "jlink":
+        return False
+    current_platform = platform_name or sys.platform
+    return current_platform.startswith("win")
+
+
 def _resolve_probe_uid_for_connect(
     board: BoardConfig | None,
     unique_id: str | None,
@@ -282,7 +294,7 @@ def _resolve_probe_uid_for_connect(
         return env_uid
     if board is None:
         return None
-    if board.probe_family == "jlink":
+    if _should_bypass_jlink_probe_resolution(board):
         # On this Windows host, pre-running `pyocd list --probes` to auto-resolve
         # a J-Link UID can poison the subsequent attach when the server itself is
         # running over MCP stdio pipes. Let the shared backend choose the single

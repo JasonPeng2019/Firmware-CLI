@@ -175,6 +175,13 @@ class VerificationSummary:
 
 
 @dataclass(frozen=True)
+class SessionSelection:
+    canonical_run_root: Path
+    supporting_run_roots: tuple[Path, ...]
+    runner_warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ScoreReport:
     score: int
     outcome_label: str
@@ -494,12 +501,24 @@ def _prepare_target_state(prepared: PreparedCase) -> None:
 
 
 def _render_prompt(case: BenchmarkCase) -> str:
-    return case.prompt_template.format(
+    case_prompt = case.prompt_template.format(
         board_id=case.board_id,
+        case_id=case.case_id,
         build_command=case.allowed_actions.build_command or "(no local rebuild expected)",
         uart_substring=case.expected_observables.uart_substring,
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
+    )
+    return (
+        f"{case_prompt.rstrip()}\n\n"
+        "Structured result contract:\n\n"
+        f"- return `case_id` exactly as `{case.case_id}`\n"
+        f"- return `board_id` exactly as `{case.board_id}`\n"
+        "- return `session_id` exactly as reported by the successful `connect` tool call\n"
+        "- do not derive `case_id` from the workspace directory name or any copied temp path\n"
+        "- do not pass a generic target override such as `cortex_m`\n"
+        "- avoid reconnect churn unless the first session clearly attached to the wrong board or cannot complete verification\n"
+        "- if you reconnect, use the final successful session for final verification and final reporting\n"
     )
 
 
@@ -522,6 +541,10 @@ def _run_codex(case: BenchmarkCase, workspace_root: Path, prompt_text: str) -> C
     prompt_path.write_text(prompt_text, encoding="utf-8")
     cmd = [
         "codex",
+        "-a",
+        "never",
+        "-s",
+        "danger-full-access",
         "exec",
         "-C",
         str(workspace_root),
@@ -595,6 +618,61 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _load_session_metadata(run_root: Path) -> dict[str, object]:
+    raw = json.loads((run_root / "run-metadata" / "session.json").read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"{run_root}/run-metadata/session.json must contain a JSON object")
+    return raw
+
+
+def _select_canonical_session(
+    prepared: PreparedCase,
+    agent_result: ParsedAgentResult,
+    new_session_dirs: tuple[Path, ...],
+) -> SessionSelection:
+    matching = tuple(path for path in new_session_dirs if path.name == agent_result.session_id)
+    if not matching:
+        raise RuntimeError(
+            f"Structured benchmark result reported session_id={agent_result.session_id}, "
+            "but that session was not created under runs/ during this case."
+        )
+    if len(matching) > 1:
+        raise RuntimeError(
+            f"Structured benchmark result reported session_id={agent_result.session_id}, "
+            "but multiple new session directories claimed that id."
+        )
+
+    canonical_run_root = matching[0]
+    supporting_run_roots = tuple(path for path in new_session_dirs if path != canonical_run_root)
+    runner_warnings: list[str] = []
+    if supporting_run_roots:
+        runner_warnings.append(f"supporting-session-count:{len(supporting_run_roots)}")
+    for run_root in supporting_run_roots:
+        try:
+            metadata = _load_session_metadata(run_root)
+        except Exception as exc:  # noqa: BLE001 - preserve the specific session warning
+            runner_warnings.append(
+                f"supporting-session-metadata-unreadable:{run_root.name}:{type(exc).__name__}"
+            )
+            continue
+        board_id = str(metadata.get("board_id") or "")
+        probe_uid = str(metadata.get("probe_uid") or "")
+        if board_id and board_id != prepared.case.board_id:
+            runner_warnings.append(
+                f"supporting-session-board-mismatch:{run_root.name}:{board_id}"
+            )
+        if probe_uid and probe_uid != prepared.probe_uid:
+            runner_warnings.append(
+                f"supporting-session-probe-mismatch:{run_root.name}:{probe_uid}"
+            )
+
+    return SessionSelection(
+        canonical_run_root=canonical_run_root,
+        supporting_run_roots=supporting_run_roots,
+        runner_warnings=tuple(runner_warnings),
+    )
+
+
 def _relative_files(root: Path) -> dict[str, bytes]:
     output: dict[str, bytes] = {}
     for path in root.rglob("*"):
@@ -602,6 +680,8 @@ def _relative_files(root: Path) -> dict[str, bytes]:
             continue
         relative = path.relative_to(root)
         if "build" in relative.parts:
+            continue
+        if relative.name.startswith(".r11_"):
             continue
         output[str(relative).replace("\\", "/")] = path.read_bytes()
     return output
@@ -675,11 +755,14 @@ def _run_final_verification(prepared: PreparedCase) -> VerificationSummary:
             excerpt="",
             error_text=f"{type(exc).__name__}: {exc}",
         )
+    symbol_ok = (
+        smoke.resolved_symbol.value_u32 == prepared.case.expected_observables.symbol_value_u32
+    )
     return VerificationSummary(
         flash_ok=True,
         uart_ok=True,
-        symbol_ok=smoke.resolved_symbol.value_u32 == prepared.case.expected_observables.symbol_value_u32,
-        green_check_ok=True,
+        symbol_ok=symbol_ok,
+        green_check_ok=symbol_ok,
         excerpt=smoke.capture_excerpt,
         error_text=None,
     )
@@ -738,11 +821,12 @@ def _score_case(
         intervention_correct = not actual_changed_files
         intervention_points = 25 if intervention_correct else 0
 
+    # The runner-owned final verification is the authoritative green-state check.
     effective_verification = {
-        "flash_ok": verification.flash_ok or agent_result.verification["flash_ok"],
-        "uart_ok": verification.uart_ok or agent_result.verification["uart_ok"],
-        "symbol_ok": verification.symbol_ok or agent_result.verification["symbol_ok"],
-        "green_check_ok": verification.green_check_ok or agent_result.verification["green_check_ok"],
+        "flash_ok": verification.flash_ok,
+        "uart_ok": verification.uart_ok,
+        "symbol_ok": verification.symbol_ok,
+        "green_check_ok": verification.green_check_ok,
     }
     if case.success_criteria.requires_green_verification:
         if effective_verification["green_check_ok"]:
@@ -833,6 +917,7 @@ def _record_case_artifacts(
     verification: VerificationSummary,
     score_report: ScoreReport,
     run_root: Path,
+    session_selection: SessionSelection | None = None,
 ) -> None:
     benchmark_case = {
         "case_id": prepared.case.case_id,
@@ -880,6 +965,13 @@ def _record_case_artifacts(
         "actual_changed_files": list(score_report.actual_changed_files),
         "runner_verification": asdict(verification),
         "codex_exit_code": codex_run.exit_code,
+        "canonical_session_id": session_selection.canonical_run_root.name if session_selection else run_root.name,
+        "supporting_session_ids": (
+            [path.name for path in session_selection.supporting_run_roots]
+            if session_selection
+            else []
+        ),
+        "runner_warnings": list(session_selection.runner_warnings) if session_selection else [],
     }
 
     _write_json(run_root / "run-metadata" / "benchmark_case.json", benchmark_case)
@@ -912,16 +1004,41 @@ def run_case(case_id: str) -> CaseRunReport:
     prompt_text = _render_prompt(case)
     codex_run = _run_codex(case, prepared.workspace.workspace_root, prompt_text)
 
-    if len(codex_run.new_session_dirs) != 1:
+    try:
+        agent_result = _parse_agent_result(codex_run.result_path)
+    except Exception:
+        agent_result = None
+
+    session_selection: SessionSelection | None = None
+    run_root: Path | None = None
+    session_root_error: str | None = None
+    if agent_result is not None:
+        if agent_result.case_id != case.case_id or agent_result.board_id != case.board_id:
+            raise RuntimeError("Structured benchmark result did not match the requested case or board.")
+        try:
+            session_selection = _select_canonical_session(
+                prepared,
+                agent_result,
+                codex_run.new_session_dirs,
+            )
+        except RuntimeError as exc:
+            session_root_error = str(exc)
+        else:
+            run_root = session_selection.canonical_run_root
+    elif len(codex_run.new_session_dirs) == 1:
+        run_root = codex_run.new_session_dirs[0]
+
+    if run_root is None:
         verification = VerificationSummary(
             flash_ok=False,
             uart_ok=False,
             symbol_ok=False,
             green_check_ok=False,
             excerpt="",
-            error_text=(
-                "Expected exactly one new MCP session directory, "
-                f"found {len(codex_run.new_session_dirs)}."
+            error_text=session_root_error
+            or (
+                "Codex did not return a valid structured result and no canonical session root "
+                f"could be reconciled from {len(codex_run.new_session_dirs)} new session directories."
             ),
         )
         score_report = ScoreReport(
@@ -931,8 +1048,8 @@ def run_case(case_id: str) -> CaseRunReport:
             intervention_points=0,
             verification_points=0,
             safety_points=0,
-            penalties=("session-count-mismatch",),
-            reasons=(verification.error_text or "Session-count validation failed.",),
+            penalties=("session-root-missing",),
+            reasons=(verification.error_text,),
             actual_changed_files=_changed_files(
                 prepared.workspace.snapshot_root,
                 prepared.workspace.workspace_root,
@@ -950,14 +1067,7 @@ def run_case(case_id: str) -> CaseRunReport:
             run_root=None,
         )
 
-    run_root = codex_run.new_session_dirs[0]
-    try:
-        agent_result = _parse_agent_result(codex_run.result_path)
-    except Exception:
-        agent_result = None
     if agent_result is not None:
-        if agent_result.case_id != case.case_id or agent_result.board_id != case.board_id:
-            raise RuntimeError("Structured benchmark result did not match the requested case or board.")
         if agent_result.session_id != run_root.name:
             raise RuntimeError(
                 f"Structured benchmark result reported session_id={agent_result.session_id}, "
@@ -970,7 +1080,15 @@ def run_case(case_id: str) -> CaseRunReport:
         prepared.workspace.workspace_root,
     )
     score_report = _score_case(case, agent_result, verification, actual_changed_files)
-    _record_case_artifacts(prepared, agent_result, codex_run, verification, score_report, run_root)
+    _record_case_artifacts(
+        prepared,
+        agent_result,
+        codex_run,
+        verification,
+        score_report,
+        run_root,
+        session_selection,
+    )
 
     return CaseRunReport(
         case_id=case.case_id,

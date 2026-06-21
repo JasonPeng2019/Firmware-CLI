@@ -118,6 +118,28 @@ Observability-fault cases:
 The first fault corpus is intentionally **host-induced only**. Manual cable or
 physical wiring faults are deferred until after the pilot is trustworthy.
 
+## Post-Pilot Minimal Expansion
+
+`pilot_v1` remains frozen as the original proven 8-case milestone.
+
+Before wrapping `R11`, the corpus grows by exactly two mirrored injected-bug
+families:
+
+- `b003_silent_uart`
+- `b004_dual_signal_regression`
+
+These cases intentionally reuse the existing runner, scoring rubric, result
+schema, and case contract. The expansion is meant to strengthen one product
+distinction without widening harness complexity:
+
+- `f001_halted_target_silent_uart`: missing application success output caused by
+  runtime state
+- `b003_silent_uart`: missing application success output caused by firmware code
+- `b004_dual_signal_regression`: combined UART and symbol regression caused by
+  firmware code
+
+This is the final planned `R11` corpus expansion before moving to `R12`.
+
 ## Result Schema And Scoring
 
 The runner must require Codex final output through `codex exec --output-schema`.
@@ -199,10 +221,17 @@ For each case, the runner must save:
 - new `captured-serial/final_excerpt.txt`
 - new `applied-patches/agent.diff`
 
-The first pilot freezes **one MCP session per case**.
+The structured benchmark result's final `session_id` is the canonical case
+root.
 
-If a Codex run produces zero new session directories or more than one new
-session directory under `runs/`, the case fails.
+If a Codex run produces zero new session directories, or if the structured
+result is missing/invalid, or if the reported final `session_id` cannot be
+reconciled to exactly one of the newly created `runs/<session_id>/...`
+directories, the case fails.
+
+If Codex opens extra MCP sessions before the final successful one, those extra
+session directories are treated as supporting-session warnings rather than an
+automatic case failure.
 
 `firmware_identity.json` must record:
 
@@ -229,12 +258,26 @@ Required capabilities:
 - prepare a benchmark workspace under the gitignored `runs/` tree
 - prepare initial target state before Codex starts
 - invoke `codex exec`
-- require exactly one new `session_id`
-- verify that `runs/<session_id>/...` exists
+- require a valid structured final `session_id`
+- verify that the structured final `session_id` matches a real new
+  `runs/<session_id>/...` directory
+- record extra supporting sessions as runner warnings
 - rerun `stage1_smoke` as the final green-state verifier
 - compute score
 - write benchmark artifacts into the session directory
 - print a stable per-case and per-suite summary
+
+## Prompt Contract
+
+Board-scoped benchmark prompts must state all of the following explicitly:
+
+- connect with `connect(board_id="...")`
+- do not pass a generic target override such as `cortex_m`
+- do not hard-code or guess a probe UID
+- avoid reconnect churn unless the first session clearly attached to the wrong
+  board or cannot complete verification
+- if a reconnect is necessary, the final structured `session_id` must be the
+  session used for final verification
 
 The runner must sit on top of the existing board configs, artifact resolver,
 Stage 1 smoke harness, and current MCP server. It must not reopen SWD/UART
