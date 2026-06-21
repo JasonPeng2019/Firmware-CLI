@@ -166,6 +166,8 @@ Use these override layers:
   `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG` to have the server resolve a board's
   facts from `boards/<board>.yaml` through the shared loader (then `connect`
   needs no raw target; the `get_board_info` tool reports the loaded facts).
+  The same file also carries the turnkey brain's BYOK settings:
+  `OPENAI_API_KEY` and optionally `PYOCD_TURNKEY_MODEL`.
 - `pyocd.local.yaml`
   Optional, gitignored, for per-developer pyOCD tweaks once needed.
 - `pyocd.yaml`
@@ -188,11 +190,24 @@ uv run python stage0_check.py
 uv run python host_bootstrap.py --board-id nrf52833dk
 uv run python stage0_check.py --board-id nrf52833dk
 uv run pyocd-debug-mcp
+uv run pyocd-debug-brain --help
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green --model <model>
 uv run pytest
 uv run ruff check .
 uv run ruff format .
 uv run mypy src
 ```
+
+Turnkey notes:
+
+- `pyocd-debug-brain` launches the local MCP server itself; do not pre-launch
+  the server for the normal turnkey path.
+- Freeform `run` mode is diagnose/verify only unless you also supply both:
+  - `--workspace-root`
+  - `--build-command`
+- Benchmark mode reuses the frozen 12-case corpus from
+  `pilot_v1_plus_b003_b004`.
 
 ## Related Docs
 

@@ -1,0 +1,22 @@
+skill_id: common.dual_signal_regression
+title: Dual-signal regression repair
+applies_to:
+  board_ids: []
+  mcu_families: []
+  case_kinds:
+    - injected_bug
+  task_terms:
+    - dual
+    - both
+    - combined
+    - regression
+priority: 60
+facts:
+  - When both UART and the known symbol are wrong, the most likely benchmark explanation is still a code bug rather than an independent hardware failure.
+  - Multi-symptom cases should be repaired back to the exact tracked reference signals, not to an approximate “looks better” state.
+diagnostic_hints:
+  - Confirm both failure signals before editing, then make the smallest source repair that restores both.
+verification_checks:
+  - Rebuild and re-run the full green check after edits.
+forbidden_actions:
+  - Do not stop after repairing only one of the two required signals.

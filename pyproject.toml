@@ -7,6 +7,7 @@ license = { text = "Apache-2.0" }
 
 dependencies = [
     "mcp[cli]>=1.2.0",              # official MCP Python SDK; [cli] pulls in the `mcp` dev/inspector tooling
+    "openai>=2.0.0",               # official OpenAI SDK for the R12 turnkey brain
     "pyocd>=0.44.0",               # Cortex-M debug/flash/inspection; current stable is 0.44.1
     "pyserial>=3.5",               # serial-port discovery and UART smoke checks
     "pyyaml>=6.0",                 # YAML board-config loading
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 pyocd-debug-mcp = "pyocd_debug_mcp.server:main"
+pyocd-debug-brain = "pyocd_debug_mcp.brain.cli:main"
 
 # PEP 735 dependency groups — installed by `uv sync` (default) and excluded from the published wheel.
 [dependency-groups]

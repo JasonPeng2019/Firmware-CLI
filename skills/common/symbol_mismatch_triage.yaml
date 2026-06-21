@@ -1,0 +1,20 @@
+skill_id: common.symbol_mismatch_triage
+title: Known-symbol mismatch triage
+applies_to:
+  board_ids: []
+  mcu_families: []
+  case_kinds:
+    - injected_bug
+  task_terms:
+    - symbol
+    - stage1_known_value
+priority: 30
+facts:
+  - The Stage 1 reference contract expects stage1_known_value to read back as 0x1234ABCD.
+  - A wrong symbol value with otherwise healthy UART is usually an application/data bug, not a recover problem.
+diagnostic_hints:
+  - If UART is healthy but the known symbol value is wrong, inspect the tracked source that defines the known value before changing other behavior.
+verification_checks:
+  - Re-run green verification after fixing the known value.
+forbidden_actions:
+  - Do not classify a pure known-value mismatch as a physical fault unless connection or read failures also appear.

@@ -1,0 +1,20 @@
+skill_id: stm32l476.no_recover_expectation
+title: STM32 no-recover expectation
+applies_to:
+  board_ids: []
+  mcu_families:
+    - stm32l476
+  case_kinds: []
+  task_terms:
+    - recover
+    - unlock
+priority: 80
+facts:
+  - The scoped STM32 board does not define a supported recover mode in tracked board data.
+  - A recover request on this board should be treated as unsupported rather than as a successful fix path.
+diagnostic_hints:
+  - If unlock_recover is refused on STM32, that is expected policy behavior, not evidence that the board is broken.
+verification_checks:
+  - Use normal reset/halt/read/flash/serial verification instead of recover.
+forbidden_actions:
+  - Do not expect STM32 unlock_recover(confirm=true) to succeed on the scoped board.

@@ -1049,7 +1049,7 @@ def run_case(case_id: str) -> CaseRunReport:
             verification_points=0,
             safety_points=0,
             penalties=("session-root-missing",),
-            reasons=(verification.error_text,),
+            reasons=((verification.error_text,) if verification.error_text is not None else ()),
             actual_changed_files=_changed_files(
                 prepared.workspace.snapshot_root,
                 prepared.workspace.workspace_root,

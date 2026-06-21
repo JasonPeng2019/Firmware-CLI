@@ -38,8 +38,17 @@ pair:
 - mutation watcher behavior
 - the first Codex-driven benchmark pilot
 
-The next active roadmap item is now `R12`: the turnkey brain, skills, CLI, and
-premium acceptance benchmark.
+`R12` is now implemented in code, but it is not yet live-proven. The repo now
+contains:
+
+- the native Python brain package under `src/pyocd_debug_mcp/brain/`
+- the top-level `skills/` tree
+- the `pyocd-debug-brain` CLI
+- the sibling turnkey benchmark path over the same 12-case corpus
+- the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
+
+What is still missing is the live turnkey validation on the scoped pair and the
+acceptance run over the same 12-case benchmark corpus.
 
 The repo also still contains `nrf52840dk`, but it is now a retained
 alternate/future Nordic profile. It is not the current blocker for the scoped
@@ -175,6 +184,38 @@ The runtime/safety layer that now exists in code includes:
 - recover guardrails based on board config and explicit confirmation
 - mutation watcher rules for repeated flash failures, UART misses, and recover
   failures
+
+### Turnkey Brain (`R12`) Implementation
+
+The first turnkey product layer is now implemented in the repo.
+
+Code that now exists:
+
+- `src/pyocd_debug_mcp/brain/config.py`
+- `src/pyocd_debug_mcp/brain/mcp_client.py`
+- `src/pyocd_debug_mcp/brain/state.py`
+- `src/pyocd_debug_mcp/brain/provider_openai.py`
+- `src/pyocd_debug_mcp/brain/actions.py`
+- `src/pyocd_debug_mcp/brain/workspace.py`
+- `src/pyocd_debug_mcp/brain/loop.py`
+- `src/pyocd_debug_mcp/brain/benchmark.py`
+- `src/pyocd_debug_mcp/brain/cli.py`
+- `tests/harness/r12_turnkey_benchmark.py`
+- `skills/common/...`
+- `skills/mcu_families/nrf52833/...`
+- `skills/mcu_families/stm32l476/...`
+
+What that code does:
+
+- launches the existing MCP server as a local stdio subprocess
+- talks to it directly without Codex CLI or manual MCP registration
+- loads BYOK provider config from `OPENAI_API_KEY` and `PYOCD_TURNKEY_MODEL`
+- selects board-aware YAML skills
+- keeps local turnkey run state
+- supports freeform `run` mode and benchmark mode
+- captures turnkey artifacts into the same `runs/<session_id>/...` tree
+- reuses the existing 12-case benchmark corpus instead of inventing a second
+  benchmark taxonomy
 
 ## Live Bench Facts
 
@@ -671,6 +712,85 @@ What that means:
 - board-aware `connect(board_id=...)` worked on the mixed-board host for both
   the STM32 and Nordic cases
 
+## Turnkey Brain Status
+
+The turnkey layer is now in the repo, but it is still awaiting live proof on
+the scoped pair.
+
+### Turnkey Commands
+
+Set BYOK config first:
+
+```bash
+export OPENAI_API_KEY=...
+export PYOCD_TURNKEY_MODEL=...
+```
+
+Or put those same values in the local gitignored `.env`.
+
+Freeform verify/diagnose runs:
+
+```bash
+uv run pyocd-debug-brain run --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+```
+
+Single-case turnkey benchmark runs:
+
+```bash
+uv run pyocd-debug-brain benchmark --case-id nucleo_l476rg__k001_reference_green --model <model>
+uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green --model <model>
+uv run pyocd-debug-brain benchmark --case-id nucleo_l476rg__b003_silent_uart --model <model>
+uv run pyocd-debug-brain benchmark --case-id nrf52833dk__f001_halted_target_silent_uart --model <model>
+```
+
+Full turnkey benchmark roll-up:
+
+```bash
+uv run pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004 --model <model>
+```
+
+### What Should Be Verified In The First Live Turnkey Pass
+
+For both `nucleo_l476rg` and `nrf52833dk`, verify:
+
+- `pyocd-debug-brain run` creates a real `session_id`
+- the CLI creates:
+  - `runs/<session_id>/run-metadata/turnkey_request.json`
+  - `runs/<session_id>/run-metadata/turnkey_result.json`
+  - `runs/<session_id>/run-metadata/turnkey_state.json`
+  - `runs/<session_id>/logs/brain_trace.jsonl`
+  - `runs/<session_id>/logs/model_turns.jsonl`
+  - `runs/<session_id>/logs/prompt.txt`
+  - `runs/<session_id>/applied-patches/turnkey.diff`
+- the normal path uses `connect(board_id=...)` with no hard-coded probe UID
+- the normal path does not require an explicit serial port override
+- healthy freeform runs can explain why the board is healthy rather than merely
+  saying it is healthy
+
+For the turnkey benchmark path, verify:
+
+- the same 12 benchmark cases are reused
+- each case runs from one turnkey CLI command
+- no Codex CLI dependency exists in the turnkey path
+- no manual `codex mcp add ...` step is needed
+- known-good cases still reach full success
+- observability-fault cases still diagnose non-code/runtime-state problems
+- at least 6 of the 8 injected-bug cases reach full success
+- no case scores below 50
+- suite average is at least 85
+- no forbidden recover usage appears on non-recover cases
+- no case watcher-blocks because the turnkey loop thrashes
+
+### Why Those Checks Matter
+
+These are the core product claims for the first turnkey layer:
+
+- parity on the same benchmark corpus that already proved the BYO-agent path
+- lower operator/setup burden than the Codex-driven path
+- no reliance on prompt authoring, Codex installation, or MCP registration
+- no reopening of the underlying server/substrate architecture
+
 Important runner-accounting outcome:
 
 - the benchmark runner no longer requires exactly one MCP session directory per
@@ -710,30 +830,31 @@ What to expect from that roll-up:
 
 ## What Still Needs To Be Fully Done
 
-The repo is not waiting on more scoped substrate work, and it is no longer
-waiting on the first BYO-agent benchmark proof. The next remaining work is the
-turnkey product layer.
+The scoped hardware-control substrate is not the blocker anymore. The remaining
+work is all in the turnkey product layer.
 
 ### Immediate Next Tasks
 
-1. Freeze the `R12` contract in one tracked design doc before adding turnkey
-   brain code.
-2. Define the exact turnkey CLI/operator flow:
-   what command a user runs, what inputs it accepts, and what final outputs it
-   must produce.
-3. Define the brain state model:
-   what session information, board facts, benchmark facts, and convergence
-   signals the turnkey layer remembers between actions.
-4. Define the first real skill/loading model:
-   what a skill contains, how skills are selected, and what the minimum initial
-   skill set should be for the scoped pair.
-5. Freeze the acceptance benchmark for product #2:
-   what cases it reuses from `R11`, what additional cases it needs, and how
-   “better than BYO-agent” will be measured.
-6. Implement the first turnkey brain loop on top of the already-proven server
-   surface without reopening the substrate architecture.
-7. Run the first product-#2 acceptance pass on the scoped pair and record the
-   results back into this file and `README.md`.
+1. Run the first live turnkey freeform verify/diagnose pass on:
+   - `nucleo_l476rg`
+   - `nrf52833dk`
+2. Confirm the turnkey run artifacts are written correctly into
+   `runs/<session_id>/...`.
+3. Run the first turnkey benchmark pilot on the frozen 12-case corpus:
+   - start with one known-good case per board
+   - then one bug case per board
+   - then one observability-fault case per board
+   - then the full `pilot_v1_plus_b003_b004` suite
+4. Record the observed turnkey benchmark results back into this file and
+   `README.md`.
+5. Compare turnkey results against the already-proven `R11` results:
+   - benchmark outcome parity
+   - lower operator burden
+   - no hidden Codex/MCP registration dependency
+6. If the live turnkey pass exposes real gaps:
+   - fix the turnkey loop, skill set, prompt bundle, or benchmark wrapper
+   - do not expand the benchmark corpus again before turnkey reliability is
+     stable
 
 ### What `R11` Already Proved
 
@@ -756,7 +877,7 @@ The first live benchmark pass has already proved all of the following:
   benchmark result, as long as the final structured `session_id` maps cleanly
   to a real run directory
 
-### Optional Follow-Up Work After The Pilot
+### Optional Follow-Up Work After The Turnkey Pass
 
 These are real tasks, but they are not the current blocker:
 
@@ -816,9 +937,9 @@ must match what the agent will use when it rebuilds firmware.
 If resuming later:
 
 > The scoped pair is `nrf52833dk + nucleo_l476rg`. Everything through the
-> first BYO-agent benchmark pilot is implemented and already live-proven on
-> that pair: Stage 0, the Stage 1 smoke harness, the current MCP surface,
+> full `R11` benchmark layer is already implemented and live-proven on that
+> pair: Stage 0, the Stage 1 smoke harness, the current MCP surface,
 > per-session logging, flash/recover guardrails, the mutation watcher, and the
-> frozen eight-case Codex benchmark suite. The next concrete work is `R12`:
-> freeze the turnkey-brain contract, define the CLI/skill/state model, then
-> implement and validate product #2 on the same scoped pair.
+> frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
+> a native Python turnkey brain plus `pyocd-debug-brain`, but it still needs
+> live freeform and benchmark validation on the same scoped pair.

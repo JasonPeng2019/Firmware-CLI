@@ -13,18 +13,27 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `pyproject.toml` | Package metadata + dependencies; declares the console script `pyocd-debug-mcp = pyocd_debug_mcp.server:main`. |
+| `pyproject.toml` | Package metadata + dependencies; declares the console scripts `pyocd-debug-mcp` and `pyocd-debug-brain`. |
 | `uv.lock` | Locked dependency set for reproducible `uv sync`. |
 | `.python-version` | Pins the team interpreter to Python 3.12. |
-| `.env.example` | Template for the gitignored `.env` (probe UID, target, optional board id/config). |
+| `.env.example` | Template for the gitignored `.env` (probe UID, target, optional board id/config, turnkey BYOK settings). |
 | `.gitignore` | Ignore rules (`.venv/`, `runs/` output, caches, local overrides). |
-| `README.md` | Canonical Phase A repo-layout + naming reference, environment standard, main workflows, and verification status. |
+| `README.md` | Canonical repo-layout + naming reference, environment standard, main workflows, and verification status, now including the in-progress `R12` turnkey layer. |
 | `init.md` | Setup/bootstrap walkthrough referenced by the README. `(by name — verify scope)` |
 | `stage0_setup.md` | Single operator guide for the bench bring-up scripts (`setup_host`, `host_bootstrap`, `stage0_check`). |
 | `setup_host.ps1` | Windows unattended host-bootstrap entry point. `(by name)` |
 | `setup_host.sh` | macOS host-bootstrap entry point. `(by name)` |
 | `host_bootstrap.py` | Host-level readiness checks (pyOCD runs, probes/serial enumerate, board configs load, packs present/installable). Does not validate a board or install OS drivers. |
 | `stage0_check.py` | Stage 0 board/toolchain validation CLI; data-driven from board configs; now a thin frontend over the shared services. |
+
+## `skills/`
+
+| Path | What it is / does |
+|---|---|
+| `skills/README.md` | Explains the R12 turnkey-skill tree and required manifest fields. |
+| `skills/common/*.yaml` | Board-agnostic YAML skills for the current benchmark/task surface (baseline verification, UART/symbol triage, observability-vs-code distinction, dual-signal regression). |
+| `skills/mcu_families/nrf52833/*.yaml` | Nordic-family YAML skills, currently focused on recover-policy reasoning. |
+| `skills/mcu_families/stm32l476/*.yaml` | STM32-family YAML skills, currently focused on the no-recover expectation. |
 
 ## `src/pyocd_debug_mcp/` — product code
 
@@ -39,6 +48,21 @@ a glance before relying on detail.
 | `probe_inventory.py` | Parses `pyocd list --probes`, models `ProbeInfo`, and does board-aware probe selection (preserves real UIDs for J-Link and ST-Link). |
 | `reference_artifacts.py` | Resolves the canonical per-board reference `.elf`/`.hex` pair from the repo `firmware/<board>/reference/build/` layout. |
 | `target_errors.py` | Typed error taxonomy: `TargetControlError` base + `ProbeNotFound`, `TargetConnection`, `LockedTarget`, `UnsupportedArtifact`, `SymbolLookup`, `ReferenceArtifact`. |
+
+### `brain/` — R12 turnkey product layer
+
+| Path | What it is / does |
+|---|---|
+| `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
+| `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
+| `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
+| `brain/config.py` | BYOK/provider config loading plus the `TurnkeyInvocation` model. |
+| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
+| `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
+| `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
+| `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering. |
+| `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
+| `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
 
 ### `adapters/` — backend-neutral transport contracts + backends
 
@@ -75,6 +99,7 @@ a glance before relying on detail.
 |---|---|
 | `harness/stage1_smoke.py` | Stage 1 end-to-end smoke harness (config → artifacts → serial → session → flash → reset/halt → PC → symbol → memory readback → UART `boot ok`); passes on both scoped boards. |
 | `harness/r11_benchmark.py` | R11 Codex-driven benchmark runner (single-case + suite). |
+| `harness/r12_turnkey_benchmark.py` | Thin CLI wrapper for the R12 turnkey benchmark path. |
 | `test_board_configs.py` | Board-config loader/schema tests. `(by name)` |
 | `test_serial_resolver.py` | Serial resolution tests. `(by name)` |
 | `test_probe_inventory.py` | Probe parsing/selection tests. `(by name)` |
@@ -122,7 +147,7 @@ a glance before relying on detail.
 | `ROADMAP.md` | Full project plan (R0–R15), dependency tree, gates, rolling-frontier staffing. *Design/plan doc — see status banner.* |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions. *Design/plan doc — see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails). *Design doc — see status banner.* |
-| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, benchmark status (current). |
+| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 in-progress validation checklist. |
 | `repo_file_index.md` | This file. |
 
 ### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
@@ -131,6 +156,7 @@ a glance before relying on detail.
 |---|---|
 | `r10_contract.md` | Implementation source of truth for the R10 runtime-safety contract; still referenced because R11 builds on it. |
 | `r11_benchmark_spec.md` | Implementation source of truth for the active R11 benchmark slice. |
+| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 

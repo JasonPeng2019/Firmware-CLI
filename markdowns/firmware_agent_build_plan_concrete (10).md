@@ -722,21 +722,36 @@ anti-thrash, on both boards, zero UI written. *This is a shippable BYO-agent pro
 
 **Goal:** the premium product — your own loop, your skills, your frontend.
 
-1. **Build the brain as a second MCP client** of the same server (reuses Stages 1–3 wholesale).
-2. **Add skills injection** — structured per-chip/peripheral knowledge as data files. *The validated
-   moat.* **Two boards = two chip families of skills from the start**, which is the right shape for a
-   product meant to span many chips (don't over-fit skills to one MCU).
-3. **Add loop-aware convergence logic** in the brain (the richer judgment the server can't do for
-   external brains — the brain sees its own reasoning arc).
-4. **Build the CLI frontend** (board/target, port, ELF, task, max-iters). Embedded engineers live in
-   the terminal; GUI later. **This is the only frontend you build, and it belongs to the brain.**
-5. **Keys:** BYOK by default (preserves the moat); optionally your keys for a managed offering.
-6. **Closed-source:** keep the brain's valuable logic (skills, orchestration) server-side if real
-   secrecy matters — local Python decompiles easily. Commodity (adapters) is hard to hide; moat
-   (skills) is what you keep server-side.
+Frozen implementation choices for the first pass:
 
-**Exit criteria:** `your-cli --board <nrf|nucleo> --task ...` runs the full loop turnkey on either
-board, with skills + loop-aware convergence the BYO tier lacks.
+1. **Build the brain as a native Python MCP client** of the same server (reuses Stages 1–3 wholesale).
+   Do **not** wrap Codex CLI for the turnkey product.
+2. **Use OpenAI first via BYOK** (`OPENAI_API_KEY` + model from CLI/env) through the official Python SDK
+   and the Responses API. Keep the provider wrapper isolated so future providers remain possible.
+3. **Own the orchestration loop directly** in the brain. Do not delegate loop ownership to the Agents SDK
+   in the first pass.
+4. **Add board-aware skills injection** as YAML data under `skills/`:
+   - `skills/common/`
+   - `skills/mcu_families/nrf52833/`
+   - `skills/mcu_families/stm32l476/`
+5. **Keep the model-facing action surface smaller than the server surface.** The first turnkey pass uses:
+   - MCP-backed actions: `connect`, `disconnect`, `get_board_info`, `get_state`, `halt`, `resume`,
+     `reset`, `read_core_register`, `read_memory`, `flash_firmware`, `read_serial`, `unlock_recover`
+   - local actions: read one file, replace one file, run the case build command, diff the workspace,
+     run final green verification
+   Do **not** expose write-memory/register or breakpoint tools to the model in v1.
+6. **Build a dual-mode CLI frontend**:
+   - `pyocd-debug-brain run --board-id ... --task ...`
+   - `pyocd-debug-brain benchmark --case-id ...`
+   - `pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004`
+   Embedded engineers live in the terminal; GUI later. **This is the only frontend you build, and it
+   belongs to the brain.**
+7. **Benchmark against the same 12-case corpus already frozen in R11.** The first product claim is
+   parity on that corpus plus lower operator burden, not a harder corpus or a new benchmark taxonomy.
+
+**Exit criteria:** `pyocd-debug-brain` runs the full loop turnkey on the scoped pair (`nrf52833dk` +
+`nucleo_l476rg`), reuses the 12-case benchmark corpus, avoids Codex/MCP-registration setup, and
+proves parity + lower operator burden against the BYO-agent path.
 
 ---
 
@@ -944,8 +959,14 @@ Verified:
   proof on the Mac bench.
 - The official `nrf52833dk` board now has real Stage 0 proof, Stage 1 smoke
   proof, and live MCP surface validation on the Mac bench.
+- The repo now contains the tracked R12 contract doc, native Python brain
+  package, board-aware skills tree, `pyocd-debug-brain` CLI, and sibling
+  turnkey benchmark path over the same frozen 12-case corpus.
 
 Pending verification:
 
 - `nrf52840dk` remains a retained alternate Nordic profile and still needs live
   proof if future support for that board becomes a project goal.
+- The new R12 turnkey path still needs live validation on the scoped pair:
+  freeform healthy verification on both boards, plus turnkey benchmark proof on
+  the same 12-case corpus.

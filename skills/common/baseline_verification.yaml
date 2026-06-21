@@ -1,0 +1,25 @@
+skill_id: common.baseline_verification
+title: Healthy baseline verification
+applies_to:
+  board_ids: []
+  mcu_families: []
+  case_kinds:
+    - known_good
+  task_terms:
+    - healthy
+    - baseline
+    - reference
+    - verify
+priority: 10
+facts:
+  - A healthy scoped-board run should prove both the UART success text and the known symbol value.
+  - The fastest healthy path is usually connect, inspect board facts, flash the expected artifact, then verify UART and symbol state.
+diagnostic_hints:
+  - Prefer confirming board/runtime state before concluding there is a firmware bug.
+  - A healthy confirmation should mention both UART and symbol evidence, not one alone.
+verification_checks:
+  - Use flash_firmware on the expected artifact.
+  - Use read_serial to confirm boot ok.
+  - Use run_green_check when available to confirm the full healthy path.
+forbidden_actions:
+  - Do not use unlock_recover unless the evidence clearly points at a protection/recover issue.

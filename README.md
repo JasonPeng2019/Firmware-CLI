@@ -15,11 +15,20 @@ shared board-validation logic that is callable from `stage0_check.py`, future
 MCP tools, and local programmer flows; only raw host bootstrap remains
 pre-server.
 
-The scoped pair is now green through `R11 / G6`: `nrf52833dk +
-nucleo_l476rg` have passed the current safety/runtime validation, the frozen
-first Codex-driven benchmark pilot, and the final minimal pre-`R12` bug-family
-hardening cases. The next roadmap frontier is `R12`: the turnkey brain,
-skills, CLI, and premium acceptance benchmark.
+The scoped pair is green through the current `R11` benchmark layer:
+`nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
+shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
+12-case Codex benchmark corpus. `R12` is now implemented in the repo as an
+in-progress turnkey product layer:
+
+- native Python brain package
+- BYOK OpenAI provider path
+- turnkey CLI
+- board-aware skills tree
+- sibling turnkey benchmark runner
+
+The remaining `R12` work is live validation on the scoped pair and acceptance
+against the same 12-case corpus with lower operator burden.
 
 ## What The Repo Currently Delivers
 
@@ -38,6 +47,7 @@ Today that means:
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
+- an in-progress turnkey brain and turnkey benchmark path over the same corpus
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -82,6 +92,10 @@ Firmware-CLI/
 |       `-- bugs/
 |-- runs/
 |   `-- README.md
+|-- skills/
+|   |-- README.md
+|   |-- common/
+|   `-- mcu_families/
 |-- tests/
 |   |-- README.md
 |   |-- fixtures/
@@ -91,7 +105,8 @@ Firmware-CLI/
 |   |   `-- r11_result_schema.json
 |   `-- harness/
 |       |-- stage1_smoke.py
-|       `-- r11_benchmark.py
+|       |-- r11_benchmark.py
+|       `-- r12_turnkey_benchmark.py
 |-- src/
 |   `-- pyocd_debug_mcp/
 |       |-- adapters/
@@ -102,6 +117,17 @@ Firmware-CLI/
 |       |-- guardrails/
 |       |   |-- flash_gate.py
 |       |   `-- recover_gate.py
+|       |-- brain/
+|       |   |-- actions.py
+|       |   |-- benchmark.py
+|       |   |-- cli.py
+|       |   |-- config.py
+|       |   |-- loop.py
+|       |   |-- mcp_client.py
+|       |   |-- provider_openai.py
+|       |   |-- skills.py
+|       |   |-- state.py
+|       |   `-- workspace.py
 |       |-- services/
 |       |   |-- convergence_watcher.py
 |       |   |-- session_runtime.py
@@ -127,7 +153,8 @@ Firmware-CLI/
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
     |   |-- r10_contract.md
-    |   `-- r11_benchmark_spec.md
+    |   |-- r11_benchmark_spec.md
+    |   `-- r12_turnkey_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
 
@@ -158,11 +185,16 @@ Firmware-CLI/
 - Use `uv run ...` for repo commands so they always run inside the pinned env.
 - `.env` is optional, gitignored, and auto-loaded by the MCP server and the
   Phase A host scripts when present.
-- `.env` currently carries `PYOCD_PROBE_UID` and `PYOCD_TARGET`, and optionally
-  `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG`. With a board id set, the MCP server
-  resolves that board's facts (target, recover policy, silicon id, baud) from
-  `boards/<board>.yaml` through the shared loader, so `connect` needs no raw
-  target and the `get_board_info` tool reports the loaded facts.
+- `.env` currently carries:
+  - `PYOCD_PROBE_UID`
+  - `PYOCD_TARGET`
+  - optional `PYOCD_BOARD_ID` / `PYOCD_BOARD_CONFIG`
+  - `OPENAI_API_KEY` for the turnkey brain
+  - `PYOCD_TURNKEY_MODEL` for the turnkey brain's default model
+- With a board id set, the MCP server resolves that board's facts (target,
+  recover policy, silicon id, baud) from `boards/<board>.yaml` through the
+  shared loader, so `connect` needs no raw target and the `get_board_info`
+  tool reports the loaded facts.
 - `pyocd.local.yaml` is an optional per-developer pyOCD override file and is
   gitignored.
 - `pyocd.yaml` is optional and only belongs in the repo once the team has a
@@ -246,6 +278,22 @@ uv run python host_bootstrap.py --board-id nrf52833dk
 uv run python stage0_check.py --board-id nrf52833dk
 ```
 
+Run the turnkey CLI in freeform verify/diagnose mode:
+
+```bash
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+```
+
+Run the turnkey benchmark against one case or the full frozen 12-case suite:
+
+```bash
+uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green
+uv run pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004
+```
+
+The turnkey path requires `OPENAI_API_KEY` plus either `--model <model>` or
+`PYOCD_TURNKEY_MODEL`.
+
 Windows PowerShell:
 
 ```powershell
@@ -284,6 +332,8 @@ uv run pyocd-debug-mcp
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
+- `R11` benchmark contract: [markdowns/curr/r11_benchmark_spec.md](./markdowns/curr/r11_benchmark_spec.md)
+- `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
@@ -348,11 +398,22 @@ Verified:
   authoritative, and the `b004` bug fixtures preserve the stable Stage 1
   symbol-access pattern so Nordic runs cannot “look green” while violating the
   symbol contract
-- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof,
-  and the next implementation frontier is `R12`
+- the first `R12` code path now exists in the repo:
+  `src/pyocd_debug_mcp/brain/`, `skills/`, `pyocd-debug-brain`, and
+  `tests/harness/r12_turnkey_benchmark.py`
+- the turnkey layer no longer depends on Codex CLI or MCP registration:
+  it launches the local MCP server as a subprocess and talks to it directly
+- the turnkey benchmark path reuses the frozen `pilot_v1_plus_b003_b004`
+  corpus and the existing case manifests instead of inventing a second
+  benchmark taxonomy
 
 Pending verification:
 
 - `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
   source/build assets, but it still needs its own live bench proof if future
   support for that alternate board becomes a project goal
+- `R12` live proof is still pending on the scoped pair:
+  - freeform turnkey verify/diagnose runs on both boards
+  - turnkey benchmark pilot runs on the 12-case corpus
+  - acceptance against the lower-burden product criteria in
+    `markdowns/curr/r12_turnkey_spec.md`

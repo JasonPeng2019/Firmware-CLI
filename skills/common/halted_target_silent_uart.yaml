@@ -1,0 +1,21 @@
+skill_id: common.halted_target_silent_uart
+title: Halted-target silent UART distinction
+applies_to:
+  board_ids: []
+  mcu_families: []
+  case_kinds:
+    - observability_fault
+  task_terms:
+    - silent uart
+    - halted
+priority: 40
+facts:
+  - A silent UART can come from target runtime state rather than bad firmware.
+  - If the target is halted, code edits are usually the wrong first move.
+diagnostic_hints:
+  - Check target state before concluding the firmware is broken.
+  - Observability faults should be repaired by restoring runtime state, then re-verifying the healthy signals.
+verification_checks:
+  - Use get_state, reset, resume, and read_serial to distinguish halted runtime from bad code.
+forbidden_actions:
+  - Do not edit source until runtime-state explanations have been ruled out.

@@ -1,0 +1,23 @@
+skill_id: common.uart_mismatch_triage
+title: UART mismatch triage
+applies_to:
+  board_ids: []
+  mcu_families: []
+  case_kinds:
+    - injected_bug
+  task_terms:
+    - uart
+    - boot ok
+    - serial
+priority: 20
+facts:
+  - A wrong or missing application UART success string can be a real firmware bug even when flashing and symbol checks still pass.
+  - UART mismatches should be compared against the tracked expected substring, not guessed from prose.
+diagnostic_hints:
+  - If the symbol value is healthy but the UART success text is wrong, the most likely fault is in the application print path.
+  - Distinguish a wrong UART string from a silent UART caused by halted runtime state.
+verification_checks:
+  - Read serial after reset.
+  - If code edits are allowed, inspect the application main source before changing anything else.
+forbidden_actions:
+  - Do not use unlock_recover as a first-line response to a UART mismatch.

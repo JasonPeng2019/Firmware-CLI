@@ -1,0 +1,21 @@
+skill_id: nrf52833.recover_policy
+title: Nordic recover policy
+applies_to:
+  board_ids: []
+  mcu_families:
+    - nrf52833
+  case_kinds: []
+  task_terms:
+    - recover
+    - unlock
+    - approtect
+priority: 70
+facts:
+  - The scoped Nordic board supports a tracked recover path through the shared recover mode.
+  - Recover is destructive and should be justified by protection/connectivity symptoms, not routine code bugs.
+diagnostic_hints:
+  - Treat recover as a policy-controlled recovery action, not as a generic debugging shortcut.
+verification_checks:
+  - If recover is used legitimately, restore the expected firmware artifact and re-verify UART and symbol signals afterward.
+forbidden_actions:
+  - Do not use recover on routine UART/string/value benchmark bugs.

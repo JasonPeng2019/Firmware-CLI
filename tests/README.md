@@ -5,8 +5,8 @@ This tree is the canonical home for repo-owned validation assets.
 Current layout:
 
 - `tests/fixtures/`: shared static data and captured samples
-- `tests/cases/`: tracked `R11` benchmark definitions, suite metadata, and the
-  Codex result schema
+- `tests/cases/`: tracked benchmark definitions, suite metadata, and the
+  `R11` structured result schema reused by the current benchmark layer
 - `tests/harness/`: harness code and reusable test helpers
 
 Tracked harnesses:
@@ -15,6 +15,8 @@ Tracked harnesses:
   entrypoint over the shared SWD and UART services
 - `tests/harness/r11_benchmark.py`: the `R11` benchmark runner over the current
   MCP server and scripted `codex exec`
+- `tests/harness/r12_turnkey_benchmark.py`: the `R12` turnkey benchmark
+  entrypoint over `pyocd-debug-brain`
 
 Tracked benchmark metadata:
 
@@ -22,6 +24,15 @@ Tracked benchmark metadata:
 - `tests/cases/r11_result_schema.json`: structured Codex result schema
 - `tests/cases/<case_id>/case.yaml`: machine-readable case contract
 - `tests/cases/<case_id>/prompt.md`: exact Codex prompt template for the case
+
+Current benchmark split:
+
+- `R11`: BYO-agent benchmark path through Codex CLI
+- `R12`: turnkey benchmark path through the repo-owned native Python brain
+
+Both paths currently reuse the same 12-case corpus:
+
+- `pilot_v1_plus_b003_b004`
 
 Keep bug-variant source trees under `firmware/<board>/bugs/`. Keep harness and
 test definitions under `tests/`.
