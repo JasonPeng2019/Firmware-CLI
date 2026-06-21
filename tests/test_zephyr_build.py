@@ -52,6 +52,88 @@ def test_sdk_candidates_include_workspace_adjacent_ncs_toolchain(
     assert any(candidate.path == toolchain_sdk.resolve() for candidate in candidates)
 
 
+def test_sdk_candidates_include_detected_global_ncs_toolchain(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    managed = tmp_path / "managed-sdk"
+    home = tmp_path / "home"
+    ncs_sdk = home / "ncs" / "toolchains" / "abcd1234" / "opt" / "zephyr-sdk"
+    ncs_sdk.mkdir(parents=True)
+    (ncs_sdk / "sdk_version").write_text("0.17.4\n", encoding="utf-8")
+    monkeypatch.delenv("ZEPHYR_SDK_INSTALL_DIR", raising=False)
+    monkeypatch.setattr(zephyr_build, "sys", type("Sys", (), {"platform": "win32"})())
+    monkeypatch.setattr(zephyr_build.Path, "home", staticmethod(lambda: home))
+
+    candidates = zephyr_build._iter_sdk_candidates(
+        explicit_sdk_dir=None,
+        managed_sdk_dir=managed,
+        workspace_dir=workspace,
+    )
+
+    assert any(candidate.path == ncs_sdk.resolve() for candidate in candidates)
+
+
+def test_sdk_minimal_archive_filename_matches_zephyr_release_naming(monkeypatch) -> None:
+    monkeypatch.setattr(zephyr_build.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(zephyr_build.platform, "machine", lambda: "AMD64")
+    assert zephyr_build._sdk_minimal_archive_filename("0.17.4") == (
+        "zephyr-sdk-0.17.4_windows-x86_64_minimal.7z"
+    )
+
+    monkeypatch.setattr(zephyr_build.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(zephyr_build.platform, "machine", lambda: "arm64")
+    assert zephyr_build._sdk_minimal_archive_filename("0.17.4") == (
+        "zephyr-sdk-0.17.4_macos-aarch64_minimal.tar.xz"
+    )
+
+
+def test_resolve_sdk_dir_uses_managed_installer_when_no_sdk_exists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    managed = tmp_path / "managed-sdk"
+    (workspace / "zephyr").mkdir(parents=True)
+    (workspace / "zephyr" / "SDK_VERSION").write_text("0.17.4\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    monkeypatch.delenv("ZEPHYR_SDK_INSTALL_DIR", raising=False)
+    monkeypatch.setattr(
+        zephyr_build,
+        "_iter_sdk_candidates",
+        lambda *, explicit_sdk_dir, managed_sdk_dir, workspace_dir: [
+            zephyr_build.CandidatePath(path=managed_sdk_dir.resolve(), source="managed-cache")
+        ],
+    )
+
+    def fake_install(*, west_python: Path, workspace_dir: Path, managed_sdk_dir: Path, toolchain: str) -> None:
+        captured["west_python"] = west_python
+        captured["workspace_dir"] = workspace_dir
+        captured["managed_sdk_dir"] = managed_sdk_dir
+        captured["toolchain"] = toolchain
+        managed_sdk_dir.mkdir(parents=True, exist_ok=True)
+        (managed_sdk_dir / "sdk_version").write_text("0.17.4\n", encoding="utf-8")
+
+    monkeypatch.setattr(zephyr_build, "_install_managed_sdk", fake_install)
+
+    resolved_dir, source = zephyr_build._resolve_sdk_dir(
+        west_python=tmp_path / "west-python.exe",
+        workspace_dir=workspace,
+        sdk_dir=None,
+        managed_sdk_dir=managed,
+        toolchain="arm-zephyr-eabi",
+        skip_sdk_install=False,
+    )
+
+    assert resolved_dir == managed.resolve()
+    assert source == "managed-install"
+    assert captured["workspace_dir"] == workspace.resolve()
+    assert captured["managed_sdk_dir"] == managed.resolve()
+    assert captured["toolchain"] == "arm-zephyr-eabi"
+
+
 def test_clean_build_dir_preserves_gitkeep_and_gitignore(tmp_path: Path) -> None:
     build_dir = tmp_path / "build"
     build_dir.mkdir()
@@ -67,6 +149,22 @@ def test_clean_build_dir_preserves_gitkeep_and_gitignore(tmp_path: Path) -> None
     assert (build_dir / ".gitignore").exists()
     assert not (build_dir / "firmware.elf").exists()
     assert not (build_dir / "temp").exists()
+
+
+def test_build_cache_matches_app_uses_cmake_home_directory(tmp_path: Path) -> None:
+    build_dir = tmp_path / "build"
+    app_dir = tmp_path / "app"
+    other_app_dir = tmp_path / "other-app"
+    build_dir.mkdir()
+    app_dir.mkdir()
+    other_app_dir.mkdir()
+    (build_dir / "CMakeCache.txt").write_text(
+        f"CMAKE_HOME_DIRECTORY:INTERNAL={app_dir.resolve()}\n",
+        encoding="utf-8",
+    )
+
+    assert zephyr_build._build_cache_matches_app(build_dir, app_dir) is True
+    assert zephyr_build._build_cache_matches_app(build_dir, other_app_dir) is False
 
 
 def test_copy_artifacts_preserves_live_build_tree_when_output_dir_matches_work_dir(tmp_path: Path) -> None:
@@ -113,3 +211,30 @@ def test_build_parser_defaults_to_incremental_pristine_mode() -> None:
     )
 
     assert args.pristine == "auto"
+
+
+def test_should_use_scratch_build_for_long_windows_paths(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(zephyr_build, "sys", type("Sys", (), {"platform": "win32"})())
+    long_root = tmp_path
+    for segment in ("deep", "deep", "deep", "deep", "deep", "deep", "deep", "deep"):
+        long_root = long_root / segment
+    app_dir = long_root / "app"
+    build_dir = long_root / "build"
+    app_dir.mkdir(parents=True)
+    build_dir.mkdir(parents=True)
+
+    assert zephyr_build._should_use_scratch_build(app_dir, build_dir) is True
+
+
+def test_copy_adjacent_common_for_scratch_preserves_local_app_common_layout(tmp_path: Path) -> None:
+    app_root = tmp_path / "workspace"
+    app_dir = app_root / "src"
+    common_dir = app_root / "common"
+    scratch_root = tmp_path / "scratch"
+    app_dir.mkdir(parents=True)
+    common_dir.mkdir(parents=True)
+    (common_dir / "nucleo_l476rg.overlay").write_text("overlay", encoding="utf-8")
+
+    zephyr_build._copy_adjacent_common_for_scratch(app_dir, scratch_root)
+
+    assert (scratch_root / "common" / "nucleo_l476rg.overlay").read_text(encoding="utf-8") == "overlay"

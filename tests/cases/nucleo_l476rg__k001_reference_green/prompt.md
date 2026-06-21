@@ -11,10 +11,17 @@ Rules:
 - the runner already prepared the target state; do not rebuild or reflash unless
   the MCP evidence proves the prepared state is wrong
 - do not edit source files
+- do not read `.codex/skills`, `.claude/`, `superpowers/`, or repo markdown
+  files; this benchmark prompt is already the full task contract
 - do not run local shell discovery commands such as `rg`, `ls`, or
   `Get-ChildItem`; use the MCP tools directly for verification
 - do not use `unlock_recover` unless the evidence clearly justifies it
 - use MCP tools rather than guessing from static files alone
+- use this exact verification flow unless one step demonstrably fails:
+  1. `connect`
+  2. `read_serial(expected_text="{uart_substring}", reset_on_open=true)`
+  3. `read_symbol_u32(elf_path="{symbol_artifact}", symbol_name="{symbol_name}")`
+  4. return the structured result immediately
 
 Target observables to confirm:
 

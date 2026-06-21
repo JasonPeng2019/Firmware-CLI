@@ -620,10 +620,13 @@ Runner guardrails:
 - if that preflight fails, the case aborts immediately with a host-bench error
   instead of spending minutes inside a non-converging Codex run
 - Codex execution is now time-bounded so a stuck case cannot hang indefinitely
-- the runner now defaults the embedded `codex exec` step to `45s`, which keeps
-  each case inside the bench-level `60s` hang boundary; override with
-  `--codex-timeout-seconds <seconds>` only when a deliberately longer run is
-  acceptable
+- the runner now gives embedded `codex exec` bug-repair cases a longer default
+  budget so diagnose -> patch/build -> flash/verify runs can finish cleanly
+  instead of being cut off by a blanket sub-60-second cap
+- benchmark prompts are intentionally self-contained and tell the nested agent
+  not to spend time re-reading workflow docs or skills
+- that self-contained prompt rule is benchmark-specific only; real deployment
+  runs should still read the repo workflow docs and skills before acting
 
 Single-case entrypoint:
 
@@ -870,46 +873,35 @@ If resuming later:
 > frozen eight-case Codex benchmark suite. The next concrete work is `R12`:
 > freeze the turnkey-brain contract, define the CLI/skill/state model, then
 > implement and validate product #2 on the same scoped pair.
-Current Windows STM32 blocker on this host:
+Current Windows STM32 retest status on this host:
 
-- probe attach, flash, and symbol-resolution are green on the attached
-  `nucleo_l476rg`
-- UART capture is currently silent on Windows for the tracked STM32 reference
-  artifact, which blocks the STM32 `R11` green case preflight
-- to close that repo-side ambiguity, the tracked STM32 reference and bug apps
-  now pin the UART path explicitly to `USART2` and pin the Zephyr chosen
-  console to `usart2` through `firmware/nucleo_l476rg/common/`
-- those source changes still require a Zephyr rebuild of the STM32 artifacts
-  before the Windows STM32 Stage 0 / Stage 1 / `R11` green case can be rerun
-- the Windows host now has a discovered NCS/Zephyr workspace root at
-  `C:\ncs\v3.3.1`
-- the next Codex session should export:
-  - `ZEPHYR_WORKSPACE_DIR=C:\ncs\v3.3.1`
-  - `ZEPHYR_SDK_INSTALL_DIR=<the actual Zephyr SDK path on this host, if it is
-    not already exposed through the build environment>`
-- rebuild the STM32 artifacts in this order:
-  - `./firmware/nucleo_l476rg/reference/build_reference.sh`
-  - `./firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b003__silent_uart/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build_bug.sh`
-- then rerun the Windows STM32 proof chain in this order:
+- the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the
+  full implemented STM32 `R11` case set
+- `stage0_check.py` now passes again on Windows for the tracked STM32 reference
+  artifact, including flash and UART `boot ok`
+- `tests.harness.stage1_smoke` now passes again on Windows for
+  `nucleo_l476rg`, including `stage1_known_value = 0x1234ABCD`
+- the benchmark failure boundary was the runner's old blanket sub-60-second
+  Codex budget, not a remaining STM32 board-control defect
+- the benchmark runner now gives bug-repair cases a longer default Codex budget
+  so diagnose -> patch/build -> flash/verify runs can finish cleanly
+- the benchmark prompts remain intentionally self-contained so the nested
+  benchmark agent stays on the board task instead of re-reading workflow docs
+- that self-contained benchmark behavior is not the deployment rule; real
+  workflow/deployment runs should still read repo workflow docs and skills
+  before acting
+- the currently live-proven Windows STM32 commands are:
   - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
   - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
-- current benchmark-runner status on Windows:
-  - the old STM32 `R11` hang is fixed
-  - if the board is not green, `tests.harness.r11_benchmark` now fails fast at
-    Stage 1 preflight in a few seconds instead of spending minutes in a stuck
-    Codex run
-- after the STM32 green case passes again, continue the remaining implemented
-  Windows `R11` STM32 cases:
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
-- do not treat any agent/tool call that runs longer than 60 seconds as normal
-  during this Windows retest
-  - terminate it, diagnose the stall, and fix the underlying cause before
-    continuing
+- during this Windows retest, the right boundary is no longer a flat 60-second
+  wall
+  - short runtime calls such as a single UART read should still fail fast if
+    they stall
+  - longer operations such as rebuilds, flashes, and full benchmark cases can
+    legitimately run longer when they are still making progress

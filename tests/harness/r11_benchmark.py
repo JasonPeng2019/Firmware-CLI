@@ -35,7 +35,7 @@ SUITES_PATH = CASES_ROOT / "suites.yaml"
 RESULT_SCHEMA_PATH = CASES_ROOT / "r11_result_schema.json"
 WORKSPACES_ROOT = RUNS_ROOT / "_r11_workspaces"
 DEFAULT_SERIAL_READ_SECONDS = 3.0
-DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
+DEFAULT_CODEX_TIMEOUT_SECONDS = 180.0
 DEFAULT_SCORING_PROFILE = "r11_default_v1"
 FULL_MCP_TOOL_SURFACE = (
     "connect",
@@ -452,6 +452,17 @@ def _prepare_workspace(case: BenchmarkCase) -> PreparedWorkspace:
         common_root = firmware_root / relative_source_root.parts[0] / "common"
         if common_root.is_dir():
             shutil.copytree(common_root, workspace_root / "common")
+            for cmake_path in workspace_root.rglob("CMakeLists.txt"):
+                original = cmake_path.read_text(encoding="utf-8")
+                updated = original.replace(
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../../../common",
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../common",
+                ).replace(
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../../common",
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../common",
+                )
+                if updated != original:
+                    cmake_path.write_text(updated, encoding="utf-8")
     shutil.copytree(workspace_root, snapshot_root)
     return PreparedWorkspace(
         source_root=source_root,
@@ -474,7 +485,7 @@ def _resolve_probe_uid(board: BoardConfig) -> str:
         raise RuntimeError(
             f"Probe resolution for {board.display_name} did not yield a unique id. Rerun with an explicit host setup."
         )
-    return resolution.probe.uid
+    return str(resolution.probe.uid)
 
 
 def _run_build_command(command: str, workspace_root: Path) -> None:
@@ -570,8 +581,24 @@ def _render_prompt(case: BenchmarkCase) -> str:
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
     )
+    phase_contract = ""
+    if case.kind == "injected_bug":
+        phase_contract = (
+            "Bug-case phase contract:\n\n"
+            "1. Diagnose:\n"
+            "   connect, read UART, read the symbol, and decide whether this is a code bug or an observability fault before editing.\n"
+            "2. Patch/build:\n"
+            "   if it is a code bug, patch only the allowed source file(s) and run the provided rebuild command.\n"
+            "3. Flash/verify:\n"
+            "   flash the rebuilt artifact, rerun UART and symbol verification, then return the structured result immediately.\n\n"
+        )
     return (
         f"{case_prompt.rstrip()}\n\n"
+        "Benchmark discipline:\n\n"
+        "- do not read repo workflow skills, playbooks, or markdown docs unless the prompt explicitly requires them\n"
+        "- this self-contained prompt rule is benchmark-specific; the real deployment workflow should still read its repo workflow docs and skills before acting\n"
+        "- prefer the MCP tool surface over local shell commands and static-file inspection\n\n"
+        f"{phase_contract}"
         "Verification hints:\n\n"
         f"- symbol artifact path: `{case.artifacts.symbol_artifact}`\n"
         "- prefer `read_serial(expected_text=..., reset_on_open=true)` when you need fresh boot text\n"
@@ -1253,9 +1280,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_CODEX_TIMEOUT_SECONDS,
         help=(
-            "Per-case timeout for the embedded `codex exec` step. "
-            "Defaults to 45s so the runner fails cleanly before the bench-level "
-            "60s hang boundary."
+            "Maximum timeout for the embedded `codex exec` step. "
+            "Defaults to 180s so diagnose -> patch/build -> flash/verify bug cases "
+            "have enough time to finish without a blanket 60s cap."
         ),
     )
     return parser

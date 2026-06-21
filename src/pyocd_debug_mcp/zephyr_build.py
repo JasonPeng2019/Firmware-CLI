@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from .local_env import load_local_env
 
@@ -73,6 +77,25 @@ def _venv_python_path(venv_dir: Path) -> Path:
 
 def _path_has_spaces(path: Path) -> bool:
     return " " in str(path)
+
+
+def _path_is_long_for_windows_build(path: Path) -> bool:
+    return sys.platform == "win32" and len(str(path.resolve())) >= 100
+
+
+def _should_use_scratch_build(app_dir: Path, build_dir: Path) -> bool:
+    return (
+        _path_has_spaces(app_dir)
+        or _path_has_spaces(build_dir)
+        or _path_is_long_for_windows_build(app_dir)
+        or _path_is_long_for_windows_build(build_dir)
+    )
+
+
+def _copy_adjacent_common_for_scratch(app_dir: Path, scratch_root: Path) -> None:
+    common_dir = app_dir.parent / "common"
+    if common_dir.is_dir():
+        shutil.copytree(common_dir, scratch_root / "common")
 
 
 def _is_zephyr_workspace(path: Path) -> bool:
@@ -177,6 +200,17 @@ def _iter_sdk_candidates(
         for candidate in sorted(toolchains_root.glob("*/opt/zephyr-sdk"), reverse=True):
             add(candidate, "workspace-adjacent-toolchain")
 
+    if sys.platform == "win32":
+        ncs_roots = [Path("C:/ncs"), Path.home() / "ncs"]
+    else:
+        ncs_roots = [Path.home() / "ncs", Path.home() / "work" / "ncs"]
+    for root in ncs_roots:
+        if not root.exists():
+            continue
+        for pattern in ("toolchains/*/opt/zephyr-sdk", "v*/toolchains/*/opt/zephyr-sdk"):
+            for candidate in sorted(root.glob(pattern), reverse=True):
+                add(candidate, "detected-ncs-toolchain")
+
     standard_candidates = [
         Path.home() / "zephyr-sdk-1.0.1",
         Path.home() / "zephyr-sdk-1.0.0",
@@ -253,7 +287,7 @@ def _ensure_west_python(west_venv_dir: Path) -> Path:
         _print_step(f"bootstrap west venv: {west_venv_dir}")
         _run([sys.executable, "-m", "venv", str(west_venv_dir)])
     _run([str(west_python), "-m", "pip", "install", "--upgrade", "pip"])
-    _run([str(west_python), "-m", "pip", "install", "west", "cmake", "ninja", "patool"])
+    _run([str(west_python), "-m", "pip", "install", "west", "cmake", "ninja", "patool", "py7zr"])
     return west_python
 
 
@@ -340,6 +374,154 @@ def _install_zephyr_python_requirements(west_python: Path, workspace_dir: Path) 
     if not requirements_path.is_file():
         raise RuntimeError(f"Missing Zephyr Python requirements file: {requirements_path}")
     _run([str(west_python), "-m", "pip", "install", "-r", str(requirements_path)])
+
+
+def _sdk_version(workspace_dir: Path) -> str:
+    sdk_version_path = workspace_dir / "zephyr" / "SDK_VERSION"
+    if not sdk_version_path.is_file():
+        raise RuntimeError(f"Missing Zephyr SDK_VERSION file: {sdk_version_path}")
+    version = sdk_version_path.read_text(encoding="utf-8").splitlines()[0].strip()
+    if not version:
+        raise RuntimeError(f"Zephyr SDK_VERSION file was empty: {sdk_version_path}")
+    return version
+
+
+def _sdk_minimal_archive_filename(version: str) -> str:
+    system = platform.system()
+    machine = platform.machine()
+    if system == "Linux":
+        os_name = "linux"
+    elif system == "Darwin":
+        os_name = "macos"
+    elif system == "Windows":
+        os_name = "windows"
+    else:
+        raise RuntimeError(f"Unsupported system for managed Zephyr SDK install: {system}")
+
+    if machine in {"aarch64", "arm64"}:
+        arch = "aarch64"
+    elif machine in {"x86_64", "AMD64"}:
+        arch = "x86_64"
+    else:
+        raise RuntimeError(f"Unsupported machine for managed Zephyr SDK install: {machine}")
+
+    ext = ".7z" if os_name == "windows" else ".tar.xz"
+    return f"zephyr-sdk-{version}_{os_name}-{arch}_minimal{ext}"
+
+
+def _download_bytes(url: str) -> bytes:
+    _print_step(f"download: {url}")
+    try:
+        with urlopen(url, timeout=120) as response:
+            return bytes(response.read())
+    except URLError as exc:
+        raise RuntimeError(f"Unable to download {url}: {exc}") from exc
+
+
+def _download_file(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(_download_bytes(url))
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _expected_sdk_sha256(version: str, filename: str) -> str:
+    sha_url = f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/sha256.sum"
+    sha_text = _download_bytes(sha_url).decode("utf-8")
+    for line in sha_text.splitlines():
+        parts = line.strip().split()
+        if len(parts) < 2:
+            continue
+        candidate_name = parts[-1].lstrip("*")
+        if candidate_name == filename:
+            return parts[0]
+    raise RuntimeError(f"Could not find {filename} in {sha_url}")
+
+
+def _extract_7z_archive(west_python: Path, archive_path: Path, destination: Path) -> None:
+    script = (
+        "from pathlib import Path\n"
+        "import py7zr\n"
+        f"archive = Path({str(archive_path)!r})\n"
+        f"destination = Path({str(destination)!r})\n"
+        "with py7zr.SevenZipFile(archive, 'r') as archive_handle:\n"
+        "    archive_handle.extractall(path=destination)\n"
+    )
+    _run([str(west_python), "-c", script])
+
+
+def _extract_sdk_archive(west_python: Path, archive_path: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    if archive_path.name.endswith(".tar.xz"):
+        with tarfile.open(archive_path, mode="r:xz") as archive:
+            archive.extractall(destination)
+        return
+    if archive_path.suffix == ".7z":
+        _extract_7z_archive(west_python, archive_path, destination)
+        return
+    raise RuntimeError(f"Unsupported Zephyr SDK archive format: {archive_path.name}")
+
+
+def _run_sdk_setup(west_python: Path, sdk_dir: Path, toolchain: str) -> None:
+    if platform.system() == "Windows":
+        setup_path = sdk_dir / "setup.cmd"
+        option_prefix = "/"
+    else:
+        setup_path = sdk_dir / "setup.sh"
+        option_prefix = "-"
+    if not setup_path.is_file():
+        raise RuntimeError(f"Managed Zephyr SDK is missing setup script: {setup_path}")
+    env = _west_env(west_python, sdk_dir)
+    _run([str(setup_path), f"{option_prefix}c"], cwd=sdk_dir, env=env)
+    _run([str(setup_path), f"{option_prefix}t", toolchain, f"{option_prefix}h"], cwd=sdk_dir, env=env)
+
+
+def _install_managed_sdk(
+    *,
+    west_python: Path,
+    workspace_dir: Path,
+    managed_sdk_dir: Path,
+    toolchain: str,
+) -> None:
+    version = _sdk_version(workspace_dir)
+    filename = _sdk_minimal_archive_filename(version)
+    archive_url = f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/{filename}"
+    expected_sha = _expected_sdk_sha256(version, filename)
+
+    with tempfile.TemporaryDirectory(prefix="firmcli-zephyr-sdk-") as temp_dir_text:
+        temp_dir = Path(temp_dir_text)
+        archive_path = temp_dir / filename
+        extract_root = temp_dir / "extract"
+        _download_file(archive_url, archive_path)
+        actual_sha = _sha256_file(archive_path)
+        if actual_sha.lower() != expected_sha.lower():
+            raise RuntimeError(
+                f"Managed Zephyr SDK archive sha256 mismatch for {filename}: "
+                f"expected {expected_sha}, got {actual_sha}"
+            )
+        _extract_sdk_archive(west_python, archive_path, extract_root)
+        extracted_dirs = [path for path in extract_root.iterdir() if path.is_dir()]
+        matching_dir = next(
+            (path for path in extracted_dirs if path.name.startswith(f"zephyr-sdk-{version}")),
+            None,
+        )
+        sdk_root = matching_dir or (extracted_dirs[0] if len(extracted_dirs) == 1 else None)
+        if sdk_root is None:
+            raise RuntimeError(
+                f"Managed Zephyr SDK archive had unexpected layout for {filename}: {extracted_dirs}"
+            )
+        if managed_sdk_dir.exists():
+            shutil.rmtree(managed_sdk_dir)
+        managed_sdk_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(sdk_root), str(managed_sdk_dir))
+
+    _run_sdk_setup(west_python, managed_sdk_dir, toolchain)
 
 
 def _resolve_workspace_dir(
@@ -443,26 +625,13 @@ def _resolve_sdk_dir(
             "No usable Zephyr SDK found. Set ZEPHYR_SDK_INSTALL_DIR/--sdk-dir or allow managed SDK install."
         )
 
-    if sys.platform == "darwin" and platform.machine().lower() == "x86_64":
-        raise RuntimeError(
-            "Managed Zephyr SDK install is not supported on macOS x86_64 by current Zephyr releases. "
-            "Set ZEPHYR_SDK_INSTALL_DIR to a preinstalled supported SDK instead."
-        )
-
     managed_sdk_dir.parent.mkdir(parents=True, exist_ok=True)
     _print_step(f"install managed sdk at {managed_sdk_dir}")
-    _run(
-        _west_cmd(
-            west_python,
-            "sdk",
-            "install",
-            "-d",
-            str(managed_sdk_dir),
-            "-t",
-            toolchain,
-        ),
-        cwd=workspace_dir,
-        env=_west_env(west_python),
+    _install_managed_sdk(
+        west_python=west_python,
+        workspace_dir=workspace_dir,
+        managed_sdk_dir=managed_sdk_dir,
+        toolchain=toolchain,
     )
     if not _is_zephyr_sdk(managed_sdk_dir):
         raise RuntimeError(f"Managed SDK install completed but sdk_version was not found at {managed_sdk_dir}")
@@ -517,6 +686,26 @@ def _clean_build_dir(build_dir: Path) -> None:
             shutil.rmtree(child)
         else:
             child.unlink()
+
+
+def _cmake_cache_source_dir(build_dir: Path) -> Path | None:
+    cache_path = build_dir / "CMakeCache.txt"
+    if not cache_path.is_file():
+        return None
+    for line in cache_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("CMAKE_HOME_DIRECTORY:"):
+            _key, _sep, value = line.partition("=")
+            value = value.strip()
+            if value:
+                return Path(value).expanduser().resolve()
+    return None
+
+
+def _build_cache_matches_app(build_dir: Path, app_dir: Path) -> bool:
+    cache_source_dir = _cmake_cache_source_dir(build_dir)
+    if cache_source_dir is None:
+        return True
+    return cache_source_dir == app_dir.resolve()
 
 
 def _resolve_artifact_paths(work_build_dir: Path, *, app_dir_name: str) -> tuple[Path, Path | None]:
@@ -610,11 +799,17 @@ def run_build(args: argparse.Namespace, runtime: ZephyrRuntime) -> None:
     work_app_dir = app_dir
     work_build_dir = build_dir
     scratch_root: Path | None = None
-    if _path_has_spaces(app_dir) or _path_has_spaces(build_dir):
+    if _should_use_scratch_build(app_dir, build_dir):
         scratch_root = Path(tempfile.mkdtemp(prefix="firmware-cli-zephyr-")).resolve()
         work_app_dir = scratch_root / "app"
         work_build_dir = scratch_root / "build"
         shutil.copytree(app_dir, work_app_dir)
+        _copy_adjacent_common_for_scratch(app_dir, scratch_root)
+    elif args.pristine != "never" and not _build_cache_matches_app(work_build_dir, work_app_dir):
+        _print_step(
+            f"clean stale build cache at {work_build_dir} because it points at a different app source"
+        )
+        _clean_build_dir(work_build_dir)
 
     try:
         _run(

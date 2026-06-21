@@ -310,8 +310,10 @@ What it does:
   cache and pins it to `zephyrproject-rtos/zephyr` tag `v4.3.0`
 - reuses `ZEPHYR_SDK_INSTALL_DIR` or an existing SDK when one is already on the
   machine
-- otherwise installs the Zephyr SDK toolchain component it needs into the local
-  cache through `west sdk install`
+- otherwise detects common global NCS toolchain installs and, if none are
+  usable, downloads and installs the Zephyr SDK toolchain component it needs
+  into the local cache with the repo helper's own managed archive/setup path
+  rather than requiring a preinstalled `west sdk install` extractor workflow
 
 Direct board builds are then:
 
@@ -324,6 +326,12 @@ uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-di
 The helper preserves the live Zephyr build tree and defaults to incremental
 `west build -p auto` behavior so repeated agent rebuilds stay fast. Pass
 `--pristine always` when a full clean reconfigure is actually required.
+
+For `R11` benchmark cases, the nested Codex prompt is intentionally
+self-contained so the benchmark agent spends its time on the board task rather
+than re-reading repo workflow docs. That benchmark-only rule does not change
+the real product path: non-benchmark deployment runs should still load the repo
+workflow docs and skills before they edit, rebuild, flash, or diagnose.
 
 The per-board `build_reference.sh` / `build_bug.sh` wrappers now delegate to
 that same helper. `NCS` is optional: if it is already installed, the helper
@@ -417,6 +425,9 @@ Verified:
   authoritative, and the `b004` bug fixtures preserve the stable Stage 1
   symbol-access pattern so Nordic runs cannot “look green” while violating the
   symbol contract
+- benchmark bug-repair cases now allow a longer default `codex exec` budget so
+  diagnose -> patch/build -> flash/verify runs are not cut off by a blanket
+  sub-60-second cap while they are still making progress
 - `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof,
   and the next implementation frontier is `R12`
 
