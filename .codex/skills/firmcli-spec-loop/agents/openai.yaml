@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Spec Loop"
+  short_description: "Run the full spec-build-review loop"
+  default_prompt: "Use $firmcli-spec-loop to drive the full Firmware-CLI spec, build, and review loop for this task."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Build"
+  short_description: "Implement a reconciled Firmware-CLI spec"
+  default_prompt: "Use $firmcli-build to implement the current Firmware-CLI spec, sync docs, and run the non-hardware check ladder."

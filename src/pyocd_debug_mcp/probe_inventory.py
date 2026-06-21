@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
+
+from pyocd.core.helpers import ConnectHelper  # type: ignore[import-untyped]
 
 from pyocd_debug_mcp.board_config import BoardConfig, PROBE_FAMILY_HINTS
 
 RunCommand = Callable[[list[str]], tuple[int, str, str]]
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _ROW_RE = re.compile(
-    r"^\s*(?P<index>\d+)\s{2,}(?P<description>.+?)\s{2,}(?P<uid>\S+)\s{2,}(?P<state>\S.*)?$"
+    r"^\s*(?P<index>\d+)\s{2,}(?P<description>.+?)\s{2,}(?P<uid>\S+)(?:\s{2,}(?P<state>\S.*))?\s*$"
 )
 
 
@@ -34,6 +37,52 @@ class ProbeResolution:
     probes: tuple[ProbeInfo, ...]
 
 
+def _normalize_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _append_unique_text(parts: list[str], value: object) -> None:
+    text = _normalize_text(value)
+    if text and text not in parts:
+        parts.append(text)
+
+
+def _probe_info_from_pyocd_probe(probe: Any) -> ProbeInfo | None:
+    uid = _normalize_text(getattr(probe, "unique_id", ""))
+    description_parts: list[str] = []
+    raw_parts: list[str] = []
+
+    _append_unique_text(description_parts, getattr(probe, "description", ""))
+    _append_unique_text(raw_parts, getattr(probe, "description", ""))
+    _append_unique_text(raw_parts, uid)
+
+    board_info = getattr(probe, "associated_board_info", None)
+    if board_info is not None:
+        _append_unique_text(description_parts, getattr(board_info, "name", ""))
+        _append_unique_text(raw_parts, getattr(board_info, "vendor", ""))
+        _append_unique_text(raw_parts, getattr(board_info, "name", ""))
+        _append_unique_text(raw_parts, getattr(board_info, "target", ""))
+
+    description = " ".join(description_parts).strip()
+    raw = " | ".join(raw_parts).strip()
+    if not uid or not description:
+        return None
+
+    return ProbeInfo(uid=uid, description=description, raw=raw)
+
+
+def _list_connected_probes_via_pyocd_api() -> list[ProbeInfo]:
+    probes: list[ProbeInfo] = []
+    for probe in ConnectHelper.get_all_connected_probes(
+        blocking=False,
+        print_wait_message=False,
+    ):
+        parsed = _probe_info_from_pyocd_probe(probe)
+        if parsed is not None:
+            probes.append(parsed)
+    return probes
+
+
 def parse_pyocd_probe_listing(output: str) -> list[ProbeInfo]:
     """Parse `pyocd list --probes` table output into structured rows."""
 
@@ -41,7 +90,7 @@ def parse_pyocd_probe_listing(output: str) -> list[ProbeInfo]:
     current_index: int | None = None
 
     for line in output.splitlines():
-        raw = line.rstrip()
+        raw = _ANSI_RE.sub("", line).rstrip()
         stripped = raw.strip()
         if not stripped:
             continue
@@ -66,6 +115,22 @@ def parse_pyocd_probe_listing(output: str) -> list[ProbeInfo]:
             current_index = len(probes) - 1
             continue
 
+        columns = re.split(r"\s{2,}", stripped)
+        if len(columns) >= 3 and columns[0].isdigit():
+            description = columns[1].strip()
+            uid = columns[2].strip()
+            state = columns[3].strip() if len(columns) >= 4 else ""
+            if description and uid:
+                probe = ProbeInfo(
+                    uid=uid,
+                    description=description,
+                    state=state,
+                    raw=raw,
+                )
+                probes.append(probe)
+                current_index = len(probes) - 1
+                continue
+
         if current_index is not None:
             current = probes[current_index]
             probes[current_index] = ProbeInfo(
@@ -81,10 +146,25 @@ def parse_pyocd_probe_listing(output: str) -> list[ProbeInfo]:
 def list_connected_probes(run_cmd: RunCommand) -> list[ProbeInfo]:
     """Return the connected probes visible to pyOCD."""
 
-    rc, out, _ = run_cmd(["pyocd", "list", "--probes"])
-    if rc != 0 or not out.strip():
+    try:
+        probes = _list_connected_probes_via_pyocd_api()
+    except Exception:
+        probes = []
+    if probes:
+        return probes
+
+    rc, out, err = run_cmd(["pyocd", "list", "--probes"])
+    primary_text = out if out.strip() else err
+    if primary_text.strip():
+        probes = parse_pyocd_probe_listing(primary_text)
+        if probes:
+            return probes
+
+    rc, out, err = run_cmd(["pyocd", "list"])
+    fallback_text = out if out.strip() else err
+    if not fallback_text.strip():
         return []
-    return parse_pyocd_probe_listing(out)
+    return parse_pyocd_probe_listing(fallback_text)
 
 
 def _score_terms(text: str, terms: tuple[str, ...]) -> int:

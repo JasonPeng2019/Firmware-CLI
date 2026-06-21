@@ -113,6 +113,26 @@ Windows PowerShell uses the same `uv run ...` commands from the repo root.
 - `uv run pyocd-debug-mcp`
   Starts the MCP server after Stage 0 is acceptable.
 
+### Known-good Stage 0 commands by board
+
+Windows PowerShell, STM32 `nucleo_l476rg`:
+
+```powershell
+uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs
+uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg
+```
+
+Windows PowerShell, Nordic `nrf52833dk`:
+
+```powershell
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk
+```
+
+Use the STM32 form when proving the Nucleo-L476RG path on a fresh Windows host:
+the `--install-packs` flag is the repo-standard way to provision the pinned
+STM32L4 pack before Stage 0 tries to attach and flash.
+
 ## Native Probe Dependencies
 
 If probe enumeration fails, install or repair the host-level dependency first.

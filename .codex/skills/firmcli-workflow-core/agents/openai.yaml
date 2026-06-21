@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Workflow Core"
+  short_description: "Repo-specific authority and workflow helpers"
+  default_prompt: "Use $firmcli-workflow-core to load the Firmware-CLI authority docs and workflow helpers before changing code."

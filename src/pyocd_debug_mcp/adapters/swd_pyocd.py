@@ -10,7 +10,7 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any, BinaryIO, TextIO, cast
 
 from pyocd.core.exceptions import TransferError  # type: ignore[import-untyped]
 from pyocd.core.helpers import ConnectHelper  # type: ignore[import-untyped]
@@ -52,7 +52,7 @@ def _quiet_backend_streams() -> Iterator[None]:
     """
 
     redirected: list[tuple[TextIO, int]] = []
-    temp_files: list[io.BufferedRandom] = []
+    temp_files: list[BinaryIO] = []
     try:
         for stream in (sys.stdout, sys.stderr):
             try:
@@ -64,7 +64,7 @@ def _quiet_backend_streams() -> Iterator[None]:
             except (AttributeError, io.UnsupportedOperation, OSError):
                 continue
             redirected.append((stream, saved_fd))
-            temp_files.append(temp_file)
+            temp_files.append(cast(BinaryIO, temp_file))
 
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             yield

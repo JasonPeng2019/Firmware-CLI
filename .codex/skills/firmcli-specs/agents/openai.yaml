@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Specs"
+  short_description: "Write reconciled task specs for Firmware-CLI"
+  default_prompt: "Use $firmcli-specs to write a reconciled spec for this Firmware-CLI task before any code changes."

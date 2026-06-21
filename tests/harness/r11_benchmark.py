@@ -35,6 +35,7 @@ SUITES_PATH = CASES_ROOT / "suites.yaml"
 RESULT_SCHEMA_PATH = CASES_ROOT / "r11_result_schema.json"
 WORKSPACES_ROOT = RUNS_ROOT / "_r11_workspaces"
 DEFAULT_SERIAL_READ_SECONDS = 3.0
+DEFAULT_CODEX_TIMEOUT_SECONDS = 180
 DEFAULT_SCORING_PROFILE = "r11_default_v1"
 FULL_MCP_TOOL_SURFACE = (
     "connect",
@@ -62,6 +63,7 @@ VALID_FLASH_MODES = {"reference", "case_artifact"}
 VALID_POST_FLASH_STATES = {"running", "halted"}
 VALID_CLASSIFICATIONS = {"healthy", "code_bug", "observability_fault", "physical_fault"}
 VALID_FINAL_STATUSES = {"fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"}
+_STAGE1_PREFLIGHT_CACHE: dict[str, str | None] = {}
 
 
 @dataclass(frozen=True)
@@ -221,7 +223,12 @@ def _load_yaml(path: Path) -> dict[str, object]:
     return _require_mapping(path, yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-def _run_cmd(cmd: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]:
+def _run_cmd(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout_seconds: float | None = None,
+) -> tuple[int, str, str]:
     try:
         result = subprocess.run(
             cmd,
@@ -229,10 +236,25 @@ def _run_cmd(cmd: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]
             capture_output=True,
             text=True,
             check=False,
+            timeout=timeout_seconds,
         )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        stdout = (
+            exc.stdout.decode("utf-8", errors="replace")
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or "")
+        )
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or "")
+        )
+        detail = f"command timed out after {timeout_seconds:.0f}s"
+        stderr = f"{stderr}\n{detail}".strip()
+        return 124, stdout, stderr
     return result.returncode, result.stdout or "", result.stderr or ""
 
 
@@ -500,6 +522,30 @@ def _prepare_target_state(prepared: PreparedCase) -> None:
         target_control.close_session(handle)
 
 
+def _ensure_stage1_preflight(board_id: str, probe_uid: str) -> None:
+    cached = _STAGE1_PREFLIGHT_CACHE.get(board_id)
+    if cached is None and board_id in _STAGE1_PREFLIGHT_CACHE:
+        return
+    if cached is not None:
+        raise RuntimeError(cached)
+
+    try:
+        run_stage1_smoke(
+            board_id=board_id,
+            probe_uid=probe_uid,
+            serial_read_seconds=DEFAULT_SERIAL_READ_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001 - preserve the concrete bench blocker
+        message = (
+            f"Benchmark preflight failed for {board_id}: {type(exc).__name__}: {exc}. "
+            "Rerun Stage 0 and Stage 1 smoke on this host before R11."
+        )
+        _STAGE1_PREFLIGHT_CACHE[board_id] = message
+        raise RuntimeError(message) from exc
+
+    _STAGE1_PREFLIGHT_CACHE[board_id] = None
+
+
 def _render_prompt(case: BenchmarkCase) -> str:
     case_prompt = case.prompt_template.format(
         board_id=case.board_id,
@@ -555,7 +601,11 @@ def _run_codex(case: BenchmarkCase, workspace_root: Path, prompt_text: str) -> C
         str(temp_result_path),
         prompt_text,
     ]
-    exit_code, stdout, stderr = _run_cmd(cmd, cwd=REPO_ROOT)
+    exit_code, stdout, stderr = _run_cmd(
+        cmd,
+        cwd=REPO_ROOT,
+        timeout_seconds=DEFAULT_CODEX_TIMEOUT_SECONDS,
+    )
     after_dirs = _session_dirs()
     new_names = sorted(set(after_dirs) - before_dirs)
     return CodexRunArtifacts(
@@ -1000,6 +1050,7 @@ def run_case(case_id: str) -> CaseRunReport:
     if case.scoring_profile != DEFAULT_SCORING_PROFILE:
         raise RuntimeError(f"Unsupported scoring profile: {case.scoring_profile}")
     prepared = _prepare_case(case)
+    _ensure_stage1_preflight(prepared.case.board_id, prepared.probe_uid)
     _prepare_target_state(prepared)
     prompt_text = _render_prompt(case)
     codex_run = _run_codex(case, prepared.workspace.workspace_root, prompt_text)
@@ -1049,7 +1100,7 @@ def run_case(case_id: str) -> CaseRunReport:
             verification_points=0,
             safety_points=0,
             penalties=("session-root-missing",),
-            reasons=(verification.error_text,),
+            reasons=((verification.error_text or "session root missing"),),
             actual_changed_files=_changed_files(
                 prepared.workspace.snapshot_root,
                 prepared.workspace.workspace_root,

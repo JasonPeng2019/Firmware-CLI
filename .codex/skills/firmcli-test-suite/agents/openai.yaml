@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Test Suite"
+  short_description: "Validate a Firmware-CLI feature chain"
+  default_prompt: "Use $firmcli-test-suite to validate this Firmware-CLI feature chain and return a pass-fail matrix."
