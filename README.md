@@ -55,6 +55,10 @@ Firmware-CLI/
 |-- host_bootstrap.py
 |-- stage0_check.py
 |-- stage0_setup.md
+|-- packs/
+|   |-- manifest.yaml
+|   |-- README.md
+|   `-- live_index_repair.md
 |-- boards/
 |   |-- nrf52833dk.yaml
 |   |-- nrf52840dk.yaml
@@ -108,6 +112,7 @@ Firmware-CLI/
 |       |-- board_config.py
 |       |-- board_config_cli.py
 |       |-- local_env.py
+|       |-- pack_index_repair.py
 |       |-- probe_inventory.py
 |       |-- reference_artifacts.py
 |       |-- serial_resolver.py

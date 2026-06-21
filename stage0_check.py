@@ -42,6 +42,7 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
 from pyocd_debug_mcp.guardrails.flash_gate import resolve_flash_request  # noqa: E402
 from pyocd_debug_mcp.guardrails.recover_gate import authorize_recover  # noqa: E402
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.pack_provision import discover_local_packs  # noqa: E402
 from pyocd_debug_mcp.probe_inventory import (  # noqa: E402
     ProbeInfo,
     list_connected_probes,
@@ -172,6 +173,10 @@ def pyocd_base(subcommand: str, board: BoardConfig, probe: ProbeInfo | None) -> 
         # appear during an automated run. NOTE: the plan standardizes the shipped product on
         # CMSIS-DAP, not this SEGGER-DLL path (see surfaced conflict).
         cmd.extend(["-O", "jlink.non_interactive=false"])
+    # Load any locally-provisioned CMSIS-Packs (pinned, sha256-verified) so the
+    # exact target resolves without depending on the live pyOCD pack index.
+    for pack in discover_local_packs():
+        cmd.extend(["--pack", str(pack)])
     return cmd
 
 

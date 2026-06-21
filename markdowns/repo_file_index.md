@@ -13,7 +13,7 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `pyproject.toml` | Package metadata + dependencies; declares the console script `pyocd-debug-mcp = pyocd_debug_mcp.server:main`. |
+| `pyproject.toml` | Package metadata + dependencies; declares the console scripts `pyocd-debug-mcp` and `pyocd-pack-repair`. |
 | `uv.lock` | Locked dependency set for reproducible `uv sync`. |
 | `.python-version` | Pins the team interpreter to Python 3.12. |
 | `.env.example` | Template for the gitignored `.env` (probe UID, target, optional board id/config). |
@@ -35,9 +35,11 @@ a glance before relying on detail.
 | `board_config.py` | Board YAML/JSON schema (`BoardConfig`), loader, validation, recover-mode vocabulary; the single board-facts source for all frontends. |
 | `board_config_cli.py` | Small CLI to resolve/inspect tracked board configs through the shared loader. |
 | `local_env.py` | Auto-loads `.env` when present. |
+| `pack_index_repair.py` | Repairs a partial cmsis-pack-manager live descriptor index by controlled PDSC fetch + local `index.json` rebuild. |
 | `serial_resolver.py` | Serial/VCP discovery, vendor-assisted detection, and `--port`/override resolution with interactive/non-interactive fallback. |
 | `probe_inventory.py` | Parses `pyocd list --probes`, models `ProbeInfo`, and does board-aware probe selection (preserves real UIDs for J-Link and ST-Link). |
 | `reference_artifacts.py` | Resolves the canonical per-board reference `.elf`/`.hex` pair from the repo `firmware/<board>/reference/build/` layout. |
+| `pack_provision.py` | Pinned, deterministic CMSIS-Pack provisioning: `ensure_all` (fetch+sha256-verify from `packs/manifest.yaml`) and `discover_local_packs` (network-free runtime lookup for pyOCD's `pack` option). Replaces dependence on the live `pyocd pack` index. |
 | `target_errors.py` | Typed error taxonomy: `TargetControlError` base + `ProbeNotFound`, `TargetConnection`, `LockedTarget`, `UnsupportedArtifact`, `SymbolLookup`, `ReferenceArtifact`. |
 
 ### `adapters/` — backend-neutral transport contracts + backends
@@ -83,6 +85,8 @@ a glance before relying on detail.
 | `test_target_control.py` | Shared target-control service tests. `(by name)` |
 | `test_uart_capture.py` | UART capture service tests. `(by name)` |
 | `test_r10_runtime.py` | R10 runtime/safety (session, gates, watcher) tests. `(by name)` |
+| `test_pack_index_repair.py` | Live-index repair tests (master-index parse, filtering, missing-plan logic; no network). |
+| `test_pack_provision.py` | Pinned-pack provisioning tests (sha256 verify, discover, manifest parse; no network). |
 | `test_r11_benchmark.py` | Benchmark runner/schema/scoring tests. `(by name)` |
 | `test_stage0_shared_errors.py` | Stage 0 shared-error behavior tests. `(by name)` |
 | `test_server_board_config.py` | Server board-config resolution tests. `(by name)` |
@@ -102,6 +106,15 @@ a glance before relying on detail.
 | `nucleo_l476rg.yaml` | Scoped STM32 board config. |
 | `nrf52840dk.yaml` | Retained alternate Nordic profile (not the current scoped blocker). |
 | `example_custom_board.yaml`, `example_custom_nrf52_board.yaml` | Templates for adding a custom board (ignored by default board selection). |
+
+## `packs/`
+
+| Path | What it is / does |
+|---|---|
+| `manifest.yaml` | Tracked pin list (id/version/url/sha256) for deterministic CMSIS-Pack provisioning. |
+| `README.md` | Why pinned-fetch instead of the live index; how to add/update a pin or fetch manually. |
+| `live_index_repair.md` | Diagnosis + verified repair flow for partial live pyOCD/CMSIS pack indexes. |
+| `*.pack` | Downloaded DFP binaries (gitignored); provisioned by `host_bootstrap.py --install-packs`, loaded at runtime via `discover_local_packs`. |
 
 ## `firmware/<board>/`
 

@@ -8,8 +8,9 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import IO, Any, TextIO, cast
 
 from pyocd.core.exceptions import TransferError  # type: ignore[import-untyped]
 from pyocd.core.helpers import ConnectHelper  # type: ignore[import-untyped]
@@ -18,6 +19,7 @@ from pyocd.flash.file_programmer import FileProgrammer  # type: ignore[import-un
 
 from pyocd_debug_mcp.adapters.swd_interface import SWDInterface, TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig, PROBE_FAMILY_HINTS
+from pyocd_debug_mcp.pack_provision import discover_local_packs
 from pyocd_debug_mcp.probe_inventory import list_connected_probes
 from pyocd_debug_mcp.target_errors import (
     LockedTargetError,
@@ -40,7 +42,7 @@ def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
 
 
 @contextlib.contextmanager
-def _quiet_backend_streams():
+def _quiet_backend_streams() -> Iterator[None]:
     """Keep backend chatter off the MCP stdio transport.
 
     On Windows, the pyOCD J-Link path can misbehave when the process stdout/stderr
@@ -49,8 +51,8 @@ def _quiet_backend_streams():
     avoids both protocol corruption and the attach hang/failure seen under stdio.
     """
 
-    redirected: list[tuple[object, int]] = []
-    temp_files: list[io.BufferedRandom] = []
+    redirected: list[tuple[TextIO, int]] = []
+    temp_files: list[IO[bytes]] = []
     try:
         for stream in (sys.stdout, sys.stderr):
             try:
@@ -76,8 +78,8 @@ def _quiet_backend_streams():
                 os.dup2(saved_fd, stream.fileno())
             finally:
                 os.close(saved_fd)
-        for temp_file in temp_files:
-            temp_file.close()
+        for opened_file in temp_files:
+            opened_file.close()
 
 
 def _typed_backend_error(exc: Exception) -> TargetConnectionError:
@@ -148,7 +150,7 @@ class PyOCDSWDInterface(SWDInterface):
         *,
         probe_uid: str | None,
         options: dict[str, object] | None,
-    ):
+    ) -> Any:
         return ConnectHelper.session_with_chosen_probe(
             blocking=False,
             return_first=True,
@@ -182,6 +184,13 @@ class PyOCDSWDInterface(SWDInterface):
             or None
         )
         options = build_session_options(board, target_override)
+        # Load any locally-provisioned CMSIS-Packs (pinned + sha256-verified) so the
+        # exact target resolves without depending on the live pyOCD pack index. This
+        # is a runtime/filesystem concern, kept out of the pure build_session_options.
+        local_packs = discover_local_packs()
+        if local_packs:
+            options = dict(options or {})
+            options["pack"] = [str(p) for p in local_packs]
         session = self._choose_session(probe_uid=probe_uid, options=options)
         if session is None:
             raise ProbeNotFoundError("No matching debug probe found.")

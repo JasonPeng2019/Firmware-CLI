@@ -119,9 +119,82 @@ If probe enumeration fails, install or repair the host-level dependency first.
 
 - macOS: `brew install libusb`
 - Debian / Ubuntu: `sudo apt install libusb-1.0-0`
-- Windows: install the probe's required USB driver path or vendor tooling
+- Windows: install the probe's required USB driver (see the per-family steps below)
 
 Linux users may also need pyOCD's udev rules from the upstream pyOCD repo.
+
+### Windows ST-Link driver (Nucleo / ST-Link boards)
+
+On Windows the ST-Link enumerates as a composite device: its virtual COM port
+gets Windows' generic serial driver automatically (so a `COM*` port appears even
+when the debug side is unusable), but the **debug interface** needs a driver
+pyOCD can talk to. The signature of this problem is `uv run pyocd list` printing
+`No available debug probes are connected` while a `COM*` port is still visible.
+
+1. Install the **ST-Link driver**. The representative path (what an STM32
+   developer typically already has) is **STM32CubeProgrammer** — it bundles the
+   driver and lets you independently confirm the board connects. The standalone
+   **STSW-LINK009** driver also works. Accept any Windows driver-install prompt
+   during setup.
+2. Unplug and replug the board.
+3. Verify:
+
+   ```powershell
+   uv run pyocd list
+   ```
+
+   The ST-Link should appear with a unique ID and the board name. Verified on a
+   real Windows host: ST's driver alone is sufficient for pyOCD here — **no
+   WinUSB/Zadig step was required**.
+4. **Fallback only if step 3 still shows no probe:** pyOCD reaches ST-Link through
+   libusb, which on some setups needs the debug interface bound to **WinUSB**. Use
+   **Zadig** to install WinUSB on the **ST-Link debug interface** — not the `COM*`
+   serial interface, or you lose the virtual COM port.
+
+Operating note: the ST-Link is exclusive-access. Close STM32CubeProgrammer (and
+any IDE or other pyOCD session) before running `pyocd list`, `stage0_check.py`,
+or the MCP server, or the probe looks missing because another process holds it.
+
+## Target Packs (CMSIS-Pack)
+
+pyOCD resolves a board's exact target (for example `stm32l476rgtx`) from a
+CMSIS-Pack. Targets pyOCD does not build in are provisioned **deterministically**
+from `packs/manifest.yaml`: each pack is pinned by direct URL + sha256, fetched on
+demand, verified, and loaded by pyOCD via its `pack` option in the shared backend.
+This is the shipped path and it does **not** depend on the live `pyocd pack` index.
+
+Provisioning is automatic — fetch any missing pinned packs with:
+
+```powershell
+uv run python host_bootstrap.py --install-packs
+```
+
+This downloads each missing pack into `packs/`, verifies its sha256, and the
+target then resolves identically for `stage0_check.py`, the MCP server, and the
+Stage 1 harness — offline after the first fetch.
+
+**Do not use `pyocd pack update` / `pyocd pack install` for this.** That
+index-based flow bulk-fetches ~1500 vendor descriptors from many servers and
+**silently drops whole families** (e.g. STM32L4) on restrictive or slow networks,
+so `pyocd pack install stm32l476` can report `No matching devices` even when the
+board and connection are fine. The pinned manifest removes that single point of
+failure. (See [packs/live_index_repair.md](./packs/live_index_repair.md) for
+diagnosing and repairing the live index itself if you need it for other targets.)
+
+If you do need the live index repaired for interactive pyOCD pack commands, run:
+
+```powershell
+uv run pyocd-pack-repair
+```
+
+Or repair only the exact failing STM32L4 DFP:
+
+```powershell
+uv run pyocd-pack-repair --vendor Keil --pack-name STM32L4xx_DFP
+```
+
+To add or update a pin, or to fetch a pack manually when the bench has no network,
+see [packs/README.md](./packs/README.md).
 
 ## Stage 0 Commands By OS
 
@@ -211,6 +284,14 @@ Verified:
   scoped pair: `nucleo_l476rg` and `nrf52833dk`
 - the canonical Windows `R0` bootstrap path has been verified on a real
   Windows host
+- Windows ST-Link probe visibility is verified on a real Windows host: after
+  installing the ST-Link driver via STM32CubeProgrammer and replugging, pyOCD
+  enumerates the Nucleo ST-Link with no WinUSB/Zadig step
+- the CMSIS-Pack `No matching devices` failure is a partial live index (ST
+  families missing) reproduced across clean rebuilds on this Windows host; it is
+  worked around deterministically by the pinned-fetch provisioning
+  (`packs/manifest.yaml` + `host_bootstrap.py --install-packs`), which is
+  bench-verified to resolve the exact `stm32l476rgtx` target from a local pack
 
 Pending verification:
 

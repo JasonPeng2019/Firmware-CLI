@@ -272,6 +272,9 @@ def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monk
         "session_with_chosen_probe",
         staticmethod(fake_choose_probe),
     )
+    # Keep this test hermetic: neutralize locally-provisioned pack discovery so the
+    # asserted backend options don't depend on what's in the repo packs/ dir.
+    monkeypatch.setattr(swd_pyocd, "discover_local_packs", lambda *a, **k: [])
     monkeypatch.setattr(
         swd_pyocd,
         "list_connected_probes",
