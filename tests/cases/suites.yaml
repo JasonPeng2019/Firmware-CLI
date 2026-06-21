@@ -25,3 +25,13 @@ pilot_v1_plus_b003_b004:
     - nrf52833dk__b003_silent_uart
     - nucleo_l476rg__b004_dual_signal_regression
     - nrf52833dk__b004_dual_signal_regression
+
+nrf52840dk_v1_plus_b003_b004:
+  description: "Alternate Nordic R11 suite for the retained nRF52840 DK profile."
+  cases:
+    - nrf52840dk__k001_reference_green
+    - nrf52840dk__b001_wrong_boot_text
+    - nrf52840dk__b002_wrong_known_value
+    - nrf52840dk__f001_halted_target_silent_uart
+    - nrf52840dk__b003_silent_uart
+    - nrf52840dk__b004_dual_signal_regression

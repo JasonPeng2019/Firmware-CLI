@@ -22,7 +22,7 @@ def test_all_r11_case_manifests_load() -> None:
         if (case_dir / "case.yaml").exists():
             cases.append(r11.load_case(case_dir.name))
 
-    assert len(cases) == 12
+    assert len(cases) == 18
     assert {case.scoring_profile for case in cases} == {r11.DEFAULT_SCORING_PROFILE}
 
 
@@ -60,13 +60,28 @@ def test_expanded_pilot_suite_loads_in_frozen_order() -> None:
     ]
 
 
+def test_nrf52840dk_suite_loads_in_frozen_order() -> None:
+    cases = r11.load_suite("nrf52840dk_v1_plus_b003_b004")
+
+    assert [case.case_id for case in cases] == [
+        "nrf52840dk__k001_reference_green",
+        "nrf52840dk__b001_wrong_boot_text",
+        "nrf52840dk__b002_wrong_known_value",
+        "nrf52840dk__f001_halted_target_silent_uart",
+        "nrf52840dk__b003_silent_uart",
+        "nrf52840dk__b004_dual_signal_regression",
+    ]
+
+
 @pytest.mark.parametrize(
     "case_id",
     [
         "nucleo_l476rg__b003_silent_uart",
         "nrf52833dk__b003_silent_uart",
+        "nrf52840dk__b003_silent_uart",
         "nucleo_l476rg__b004_dual_signal_regression",
         "nrf52833dk__b004_dual_signal_regression",
+        "nrf52840dk__b004_dual_signal_regression",
     ],
 )
 def test_new_case_manifests_keep_default_scoring_profile(case_id: str) -> None:
@@ -595,6 +610,18 @@ def test_render_prompt_adds_bug_case_phase_contract() -> None:
     assert "1. Diagnose:" in prompt
     assert "2. Patch/build:" in prompt
     assert "3. Flash/verify:" in prompt
+
+
+def test_render_prompt_adds_observability_fault_contract() -> None:
+    case = r11.load_case("nrf52840dk__f001_halted_target_silent_uart")
+
+    prompt = r11._render_prompt(case)
+
+    assert "Case-specific context:" in prompt
+    assert "runner intentionally prepared the target with post-flash state `halted`" in prompt
+    assert "initial `HALTED` or `SLEEPING` state is evidence for this case" in prompt
+    assert "classify the case as `observability_fault`" in prompt
+    assert "do not reinterpret a later reset, resume, or reflash" in prompt
 
 
 def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:

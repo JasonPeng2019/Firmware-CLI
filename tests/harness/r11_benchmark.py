@@ -581,6 +581,23 @@ def _render_prompt(case: BenchmarkCase) -> str:
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
     )
+    case_context = ""
+    if case.kind == "known_good":
+        case_context = (
+            "Case-specific context:\n\n"
+            "- this workspace is the tracked reference baseline, not an injected bug fixture\n"
+            "- if the board already matches the expected UART and symbol contract, classify it as `healthy`\n\n"
+        )
+    elif case.kind == "observability_fault":
+        case_context = (
+            "Case-specific context:\n\n"
+            "- this workspace is the tracked reference baseline, not an injected bug fixture\n"
+            f"- before you connect, the runner intentionally prepared the target with post-flash state `{case.initial_prep.post_flash_state}`\n"
+            "- an initial `HALTED` or `SLEEPING` state is evidence for this case, not a debugger artifact by itself\n"
+            "- if the firmware artifact is healthy but target execution state blocks fresh UART output or halted-only register reads, classify the case as `observability_fault`\n"
+            "- do not reinterpret a later reset, resume, or reflash that returns the board to green as proof that the initial state was `healthy`\n"
+            "- do not edit source for this case\n\n"
+        )
     phase_contract = ""
     if case.kind == "injected_bug":
         phase_contract = (
@@ -594,6 +611,7 @@ def _render_prompt(case: BenchmarkCase) -> str:
         )
     return (
         f"{case_prompt.rstrip()}\n\n"
+        f"{case_context}"
         "Benchmark discipline:\n\n"
         "- do not read repo workflow skills, playbooks, or markdown docs unless the prompt explicitly requires them\n"
         "- this self-contained prompt rule is benchmark-specific; the real deployment workflow should still read its repo workflow docs and skills before acting\n"

@@ -20,6 +20,15 @@ It freezes:
 The first `R11` agent is **Codex CLI**, not Claude Code and not manual
 Inspector use.
 
+Current post-fix proof note:
+
+- the benchmark contract is settled and the STM32 Windows side has now been
+  re-proved live in the current post-fix state
+- the remaining proof follow-up is not a spec change: re-run Nordic live in the
+  same post-fix state, then re-run the managed Zephyr/no-NCS deployment path on
+  true fresh Windows and macOS hosts before treating the broader portability
+  claim as fully closed
+
 ## External-Agent Path
 
 - agent: `Codex CLI`

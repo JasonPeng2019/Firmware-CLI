@@ -428,11 +428,15 @@ Verified:
 - benchmark bug-repair cases now allow a longer default `codex exec` budget so
   diagnose -> patch/build -> flash/verify runs are not cut off by a blanket
   sub-60-second cap while they are still making progress
+- the retained alternate Nordic profile `nrf52840dk` is now live-proven on
+  this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
+  alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
 - `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof,
   and the next implementation frontier is `R12`
 
 Pending verification:
 
-- `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
-  source/build assets, but it still needs its own live bench proof if future
-  support for that alternate board becomes a project goal
+- the official scoped Nordic board `nrf52833dk` still needs one current
+  post-fix live rerun of the `R11` chain in the latest benchmark/build state
+- the broader self-contained no-`NCS` portability claim still needs true fresh
+  Windows and macOS host validation

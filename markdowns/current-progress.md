@@ -19,14 +19,18 @@ roadmap checkpoint shorthand.
 
 ## Current Position
 
-In roadmap terms, all scoped work through `R11` is complete on the official
-board pair:
+In roadmap terms, all scoped work through `R11` is implemented for the
+official board pair:
 
 - `nrf52833dk`
 - `nucleo_l476rg`
 
-That means the following are already implemented and live-proven on the scoped
-pair:
+Historical live proof already exists for the scoped pair through `R11`, and
+the latest post-fix rerun on this Windows host has now re-proved the STM32
+side end to end. That means `R12` is no longer blocked on the STM32 path.
+
+That means the following are already implemented, and at least historically
+live-proven on the scoped pair:
 
 - repo/environment standardization
 - board bring-up and Stage 0 validation
@@ -41,9 +45,20 @@ pair:
 The next active roadmap item is now `R12`: the turnkey brain, skills, CLI, and
 premium acceptance benchmark.
 
-The repo also still contains `nrf52840dk`, but it is now a retained
-alternate/future Nordic profile. It is not the current blocker for the scoped
-project path.
+The remaining proof work before making the broader "fresh customer machine"
+portability claim is now narrower:
+
+- rerun the official scoped Nordic `R11` live chain (`nrf52833dk`) in the
+  current post-fix benchmark state
+- run a true fresh-machine Windows validation of the managed Zephyr/no-NCS path
+- run the equivalent macOS managed-Zephyr validation, especially because the
+  latest benchmark/build changes have only been live-rerun on Windows STM32 so
+  far
+
+The repo also still contains `nrf52840dk` as a retained alternate Nordic
+profile. It is not the current blocker for the scoped project path, but it is
+now live-proven on this Windows host for Zephyr rebuild, Stage 0, Stage 1, and
+the alternate six-case `R11` suite.
 
 ## What Has Been Implemented
 
@@ -703,6 +718,19 @@ Observed benchmark result:
 - `nrf52833dk__b003_silent_uart`: `FULL_SUCCESS`, score `100`
 - `nucleo_l476rg__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
 - `nrf52833dk__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
+- alternate retained Nordic profile `nrf52840dk` is now also live-proven on
+  this Windows host:
+  - `uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840`
+  - `uv run python host_bootstrap.py --board-id nrf52840dk`
+  - `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__k001_reference_green`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b001_wrong_boot_text`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b002_wrong_known_value`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__f001_halted_target_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b003_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b004_dual_signal_regression`
+  - all six alternate `nrf52840dk` cases reached `FULL_SUCCESS`, score `100`
 
 What that means:
 
@@ -721,6 +749,21 @@ What that means:
   `runs/<session_id>/...`
 - board-aware `connect(board_id=...)` worked on the mixed-board host for both
   the STM32 and Nordic cases
+
+Latest post-fix Windows STM32 rerun:
+
+- the benchmark timeout/failure-boundary fix has now also been re-proved live
+  on the attached Windows `nucleo_l476rg`
+- the following commands all passed in the current post-fix state:
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
+- all six STM32 cases reached `FULL_SUCCESS`, score `100`
+- this rerun closes the old Windows STM32 benchmark timeout boundary and is the
+  concrete reason `R12` is now unblocked on the STM32 side
 
 Important runner-accounting outcome:
 
@@ -786,6 +829,26 @@ turnkey product layer.
 7. Run the first product-#2 acceptance pass on the scoped pair and record the
    results back into this file and `README.md`.
 
+### Remaining Proof Work Before Broader Deployment Claims
+
+The repo is ready to move on to `R12` on the STM32 side, but a few proof tasks
+still remain before the team should treat the latest portability/build-path
+changes as fully bench-proven for customers:
+
+1. Re-run the official scoped Nordic `R11` live chain in the current post-fix
+   benchmark state, so the latest runner/build-path changes are re-proven on
+   `nrf52833dk`, not only historically proven from earlier runs.
+2. Run a true fresh-machine Windows validation without relying on a preexisting
+   NCS install:
+   host bootstrap, managed Zephyr bring-up, firmware rebuild, Stage 0, Stage 1,
+   and at least one live benchmark case.
+3. Run the equivalent macOS validation for the managed Zephyr/no-NCS path,
+   because the latest benchmark/build-path changes have not yet been re-proven
+   live on macOS in the current post-fix state.
+4. Record the results of those validations back into this file and `README.md`
+   before treating the broader cross-platform self-contained deployment claim as
+   fully closed.
+
 ### What `R11` Already Proved
 
 The first live benchmark pass has already proved all of the following:
@@ -811,9 +874,11 @@ The first live benchmark pass has already proved all of the following:
 
 These are real tasks, but they are not the current blocker:
 
-- Windows follow-up for the official `nrf52833dk` bench path
-- future live proof for `nrf52840dk` if that alternate profile becomes a real
-  support target
+- post-fix Nordic live rerun for the official `nrf52833dk` bench path
+- fresh-machine Windows managed-Zephyr / no-NCS validation
+- fresh-machine macOS managed-Zephyr / no-NCS validation
+- optional future parity rerun on `nrf52840dk` if that alternate profile is
+  promoted from retained proof path to an official scoped support target
 - further corpus expansion after the current twelve-case set is trustworthy
 
 ## nRF52840 Bench-Check Prerequisites
