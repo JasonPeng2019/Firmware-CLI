@@ -19,7 +19,7 @@ roadmap checkpoint shorthand.
 
 ## Current Position
 
-In roadmap terms, all scoped work through `R10` is complete on the official
+In roadmap terms, all scoped work through `R11` is complete on the official
 board pair:
 
 - `nrf52833dk`
@@ -36,9 +36,10 @@ pair:
 - runtime/session logging
 - flash/recover guardrails
 - mutation watcher behavior
+- the first Codex-driven benchmark pilot
 
-The active roadmap item is now `R11`: benchmark-driven product validation with
-`Codex CLI`.
+The next active roadmap item is now `R12`: the turnkey brain, skills, CLI, and
+premium acceptance benchmark.
 
 The repo also still contains `nrf52840dk`, but it is now a retained
 alternate/future Nordic profile. It is not the current blocker for the scoped
@@ -274,8 +275,8 @@ boards. That proof covered:
 ## Regression And Manual Validation Checklist
 
 Use this section whenever you need to re-validate the repo on a new host, after
-a substrate change, or before claiming that the current benchmark work is being
-run on a known-good foundation.
+a substrate change, before rerunning the benchmark suite, or before claiming
+that new higher-level work is being run on a known-good foundation.
 
 ### 1. Static And Contract Checks
 
@@ -531,10 +532,10 @@ Why expected:
 - the runtime policy layer distinguishes deliberate refusal from unexpected
   backend failure
 
-## What Should Be Verified Again Before Running The Benchmark Pilot
+## What Should Be Verified Again Before Rerunning The Benchmark Suite
 
-Before claiming the benchmark phase is working on a host, re-check these exact
-things:
+Before rerunning the benchmark suite on a host, or before starting the next
+turnkey-product layer on top of this substrate, re-check these exact things:
 
 - both scoped boards still pass Stage 0 and Stage 1 smoke
   - because the benchmark runner assumes known-good baseline behavior exists
@@ -554,7 +555,8 @@ things:
 
 ## Benchmark Phase Status
 
-The benchmark phase is implemented in the repo, but it is not yet live-proven.
+The benchmark phase is implemented in the repo and is now live-proven on the
+current mixed-board Mac host.
 
 What is already tracked:
 
@@ -615,68 +617,144 @@ Why those results are expected:
 - the benchmark runner, schema validation, workspace isolation, and scoring
   logic already have local test coverage in the repo
 
-### Current Host-Local Blocker
+### Live Benchmark Validation Already Completed
 
-On the current host, the live pilot is still blocked until Codex MCP
-registration is present.
-
-Current observed output:
-
-```text
-Error: No MCP server named 'pyocd-debug' found.
-```
-
-That came from:
-
-```bash
-codex mcp get pyocd-debug
-```
-
-What should be done next:
+The following live benchmark commands were completed successfully on the current
+Mac host after Codex MCP registration was added:
 
 ```bash
 codex mcp add pyocd-debug -- uv run pyocd-debug-mcp
 codex mcp get pyocd-debug
+
+uv run python -m tests.harness.r11_benchmark --case-id nrf52833dk__k001_reference_green
+uv run python -m tests.harness.r11_benchmark --case-id nrf52833dk__f001_halted_target_silent_uart
+uv run python -m tests.harness.r11_benchmark --suite pilot_v1
+
+uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart
+uv run python -m tests.harness.r11_benchmark --case-id nrf52833dk__b003_silent_uart
+uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression
+uv run python -m tests.harness.r11_benchmark --case-id nrf52833dk__b004_dual_signal_regression
 ```
 
-Expected result after registration:
+Observed benchmark result:
 
-- `codex mcp get pyocd-debug` reports the registered MCP server config instead
-  of the missing-server error
+- `nucleo_l476rg__k001_reference_green`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__k001_reference_green`: `FULL_SUCCESS`, score `100`
+- `nucleo_l476rg__b001_wrong_boot_text`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score `100`
+- `nucleo_l476rg__b002_wrong_known_value`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__b002_wrong_known_value`: `FULL_SUCCESS`, score `100`
+- `nucleo_l476rg__f001_halted_target_silent_uart`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__f001_halted_target_silent_uart`: `FULL_SUCCESS`, score `100`
+- suite summary: `full_success=8`, `partial_success=0`, `fail=0`,
+  `average_score=100.0`
+- `nucleo_l476rg__b003_silent_uart`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__b003_silent_uart`: `FULL_SUCCESS`, score `100`
+- `nucleo_l476rg__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
+- `nrf52833dk__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
 
-Why this is expected:
+What that means:
 
-- the benchmark runner is intentionally designed to use a pre-registered Codex
-  MCP server rather than mutating that registration automatically
+- the frozen eight-case pilot passed end to end on the scoped pair
+- the final minimal pre-wrap-up `R11` expansion landed without widening the
+  runner contract, scoring rubric, result schema, or MCP surface
+- the repo now distinguishes two superficially similar UART-miss diagnoses:
+  - `f001_halted_target_silent_uart`: runtime/observability fault
+  - `b003_silent_uart`: firmware code bug
+- the repo now also exercises a combined two-symptom code repair path through
+  `b004_dual_signal_regression`
+- the current MCP surface was usable by a real external agent client
+- the scoring rubric produced clean full-success outcomes on known-good,
+  injected-bug, and observability-fault cases
+- the benchmark runner captured complete run artifacts under
+  `runs/<session_id>/...`
+- board-aware `connect(board_id=...)` worked on the mixed-board host for both
+  the STM32 and Nordic cases
+
+Important runner-accounting outcome:
+
+- the benchmark runner no longer requires exactly one MCP session directory per
+  case
+- the final structured `session_id` returned by Codex is the canonical case
+  root
+- extra MCP sessions are treated as runner warnings rather than automatic
+  benchmark failures
+- this change was necessary because real Codex behavior can include a short
+  scouting session before the final successful verification session
+
+Important hardening outcome from the expansion:
+
+- the added `b004` cases exposed a real benchmark trust bug:
+  the runner previously allowed agent self-reported green verification to
+  override a failing runner-owned final verification
+- this is now fixed:
+  runner-owned final verification is authoritative for scoring and outcome
+  classification
+- the mirrored `b004` bug fixtures were also tightened to preserve the stable
+  Stage 1 symbol-access pattern, so the intended repair is “restore the wrong
+  contract values” rather than “invent a new symbol-storage scheme”
+
+Canonical roll-up command for the expanded corpus:
+
+```bash
+uv run python -m tests.harness.r11_benchmark --suite pilot_v1_plus_b003_b004
+```
+
+What to expect from that roll-up:
+
+- `pilot_v1` remains frozen as the original eight-case milestone
+- the four new expansion cases append after the original eight
+- the most important new proof is already established by the four successful
+  individual runs above; the aggregate suite simply replays the same corpus in
+  one command
 
 ## What Still Needs To Be Fully Done
 
-The repo is not waiting on more scoped substrate work. The remaining work is
-benchmark and product-validation work.
+The repo is not waiting on more scoped substrate work, and it is no longer
+waiting on the first BYO-agent benchmark proof. The next remaining work is the
+turnkey product layer.
 
 ### Immediate Next Tasks
 
-1. Register the local Codex MCP server on the host that will run the pilot.
-2. Re-run the scoped board preflight checks so the pilot starts from a known
-   green baseline.
-3. Run the two known-good benchmark cases first.
-4. Run the four injected code-bug cases.
-5. Run the two observability-fault cases.
-6. Inspect the captured run artifacts under `runs/<session_id>/...`.
-7. Record the real pilot results back into this file and `README.md`.
+1. Freeze the `R12` contract in one tracked design doc before adding turnkey
+   brain code.
+2. Define the exact turnkey CLI/operator flow:
+   what command a user runs, what inputs it accepts, and what final outputs it
+   must produce.
+3. Define the brain state model:
+   what session information, board facts, benchmark facts, and convergence
+   signals the turnkey layer remembers between actions.
+4. Define the first real skill/loading model:
+   what a skill contains, how skills are selected, and what the minimum initial
+   skill set should be for the scoped pair.
+5. Freeze the acceptance benchmark for product #2:
+   what cases it reuses from `R11`, what additional cases it needs, and how
+   “better than BYO-agent” will be measured.
+6. Implement the first turnkey brain loop on top of the already-proven server
+   surface without reopening the substrate architecture.
+7. Run the first product-#2 acceptance pass on the scoped pair and record the
+   results back into this file and `README.md`.
 
-### What The First Pilot Must Prove
+### What `R11` Already Proved
 
-The first live benchmark pass still needs to prove all of the following:
+The first live benchmark pass has already proved all of the following:
 
-- one MCP session per benchmark case is captured correctly
 - benchmark artifacts land in the correct `runs/<session_id>/...` tree
 - both known-good cases score as healthy full-success cases
-- at least one injected code-bug case per board reaches full success
-- the observability-fault cases are diagnosed as runtime/observability problems
+- both injected code-bug families reached full success on both boards
+- the added `b003_silent_uart` family proves the agent can distinguish “missing
+  application success UART because the target is halted” from “missing
+  application success UART because the firmware is wrong”
+- the added `b004_dual_signal_regression` family proves the agent can repair a
+  combined UART-plus-symbol regression while still staying inside the one-file
+  benchmark workspace contract
+- both observability-fault cases were diagnosed as runtime/observability problems
   rather than code bugs
 - the scoring rubric is understandable on real runs
 - the runner’s capture/export path is sufficient for later analysis
+- extra MCP sessions can occur in real Codex runs without invalidating the
+  benchmark result, as long as the final structured `session_id` maps cleanly
+  to a real run directory
 
 ### Optional Follow-Up Work After The Pilot
 
@@ -685,7 +763,7 @@ These are real tasks, but they are not the current blocker:
 - Windows follow-up for the official `nrf52833dk` bench path
 - future live proof for `nrf52840dk` if that alternate profile becomes a real
   support target
-- corpus expansion after the first eight-case pilot is trustworthy
+- further corpus expansion after the current twelve-case set is trustworthy
 
 ## nRF52840 Bench-Check Prerequisites
 
@@ -738,10 +816,9 @@ must match what the agent will use when it rebuilds firmware.
 If resuming later:
 
 > The scoped pair is `nrf52833dk + nucleo_l476rg`. Everything through the
-> runtime/safety layer is implemented and already live-proven on that pair:
-> Stage 0, the Stage 1 smoke harness, the current MCP surface, per-session
-> logging, flash/recover guardrails, and the mutation watcher. The remaining
-> work is the live `Codex CLI` benchmark pilot. The immediate blocker on this
-> host is missing Codex MCP registration for `pyocd-debug`, and the next
-> concrete steps are `codex mcp add ...`, rerun the scoped preflight, then run
-> the frozen eight-case pilot suite.
+> first BYO-agent benchmark pilot is implemented and already live-proven on
+> that pair: Stage 0, the Stage 1 smoke harness, the current MCP surface,
+> per-session logging, flash/recover guardrails, the mutation watcher, and the
+> frozen eight-case Codex benchmark suite. The next concrete work is `R12`:
+> freeze the turnkey-brain contract, define the CLI/skill/state model, then
+> implement and validate product #2 on the same scoped pair.

@@ -118,6 +118,28 @@ Observability-fault cases:
 The first fault corpus is intentionally **host-induced only**. Manual cable or
 physical wiring faults are deferred until after the pilot is trustworthy.
 
+## Post-Pilot Minimal Expansion
+
+`pilot_v1` remains frozen as the original proven 8-case milestone.
+
+Before wrapping `R11`, the corpus grows by exactly two mirrored injected-bug
+families:
+
+- `b003_silent_uart`
+- `b004_dual_signal_regression`
+
+These cases intentionally reuse the existing runner, scoring rubric, result
+schema, and case contract. The expansion is meant to strengthen one product
+distinction without widening harness complexity:
+
+- `f001_halted_target_silent_uart`: missing application success output caused by
+  runtime state
+- `b003_silent_uart`: missing application success output caused by firmware code
+- `b004_dual_signal_regression`: combined UART and symbol regression caused by
+  firmware code
+
+This is the final planned `R11` corpus expansion before moving to `R12`.
+
 ## Result Schema And Scoring
 
 The runner must require Codex final output through `codex exec --output-schema`.

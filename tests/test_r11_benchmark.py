@@ -21,7 +21,7 @@ def test_all_r11_case_manifests_load() -> None:
         if (case_dir / "case.yaml").exists():
             cases.append(r11.load_case(case_dir.name))
 
-    assert len(cases) == 8
+    assert len(cases) == 12
     assert {case.scoring_profile for case in cases} == {r11.DEFAULT_SCORING_PROFILE}
 
 
@@ -38,6 +38,40 @@ def test_pilot_suite_loads_in_frozen_order() -> None:
         "nucleo_l476rg__f001_halted_target_silent_uart",
         "nrf52833dk__f001_halted_target_silent_uart",
     ]
+
+
+def test_expanded_pilot_suite_loads_in_frozen_order() -> None:
+    cases = r11.load_suite("pilot_v1_plus_b003_b004")
+
+    assert [case.case_id for case in cases] == [
+        "nucleo_l476rg__k001_reference_green",
+        "nrf52833dk__k001_reference_green",
+        "nucleo_l476rg__b001_wrong_boot_text",
+        "nrf52833dk__b001_wrong_boot_text",
+        "nucleo_l476rg__b002_wrong_known_value",
+        "nrf52833dk__b002_wrong_known_value",
+        "nucleo_l476rg__f001_halted_target_silent_uart",
+        "nrf52833dk__f001_halted_target_silent_uart",
+        "nucleo_l476rg__b003_silent_uart",
+        "nrf52833dk__b003_silent_uart",
+        "nucleo_l476rg__b004_dual_signal_regression",
+        "nrf52833dk__b004_dual_signal_regression",
+    ]
+
+
+@pytest.mark.parametrize(
+    "case_id",
+    [
+        "nucleo_l476rg__b003_silent_uart",
+        "nrf52833dk__b003_silent_uart",
+        "nucleo_l476rg__b004_dual_signal_regression",
+        "nrf52833dk__b004_dual_signal_regression",
+    ],
+)
+def test_new_case_manifests_keep_default_scoring_profile(case_id: str) -> None:
+    case = r11.load_case(case_id)
+
+    assert case.scoring_profile == r11.DEFAULT_SCORING_PROFILE
 
 
 def test_r11_result_schema_golden_samples_parse() -> None:
@@ -82,7 +116,7 @@ def test_score_diagnosed_only_partial_case() -> None:
 
     score = r11._score_case(case, result, verification, ())
 
-    assert score.score == 70
+    assert score.score == 60
     assert score.outcome_label == "partial_success"
 
 
@@ -148,6 +182,44 @@ def test_score_wrong_diagnosis_cap() -> None:
 
     assert score.score == 60
     assert "wrong-diagnosis-cap:60" in score.penalties
+
+
+def test_runner_final_verification_is_authoritative() -> None:
+    case = r11.load_case("nrf52833dk__b004_dual_signal_regression")
+    result = load_fixture_result("fixed_success")
+    result = r11.ParsedAgentResult(
+        case_id=case.case_id,
+        board_id=case.board_id,
+        session_id=result.session_id,
+        final_status="fixed",
+        classification="code_bug",
+        root_cause=result.root_cause,
+        actions_taken=result.actions_taken,
+        mcp_tools_used=result.mcp_tools_used,
+        files_changed=("src/src/main.c",),
+        recover_used=False,
+        verification={
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        summary=result.summary,
+    )
+    verification = r11.VerificationSummary(
+        flash_ok=True,
+        uart_ok=True,
+        symbol_ok=False,
+        green_check_ok=False,
+        excerpt="boot ok",
+        error_text="RuntimeError: stage1_known_value value mismatch",
+    )
+
+    score = r11._score_case(case, result, verification, ("src/src/main.c",))
+
+    assert score.outcome_label == "partial_success"
+    assert score.score == 85
+    assert "Final verification failed: RuntimeError: stage1_known_value value mismatch" in score.reasons
 
 
 def test_score_blocked_case_caps_at_40() -> None:

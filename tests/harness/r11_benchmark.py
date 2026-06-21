@@ -755,11 +755,14 @@ def _run_final_verification(prepared: PreparedCase) -> VerificationSummary:
             excerpt="",
             error_text=f"{type(exc).__name__}: {exc}",
         )
+    symbol_ok = (
+        smoke.resolved_symbol.value_u32 == prepared.case.expected_observables.symbol_value_u32
+    )
     return VerificationSummary(
         flash_ok=True,
         uart_ok=True,
-        symbol_ok=smoke.resolved_symbol.value_u32 == prepared.case.expected_observables.symbol_value_u32,
-        green_check_ok=True,
+        symbol_ok=symbol_ok,
+        green_check_ok=symbol_ok,
         excerpt=smoke.capture_excerpt,
         error_text=None,
     )
@@ -818,11 +821,12 @@ def _score_case(
         intervention_correct = not actual_changed_files
         intervention_points = 25 if intervention_correct else 0
 
+    # The runner-owned final verification is the authoritative green-state check.
     effective_verification = {
-        "flash_ok": verification.flash_ok or agent_result.verification["flash_ok"],
-        "uart_ok": verification.uart_ok or agent_result.verification["uart_ok"],
-        "symbol_ok": verification.symbol_ok or agent_result.verification["symbol_ok"],
-        "green_check_ok": verification.green_check_ok or agent_result.verification["green_check_ok"],
+        "flash_ok": verification.flash_ok,
+        "uart_ok": verification.uart_ok,
+        "symbol_ok": verification.symbol_ok,
+        "green_check_ok": verification.green_check_ok,
     }
     if case.success_criteria.requires_green_verification:
         if effective_verification["green_check_ok"]:

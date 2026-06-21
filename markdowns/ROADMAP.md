@@ -1,10 +1,11 @@
 # ROADMAP
 
-> **STATUS (2026-06): R0–R10 COMPLETE and live-proven on the scoped pair
-> (`nrf52833dk` + `nucleo_l476rg`); `R11` is the active item.** This is the
+> **STATUS (2026-06): R0–R11 COMPLETE and live-proven on the scoped pair
+> (`nrf52833dk` + `nucleo_l476rg`); `R12` is the active item.** This is the
 > original roadmap / decision record. Sections that describe R0–R10 work — including
 > the `R7` "Current-state reconciliation" and the Phase-B/C frontier notes — now
-> describe work that is **done**; read them as history, not as pending work. For
+> describe work that is **done**; `R11` is now also complete as the proven
+> BYO-agent benchmark milestone. Read those sections as history, not as pending work. For
 > live status see `current-progress.md`; for the file map see `repo_file_index.md`.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
