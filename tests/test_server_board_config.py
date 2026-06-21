@@ -59,17 +59,94 @@ def test_resolve_board_config_unknown_id_raises(monkeypatch) -> None:
         server.resolve_board_config("no_such_board", None)
 
 
-def test_resolve_probe_uid_skips_jlink_autoresolution_without_explicit_uid(monkeypatch) -> None:
+def test_resolve_probe_uid_resolves_jlink_uid_on_non_windows(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: type(
+            "Resolution",
+            (),
+            {"probe": type("Probe", (), {"uid": "jlink-123"})()},
+        )(),
+    )
+
+    assert server._resolve_probe_uid_for_connect(board, None) == "jlink-123"
+
+
+def test_resolve_probe_uid_prefers_explicit_unique_id(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    monkeypatch.setenv("PYOCD_PROBE_UID", "env-uid")
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("resolve_probe_for_board should not run when unique_id is explicit")
+        ),
+    )
+
+    assert server._resolve_probe_uid_for_connect(board, "explicit-uid") == "explicit-uid"
+
+
+def test_resolve_probe_uid_prefers_env_uid(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    monkeypatch.setenv("PYOCD_PROBE_UID", "env-uid")
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("resolve_probe_for_board should not run when env UID is set")
+        ),
+    )
+
+    assert server._resolve_probe_uid_for_connect(board, None) == "env-uid"
+
+
+def test_resolve_probe_uid_skips_jlink_autoresolution_on_windows(monkeypatch) -> None:
     board = server.resolve_board_config("nrf52840dk", None)
     assert board is not None
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("resolve_probe_for_board should not run for implicit J-Link selection")
+        raise AssertionError("resolve_probe_for_board should not run for implicit Windows J-Link selection")
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "win32")
     monkeypatch.setattr(server, "resolve_probe_for_board", fail_if_called)
 
     assert server._resolve_probe_uid_for_connect(board, None) is None
+
+
+def test_resolve_probe_uid_raises_for_ambiguous_non_windows_jlink(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: type(
+            "Resolution",
+            (),
+            {"probe": None, "note": "multiple matching probes found"},
+        )(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Probe resolution failed for nRF52840-DK: multiple matching probes found",
+    ):
+        server._resolve_probe_uid_for_connect(board, None)
 
 
 def test_format_board_info_includes_silicon_and_recover() -> None:

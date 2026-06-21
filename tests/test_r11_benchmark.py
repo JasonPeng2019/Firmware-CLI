@@ -264,6 +264,10 @@ def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     assert "b/src/file.txt" in diff_text
     assert "-before" in diff_text
     assert "+after" in diff_text
+    score_payload = json.loads((run_root / "run-metadata" / "score.json").read_text(encoding="utf-8"))
+    assert score_payload["canonical_session_id"] == run_root.name
+    assert score_payload["supporting_session_ids"] == []
+    assert score_payload["runner_warnings"] == []
 
 
 def test_run_codex_uses_noninteractive_full_access_flags(
@@ -322,6 +326,8 @@ def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
     assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
     assert "`board_id` exactly as `nucleo_l476rg`" in prompt
     assert "do not derive `case_id` from the workspace directory name" in prompt
+    assert "do not pass a generic target override such as `cortex_m`" in prompt
+    assert "avoid reconnect churn unless the first session clearly attached to the wrong board" in prompt
 
 
 def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:
@@ -391,3 +397,210 @@ def test_run_case_fails_when_no_session_directory_is_created(
     assert report.final_status == "unresolved"
     assert report.score_report.score == 0
     assert report.run_root is None
+
+
+def test_run_case_uses_structured_final_session_as_canonical_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nrf52833dk__k001_reference_green")
+    board = r11._load_board(case.board_id)
+    workspace_root = tmp_path / "workspace"
+    snapshot_root = tmp_path / "snapshot"
+    workspace_root.mkdir()
+    snapshot_root.mkdir()
+    prepared = r11.PreparedCase(
+        case=case,
+        board=board,
+        workspace=r11.PreparedWorkspace(
+            source_root=workspace_root,
+            workspace_root=workspace_root,
+            snapshot_root=snapshot_root,
+        ),
+        probe_uid="probe-123",
+        flash_artifact=tmp_path / "firmware.hex",
+        symbol_artifact=tmp_path / "firmware.elf",
+    )
+    prepared.flash_artifact.write_text("hex", encoding="utf-8")
+    prepared.symbol_artifact.write_text("elf", encoding="utf-8")
+    prompt_path = workspace_root / ".r11_prompt.txt"
+    result_path = workspace_root / ".r11_codex_result.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    result_payload = {
+        "case_id": case.case_id,
+        "board_id": case.board_id,
+        "session_id": "20260620T000001Z-canonical",
+        "final_status": "healthy_confirmed",
+        "classification": "healthy",
+        "root_cause": "No issue found.",
+        "actions_taken": ["connect", "flash_firmware", "read_serial"],
+        "mcp_tools_used": ["connect", "flash_firmware", "read_serial"],
+        "files_changed": [],
+        "recover_used": False,
+        "verification": {
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        "summary": "Board remained healthy.",
+    }
+    result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+
+    supporting_root = tmp_path / "20260620T000000Z-supporting"
+    canonical_root = tmp_path / "20260620T000001Z-canonical"
+    for run_root, board_id in (
+        (supporting_root, "nucleo_l476rg"),
+        (canonical_root, case.board_id),
+    ):
+        (run_root / "run-metadata").mkdir(parents=True)
+        (run_root / "run-metadata" / "session.json").write_text(
+            json.dumps({"board_id": board_id, "probe_uid": "probe-123"}),
+            encoding="utf-8",
+        )
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
+    monkeypatch.setattr(
+        r11,
+        "_run_codex",
+        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+            exit_code=0,
+            stdout_text='{"type":"done"}\n',
+            stderr_text="",
+            result_path=result_path,
+            prompt_path=prompt_path,
+            new_session_dirs=(supporting_root, canonical_root),
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_run_final_verification",
+        lambda _prepared: r11.VerificationSummary(
+            flash_ok=True,
+            uart_ok=True,
+            symbol_ok=True,
+            green_check_ok=True,
+            excerpt="boot ok",
+            error_text=None,
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_score_case",
+        lambda _case, _agent_result, _verification, _changed_files: r11.ScoreReport(
+            score=100,
+            outcome_label="full_success",
+            diagnosis_points=40,
+            intervention_points=25,
+            verification_points=25,
+            safety_points=10,
+            penalties=(),
+            reasons=(),
+            actual_changed_files=(),
+            classification_correct=True,
+            intervention_correct=True,
+        ),
+    )
+    monkeypatch.setattr(
+        r11,
+        "_record_case_artifacts",
+        lambda _prepared, _result, _codex_run, _verification, _score, run_root, session_selection=None: captured.update(
+            {
+                "run_root": run_root,
+                "session_selection": session_selection,
+            }
+        ),
+    )
+
+    report = r11.run_case(case.case_id)
+
+    assert report.final_status == "healthy_confirmed"
+    assert report.session_id == canonical_root.name
+    assert report.run_root == canonical_root
+    selection = captured["session_selection"]
+    assert isinstance(selection, r11.SessionSelection)
+    assert selection.canonical_run_root == canonical_root
+    assert selection.supporting_run_roots == (supporting_root,)
+    assert "supporting-session-count:1" in selection.runner_warnings
+    assert f"supporting-session-board-mismatch:{supporting_root.name}:nucleo_l476rg" in selection.runner_warnings
+
+
+def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_dirs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nrf52833dk__k001_reference_green")
+    board = r11._load_board(case.board_id)
+    workspace_root = tmp_path / "workspace"
+    snapshot_root = tmp_path / "snapshot"
+    workspace_root.mkdir()
+    snapshot_root.mkdir()
+    prepared = r11.PreparedCase(
+        case=case,
+        board=board,
+        workspace=r11.PreparedWorkspace(
+            source_root=workspace_root,
+            workspace_root=workspace_root,
+            snapshot_root=snapshot_root,
+        ),
+        probe_uid="probe-123",
+        flash_artifact=tmp_path / "firmware.hex",
+        symbol_artifact=tmp_path / "firmware.elf",
+    )
+    prepared.flash_artifact.write_text("hex", encoding="utf-8")
+    prepared.symbol_artifact.write_text("elf", encoding="utf-8")
+    prompt_path = workspace_root / ".r11_prompt.txt"
+    result_path = workspace_root / ".r11_codex_result.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    result_payload = {
+        "case_id": case.case_id,
+        "board_id": case.board_id,
+        "session_id": "20260620T000001Z-canonical",
+        "final_status": "healthy_confirmed",
+        "classification": "healthy",
+        "root_cause": "No issue found.",
+        "actions_taken": ["connect"],
+        "mcp_tools_used": ["connect"],
+        "files_changed": [],
+        "recover_used": False,
+        "verification": {
+            "flash_ok": True,
+            "uart_ok": True,
+            "symbol_ok": True,
+            "green_check_ok": True,
+        },
+        "summary": "Board remained healthy.",
+    }
+    result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+    unrelated_root = tmp_path / "20260620T000000Z-other"
+    unrelated_root.mkdir()
+
+    monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
+    monkeypatch.setattr(
+        r11,
+        "_run_codex",
+        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+            exit_code=0,
+            stdout_text='{"type":"done"}\n',
+            stderr_text="",
+            result_path=result_path,
+            prompt_path=prompt_path,
+            new_session_dirs=(unrelated_root,),
+        ),
+    )
+
+    report = r11.run_case(case.case_id)
+
+    assert report.final_status == "unresolved"
+    assert report.score_report.score == 0
+    assert report.run_root is None
+    assert (
+        report.verification.error_text
+        == "Structured benchmark result reported session_id=20260620T000001Z-canonical, but that session was not created under runs/ during this case."
+    )
