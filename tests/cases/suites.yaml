@@ -35,3 +35,29 @@ nrf52840dk_v1_plus_b003_b004:
     - nrf52840dk__f001_halted_target_silent_uart
     - nrf52840dk__b003_silent_uart
     - nrf52840dk__b004_dual_signal_regression
+
+turnkey_scoped_pair_v1:
+  description: "R12 turnkey acceptance suite for the official nrf52833dk + nucleo_l476rg scoped pair."
+  cases:
+    - nucleo_l476rg__k001_reference_green
+    - nrf52833dk__k001_reference_green
+    - nucleo_l476rg__f001_halted_target_silent_uart
+    - nrf52833dk__f001_halted_target_silent_uart
+    - nucleo_l476rg__b001_wrong_boot_text
+    - nrf52833dk__b001_wrong_boot_text
+    - nucleo_l476rg__b002_wrong_known_value
+    - nrf52833dk__b002_wrong_known_value
+    - nucleo_l476rg__b003_silent_uart
+    - nrf52833dk__b003_silent_uart
+    - nucleo_l476rg__b004_dual_signal_regression
+    - nrf52833dk__b004_dual_signal_regression
+
+turnkey_alt_nrf52840_v1:
+  description: "R12 turnkey acceptance suite for the attached alternate nRF52840 DK proof board."
+  cases:
+    - nrf52840dk__k001_reference_green
+    - nrf52840dk__f001_halted_target_silent_uart
+    - nrf52840dk__b001_wrong_boot_text
+    - nrf52840dk__b002_wrong_known_value
+    - nrf52840dk__b003_silent_uart
+    - nrf52840dk__b004_dual_signal_regression

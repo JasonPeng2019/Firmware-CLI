@@ -1,0 +1,8 @@
+skill_id: reference-contract-diagnose
+title: Diagnose reference-contract drift or halted observability failures
+supported_kinds:
+  - all
+workflow_kind: reference_contract_diagnose
+requires_workspace: false
+steps: []
+final_assertions: []

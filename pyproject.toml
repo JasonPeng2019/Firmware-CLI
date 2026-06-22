@@ -18,6 +18,7 @@ dependencies = [
 pyocd-debug-mcp = "pyocd_debug_mcp.server:main"
 pyocd-pack-repair = "pyocd_debug_mcp.pack_index_repair:main"
 pyocd-zephyr-build = "pyocd_debug_mcp.zephyr_build:main"
+pyocd-turnkey = "pyocd_debug_mcp.brain.cli:main"
 
 # PEP 735 dependency groups — installed by `uv sync` (default) and excluded from the published wheel.
 [dependency-groups]

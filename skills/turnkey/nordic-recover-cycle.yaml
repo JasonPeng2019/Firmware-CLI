@@ -1,0 +1,46 @@
+skill_id: nordic-recover-cycle
+title: Nordic recover, reflash, and UART reverify
+supported_kinds:
+  - nordic_only
+workflow_kind: static_mcp_sequence
+requires_workspace: false
+steps:
+  - step_id: connect
+    tool: connect
+    arguments:
+      board_id: "{board_id}"
+    timeout_seconds: 45
+    expected_substrings:
+      - "Connected to board"
+      - "session_id="
+  - step_id: recover
+    tool: unlock_recover
+    arguments:
+      confirm: true
+    timeout_seconds: 120
+    expected_substrings:
+      - "Recover completed"
+  - step_id: flash
+    tool: flash_firmware
+    arguments:
+      path: "{flash_artifact}"
+    timeout_seconds: 120
+    expected_substrings:
+      - "Flashed"
+      - "running"
+  - step_id: uart
+    tool: read_serial
+    arguments:
+      expected_text: "{expected_uart_substring}"
+      read_seconds: 5.0
+      reset_on_open: true
+    timeout_seconds: 20
+    expected_substrings:
+      - "UART matched"
+      - "{expected_uart_substring}"
+  - step_id: disconnect
+    tool: disconnect
+    arguments: {}
+    timeout_seconds: 15
+final_assertions:
+  - all_steps_succeeded

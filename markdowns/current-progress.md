@@ -45,6 +45,19 @@ live-proven on the scoped pair:
 The next active roadmap item is now `R12`: the turnkey brain, skills, CLI, and
 premium acceptance benchmark.
 
+`R12` is no longer just a phase-1 bootstrap. The repo now has a real turnkey
+path with live-proven diagnosis/repair flows:
+
+- `src/pyocd_debug_mcp/brain/`
+- `skills/turnkey/`
+- `uv run pyocd-turnkey ...`
+
+That current slice still stays deterministic rather than open-ended: it
+launches the repo MCP server as a child stdio process, loads tracked YAML
+skills, and runs bounded health-check, diagnose, and repair workflows over the
+existing tool surface. It is already live-proven on the retained alternate
+Nordic profile `nrf52840dk`.
+
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:
 
@@ -59,6 +72,99 @@ The repo also still contains `nrf52840dk` as a retained alternate Nordic
 profile. It is not the current blocker for the scoped project path, but it is
 now live-proven on this Windows host for Zephyr rebuild, Stage 0, Stage 1, and
 the alternate six-case `R11` suite.
+
+## Short Status Split
+
+### Proven Now
+
+- `R11` remains implemented for the official scoped pair:
+  `nrf52833dk + nucleo_l476rg`
+- the STM32 side has been re-proved live on this Windows host through the
+  current post-fix `R11` state
+- the retained alternate Nordic board `nrf52840dk` is live-proven on this
+  Windows host for:
+  - Zephyr rebuild
+  - Stage 0
+  - Stage 1 smoke
+  - the alternate six-case `R11` suite
+  - the alternate-board `R12` acceptance suite
+- the current `R12` implementation exists in product code:
+  turnkey CLI, tracked skills, richer brain-state tracking, and the
+  `r12_turnkey_benchmark` harness
+- the latest live alternate-board `R12` acceptance result is:
+  `full_success=6`, `partial_success=0`, `fail=0`, `average_score=100.0`
+  with summary artifact
+  `runs/_turnkey_benchmark/turnkey_alt_nrf52840_v1__20260622T073914Z.json`
+- repo-level regression checks are green again after the latest fixes
+
+### Still Needs To Be Done
+
+- rerun the official scoped Nordic `R11` chain on `nrf52833dk` in the current
+  post-fix benchmark/build state
+- rerun the current `R12` acceptance suite on the official scoped pair:
+  `nrf52833dk` and `nucleo_l476rg`
+- complete true fresh-machine Windows managed-Zephyr / no-`NCS` validation
+- complete true fresh-machine macOS managed-Zephyr / no-`NCS` validation
+- record those scoped-pair and fresh-machine results here and in `README.md`
+
+## `R12` Snapshot
+
+### Done Now
+
+- `R11` remains the finished substrate/product-#1 boundary for the official
+  scoped pair `nrf52833dk + nucleo_l476rg`
+- the real `R12` product code now exists:
+  - `src/pyocd_debug_mcp/brain/`
+  - `skills/turnkey/`
+  - `uv run pyocd-turnkey`
+- the first turnkey CLI path is implemented as a real stdio MCP client of the
+  checked-in server, not a direct hardware shortcut
+- the tracked turnkey skills are implemented:
+  - `reference-health-check`
+  - `nordic-recover-cycle`
+  - `reference-contract-diagnose`
+  - `reference-contract-repair`
+- the brain state now records:
+  - observations
+  - hypotheses
+  - experiments
+  - strategy evaluations
+- the `R12` acceptance benchmark harness now exists:
+  - `tests/harness/r12_turnkey_benchmark.py`
+  - alternate live suite `turnkey_alt_nrf52840_v1`
+  - scoped-pair suite definitions remain checked in and pending live rerun
+- targeted validation is green
+- the broader repo regression ladder is green again
+- the live alternate-board `R12` suite is green on attached `nrf52840dk`:
+  host bootstrap, Stage 0, Stage 1 smoke, turnkey health-check, turnkey
+  diagnose/repair, and acceptance scoring
+- the latest live `R12` alternate-board acceptance result is:
+  `full_success=6`, `partial_success=0`, `fail=0`, `average_score=100.0`
+  with summary artifact
+  `runs/_turnkey_benchmark/turnkey_alt_nrf52840_v1__20260622T073914Z.json`
+
+### Needs To Be Done Next
+
+- roll the current turnkey slice onto the official scoped pair:
+  `nrf52833dk` and `nucleo_l476rg`
+- rerun the frozen `R12` acceptance benchmark on the scoped pair and record the
+  results
+- rerun the official scoped Nordic `R11` live chain in the current post-fix
+  benchmark/build state
+- separately from `R12`, still complete the broader portability proof:
+  fresh Windows no-`NCS` validation and fresh macOS no-`NCS` validation
+
+Concrete remaining validation checklist before claiming broad customer-machine
+portability:
+
+1. Attach `nrf52833dk` and rerun the full post-fix live `R11` chain.
+2. Validate a true fresh Windows host with no preinstalled `NCS`:
+   managed Zephyr bootstrap, firmware rebuild, Stage 0, Stage 1, and at least
+   one live `R11` case.
+3. Validate a true fresh macOS host with no preinstalled `NCS`:
+   managed Zephyr bootstrap, firmware rebuild, Stage 0, Stage 1, and at least
+   one live `R11` case.
+4. Record those results back into this file and `README.md`.
 
 ## What Has Been Implemented
 
@@ -192,6 +298,36 @@ The runtime/safety layer that now exists in code includes:
 - recover guardrails based on board config and explicit confirmation
 - mutation watcher rules for repeated flash failures, UART misses, and recover
   failures
+
+### `R12` Turnkey Phase 1
+
+The first turnkey product slice is now implemented in product code.
+
+It adds:
+
+- `src/pyocd_debug_mcp/brain/cli.py`
+- `src/pyocd_debug_mcp/brain/mcp_client.py`
+- `src/pyocd_debug_mcp/brain/runner.py`
+- `src/pyocd_debug_mcp/brain/skills.py`
+- tracked YAML skills under `skills/turnkey/`
+- the new CLI entrypoint `uv run pyocd-turnkey`
+
+What this phase proves:
+
+- the turnkey layer is now a real MCP client of the existing server, not just a
+  roadmap note
+- the CLI starts its own local stdio MCP server with the current Python
+  interpreter, so the default path is cross-platform and shell-agnostic
+- the first tracked skill set is agent-runnable and bounded by explicit
+  per-step timeouts instead of waiting indefinitely
+- structured turnkey run summaries land under `runs/turnkey/`
+
+What this phase intentionally does **not** prove yet:
+
+- open-ended LLM-driven repair
+- code editing/patching from the turnkey brain
+- full premium-vs-BYO acceptance superiority
+- full scoped-pair `R12` rollout
 
 ## Live Bench Facts
 
@@ -810,6 +946,22 @@ turnkey product layer.
 
 ### Immediate Next Tasks
 
+1. Roll the current turnkey CLI/skills slice onto the official scoped pair:
+   `nrf52833dk` and `nucleo_l476rg`, not only the retained alternate
+   `nrf52840dk`.
+2. Rerun the frozen `R12` acceptance benchmark on that scoped pair and record
+   the results back into this file and `README.md`.
+3. Re-run the official scoped Nordic `R11` chain in the current post-fix
+   benchmark/build state so the latest build and benchmark changes are
+   re-proven on `nrf52833dk`, not only on the retained alternate Nordic board.
+4. Run a true fresh-machine Windows managed-Zephyr / no-`NCS` validation and a
+   matching macOS validation before treating the broader portability claim as
+   closed.
+5. Record those portability-validation results back into this file and
+   `README.md`.
+
+### Archived Pre-Phase-1 Planning Checklist
+
 1. Freeze the `R12` contract in one tracked design doc before adding turnkey
    brain code.
 2. Define the exact turnkey CLI/operator flow:
@@ -881,6 +1033,80 @@ These are real tasks, but they are not the current blocker:
   promoted from retained proof path to an official scoped support target
 - further corpus expansion after the current twelve-case set is trustworthy
 
+### What `R12` Phase 1 Already Proved
+
+The first turnkey slice has already proved all of the following on the
+attached `nrf52840dk`:
+
+- the repo now has a real turnkey CLI entrypoint:
+  `uv run pyocd-turnkey`
+- the turnkey CLI launches the checked-in MCP server as a child stdio process
+  and talks to it through the official `mcp` Python SDK
+- the repo now has a tracked skill-data tree under `skills/turnkey/`
+- `reference-health-check` succeeds end to end:
+  connect -> board info -> flash -> read PC -> read `stage1_known_value` ->
+  resume -> UART verify -> disconnect
+- `nordic-recover-cycle` succeeds end to end:
+  connect -> recover -> reflash -> UART verify -> disconnect
+- turnkey runs now leave durable JSON summaries under `runs/turnkey/`
+
+The current phase-1 suite commands that passed on this Windows host are:
+
+- `uv run pytest -q`
+- `uv run ruff check .`
+- `uv run mypy src`
+- `uv run python host_bootstrap.py --board-id nrf52840dk`
+- `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
+- `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+- `uv run pyocd-turnkey list-skills`
+- `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-health-check --json`
+- `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id nordic-recover-cycle --json`
+
+Important phase-1 operating note:
+
+- do not run multiple turnkey CLI instances against the same attached probe in
+  parallel; same-probe concurrency is out of scope for this phase and should be
+  treated as a later `R12`/`R13` hardening task rather than a supported mode
+
+### What `R12` Phase 2 Already Proved
+
+The richer phase-2 slice has now also been proved on the attached
+`nrf52840dk`.
+
+It adds and proves:
+
+- typed brain-state tracking for observations, hypotheses, experiments, and
+  strategy evaluations
+- diagnosis-only turnkey flow through `reference-contract-diagnose`
+- repair-oriented turnkey flow through `reference-contract-repair`
+- a frozen `R12` acceptance harness at
+  `tests/harness/r12_turnkey_benchmark.py`
+- a live alternate-board acceptance suite:
+  `turnkey_alt_nrf52840_v1`
+
+The current phase-2 commands that passed on this Windows host are:
+
+- `uv run pytest -q tests/test_turnkey.py tests/test_r12_turnkey_benchmark.py`
+- `uv run ruff check .`
+- `uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py`
+- `uv run pyocd-turnkey list-skills`
+- `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-contract-diagnose --json`
+- `uv run python -m tests.harness.r12_turnkey_benchmark --suite turnkey_alt_nrf52840_v1`
+- `uv run python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset suite --command "uv run pytest -q tests/test_turnkey.py tests/test_r12_turnkey_benchmark.py" --command "uv run python -m tests.harness.r12_turnkey_benchmark --suite turnkey_alt_nrf52840_v1"`
+
+Observed acceptance result:
+
+- `nrf52840dk__k001_reference_green`: `FULL_SUCCESS`, score `100`
+- `nrf52840dk__f001_halted_target_silent_uart`: `FULL_SUCCESS`, score `100`
+- `nrf52840dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score `100`
+- `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score `100`
+- `nrf52840dk__b003_silent_uart`: `FULL_SUCCESS`, score `100`
+- `nrf52840dk__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
+- suite summary: `full_success=6`, `partial_success=0`, `fail=0`,
+  `average_score=100.0`
+- summary artifact:
+  `runs/_turnkey_benchmark/turnkey_alt_nrf52840_v1__20260622T073914Z.json`
+
 ## nRF52840 Alternate Nordic Status
 
 `nrf52840dk` is no longer waiting on first proof. It now has a real Windows
@@ -900,6 +1126,8 @@ What is still not proven by this alternate-board run:
   latest post-fix benchmark/build state
 - a truly fresh Windows or macOS host without a preexisting `NCS` install has
   not yet been validated end to end with the managed no-`NCS` path
+
+Historical setup notes preserved below:
 
 1. **Install NCS (nRF/Nordic only).** Install **nRF Connect SDK (NCS)** via the
    nRF Connect for VS Code extension (Toolchain Manager). The GUI/IDE is only the
@@ -949,9 +1177,13 @@ If resuming later:
 > first BYO-agent benchmark pilot is implemented and already live-proven on
 > that pair: Stage 0, the Stage 1 smoke harness, the current MCP surface,
 > per-session logging, flash/recover guardrails, the mutation watcher, and the
-> frozen eight-case Codex benchmark suite. The next concrete work is `R12`:
-> freeze the turnkey-brain contract, define the CLI/skill/state model, then
-> implement and validate product #2 on the same scoped pair.
+> frozen eight-case Codex benchmark suite. `R12` now has real product code:
+> deterministic turnkey CLI + skills over the same MCP server, plus the first
+> diagnosis/repair-oriented phase-2 slice with hypothesis/experiment tracking
+> and a frozen `R12` acceptance harness. That richer slice is live-proven on
+> `nrf52840dk`; the next concrete work is to rerun it on the official scoped
+> pair and then finish the fresh-machine Windows/macOS no-`NCS` portability
+> proof.
 Current Windows STM32 retest status on this host:
 
 - the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the

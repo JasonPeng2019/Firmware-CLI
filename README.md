@@ -18,8 +18,11 @@ pre-server.
 The scoped pair is now green through `R11 / G6`: `nrf52833dk +
 nucleo_l476rg` have passed the current safety/runtime validation, the frozen
 first Codex-driven benchmark pilot, and the final minimal pre-`R12` bug-family
-hardening cases. The next roadmap frontier is `R12`: the turnkey brain,
-skills, CLI, and premium acceptance benchmark.
+hardening cases. `R12` is now underway as a real product slice: the repo has a
+turnkey CLI + skills path that talks to the same MCP server over stdio, and
+the richer phase-2 repair/benchmark slice is now live-proven on the retained
+alternate Nordic board `nrf52840dk`. The remaining `R12` work is the official
+scoped-pair hardware rollout plus the broader fresh-machine portability proof.
 
 ## What The Repo Currently Delivers
 
@@ -33,11 +36,13 @@ Today that means:
 - one canonical source tree under `src/pyocd_debug_mcp/`
 - tracked board definitions in `boards/`
 - repo-owned test-firmware scaffolding in `firmware/`
+- tracked turnkey skills in `skills/`
 - untracked runtime-output space in `runs/`
 - test and harness scaffolding in `tests/`
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
+- a first turnkey CLI/client slice over the MCP server
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -84,6 +89,12 @@ Firmware-CLI/
 |       |-- reference/build/
 |       |-- recovery/
 |       `-- bugs/
+|-- skills/
+|   `-- turnkey/
+|       |-- nordic-recover-cycle.yaml
+|       |-- reference-contract-diagnose.yaml
+|       |-- reference-contract-repair.yaml
+|       `-- reference-health-check.yaml
 |-- runs/
 |   `-- README.md
 |-- tests/
@@ -95,7 +106,8 @@ Firmware-CLI/
 |   |   `-- r11_result_schema.json
 |   `-- harness/
 |       |-- stage1_smoke.py
-|       `-- r11_benchmark.py
+|       |-- r11_benchmark.py
+|       `-- r12_turnkey_benchmark.py
 |-- src/
 |   `-- pyocd_debug_mcp/
 |       |-- adapters/
@@ -115,6 +127,13 @@ Firmware-CLI/
 |       |-- __init__.py
 |       |-- board_config.py
 |       |-- board_config_cli.py
+|       |-- brain/
+|       |   |-- __init__.py
+|       |   |-- cli.py
+|       |   |-- mcp_client.py
+|       |   |-- models.py
+|       |   |-- runner.py
+|       |   `-- skills.py
 |       |-- local_env.py
 |       |-- pack_index_repair.py
 |       |-- probe_inventory.py
@@ -293,6 +312,23 @@ Start the MCP server:
 uv run pyocd-debug-mcp
 ```
 
+Run the current turnkey CLI slice:
+
+```bash
+uv run pyocd-turnkey list-skills
+uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-health-check --json
+uv run pyocd-turnkey run --board-id nrf52840dk --skill-id nordic-recover-cycle --json
+uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-contract-diagnose --json
+uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-contract-repair --workspace-root firmware/nrf52840dk/bugs/b001_wrong_boot_text --build-command "uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/bugs/b001_wrong_boot_text/src --build-dir firmware/nrf52840dk/bugs/b001_wrong_boot_text/build --board nrf52840dk/nrf52840" --json
+uv run python -m tests.harness.r12_turnkey_benchmark --suite turnkey_alt_nrf52840_v1
+```
+
+Turnkey operating note:
+
+- the turnkey CLI owns the board for the duration of a run
+- do not launch multiple turnkey runs in parallel against the same attached
+  probe/board
+
 ## Zephyr Rebuilds
 
 Repo-owned firmware rebuilds now go through one cross-platform entrypoint:
@@ -429,13 +465,36 @@ Verified:
   diagnose -> patch/build -> flash/verify runs are not cut off by a blanket
   sub-60-second cap while they are still making progress
 - the retained alternate Nordic profile `nrf52840dk` is now live-proven on
-  this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
-  alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
+  this Windows host for Zephyr rebuild, Stage 0, Stage 1, a full six-case
+  alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`), and
+  the live alternate-board `R12` acceptance suite
+- the current `R12` turnkey slice is now implemented and live-proven on the
+  same retained `nrf52840dk` board:
+  - `uv run pyocd-turnkey list-skills`
+  - `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-health-check --json`
+  - `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id nordic-recover-cycle --json`
+  - `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-contract-diagnose --json`
+  - `uv run pyocd-turnkey run --board-id nrf52840dk --skill-id reference-contract-repair ... --json`
+  - `uv run python -m tests.harness.r12_turnkey_benchmark --suite turnkey_alt_nrf52840_v1`
+  - the CLI launches the repo's own MCP server as a child stdio process, loads
+    tracked YAML skills from `skills/turnkey/`, and records structured run
+    summaries under `runs/turnkey/`
+  - the current alternate-board acceptance result is:
+    `full_success=6`, `partial_success=0`, `fail=0`, `average_score=100.0`
+    with summary artifact
+    `runs/_turnkey_benchmark/turnkey_alt_nrf52840_v1__20260622T073914Z.json`
 - `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof,
-  and the next implementation frontier is `R12`
+  and the remaining frontier inside `R12` is no longer basic implementation;
+  it is scoped-pair rerun coverage and broader fresh-machine proof
 
 Pending verification:
 
+- full `R12` rollout on the official scoped pair (`nrf52833dk` +
+  `nucleo_l476rg`), not only the retained alternate Nordic board
+- the official scoped Nordic board `nrf52833dk` still needs one current
+  post-fix live rerun of the `R11` chain in the latest benchmark/build state
+- fresh-machine Windows and macOS managed-Zephyr / no-`NCS` validation are
+  still pending for the broader portability claim
 - the official scoped Nordic board `nrf52833dk` still needs one current
   post-fix live rerun of the `R11` chain in the latest benchmark/build state
 - the broader self-contained no-`NCS` portability claim still needs true fresh
