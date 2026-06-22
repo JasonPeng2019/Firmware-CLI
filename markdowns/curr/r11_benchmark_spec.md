@@ -24,10 +24,13 @@ Current post-fix proof note:
 
 - the benchmark contract is settled and the STM32 Windows side has now been
   re-proved live in the current post-fix state
-- the remaining proof follow-up is not a spec change: re-run Nordic live in the
-  same post-fix state, then re-run the managed Zephyr/no-NCS deployment path on
-  true fresh Windows and macOS hosts before treating the broader portability
-  claim as fully closed
+- the retained alternate Nordic profile `nrf52840dk` has now also been
+  live-proved for Zephyr rebuild, Stage 0, Stage 1, and its alternate six-case
+  `R11` suite on this Windows host
+- the remaining proof follow-up is not a spec change: re-run the official
+  scoped Nordic board `nrf52833dk` in the same post-fix state, then re-run the
+  managed Zephyr/no-NCS deployment path on true fresh Windows and macOS hosts
+  before treating the broader portability claim as fully closed
 
 ## External-Agent Path
 

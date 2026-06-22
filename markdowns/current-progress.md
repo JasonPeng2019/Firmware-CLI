@@ -881,11 +881,25 @@ These are real tasks, but they are not the current blocker:
   promoted from retained proof path to an official scoped support target
 - further corpus expansion after the current twelve-case set is trustworthy
 
-## nRF52840 Bench-Check Prerequisites
+## nRF52840 Alternate Nordic Status
 
-Before bench-checking `nrf52840dk`, do the following. These exist because the
-52840 has no committed reference artifact yet and because the toolchain choice
-must match what the agent will use when it rebuilds firmware.
+`nrf52840dk` is no longer waiting on first proof. It now has a real Windows
+host proof stack on attached hardware. The numbered items below are historical
+setup notes; the current proven results are:
+
+- `uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840`
+- `uv run python host_bootstrap.py --board-id nrf52840dk`
+- `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
+- `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+- all six implemented `nrf52840dk` `R11` cases reached `FULL_SUCCESS`:
+  `k001`, `b001`, `b002`, `f001`, `b003`, `b004`
+
+What is still not proven by this alternate-board run:
+
+- the official scoped Nordic board `nrf52833dk` has not yet been re-run in the
+  latest post-fix benchmark/build state
+- a truly fresh Windows or macOS host without a preexisting `NCS` install has
+  not yet been validated end to end with the managed no-`NCS` path
 
 1. **Install NCS (nRF/Nordic only).** Install **nRF Connect SDK (NCS)** via the
    nRF Connect for VS Code extension (Toolchain Manager). The GUI/IDE is only the
