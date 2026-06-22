@@ -10,7 +10,7 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any, BinaryIO, TextIO, cast
 
 from pyocd.core.exceptions import TransferError  # type: ignore[import-untyped]
 from pyocd.core.helpers import ConnectHelper  # type: ignore[import-untyped]
@@ -19,6 +19,7 @@ from pyocd.flash.file_programmer import FileProgrammer  # type: ignore[import-un
 
 from pyocd_debug_mcp.adapters.swd_interface import SWDInterface, TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig, PROBE_FAMILY_HINTS
+from pyocd_debug_mcp.pack_provision import discover_local_packs
 from pyocd_debug_mcp.probe_inventory import list_connected_probes
 from pyocd_debug_mcp.target_errors import (
     LockedTargetError,
@@ -51,7 +52,7 @@ def _quiet_backend_streams() -> Iterator[None]:
     """
 
     redirected: list[tuple[TextIO, int]] = []
-    temp_files: list[io.BufferedRandom] = []
+    temp_files: list[BinaryIO] = []
     try:
         for stream in (sys.stdout, sys.stderr):
             try:
@@ -63,7 +64,7 @@ def _quiet_backend_streams() -> Iterator[None]:
             except (AttributeError, io.UnsupportedOperation, OSError):
                 continue
             redirected.append((stream, saved_fd))
-            temp_files.append(temp_file)
+            temp_files.append(cast(BinaryIO, temp_file))
 
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             yield
@@ -77,8 +78,8 @@ def _quiet_backend_streams() -> Iterator[None]:
                 os.dup2(saved_fd, stream.fileno())
             finally:
                 os.close(saved_fd)
-        for temp_file in temp_files:
-            temp_file.close()
+        for opened_file in temp_files:
+            opened_file.close()
 
 
 def _typed_backend_error(exc: Exception) -> TargetConnectionError:
@@ -183,6 +184,13 @@ class PyOCDSWDInterface(SWDInterface):
             or None
         )
         options = build_session_options(board, target_override)
+        # Load any locally-provisioned CMSIS-Packs (pinned + sha256-verified) so the
+        # exact target resolves without depending on the live pyOCD pack index. This
+        # is a runtime/filesystem concern, kept out of the pure build_session_options.
+        local_packs = discover_local_packs()
+        if local_packs:
+            options = dict(options or {})
+            options["pack"] = [str(p) for p in local_packs]
         session = self._choose_session(probe_uid=probe_uid, options=options)
         if session is None:
             raise ProbeNotFoundError("No matching debug probe found.")

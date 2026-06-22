@@ -42,6 +42,11 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
 from pyocd_debug_mcp.guardrails.flash_gate import resolve_flash_request  # noqa: E402
 from pyocd_debug_mcp.guardrails.recover_gate import authorize_recover  # noqa: E402
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.pack_provision import (  # noqa: E402
+    PackProvisionError,
+    discover_local_packs,
+    ensure_all,
+)
 from pyocd_debug_mcp.probe_inventory import (  # noqa: E402
     ProbeInfo,
     list_connected_probes,
@@ -172,6 +177,10 @@ def pyocd_base(subcommand: str, board: BoardConfig, probe: ProbeInfo | None) -> 
         # appear during an automated run. NOTE: the plan standardizes the shipped product on
         # CMSIS-DAP, not this SEGGER-DLL path (see surfaced conflict).
         cmd.extend(["-O", "jlink.non_interactive=false"])
+    # Load any locally-provisioned CMSIS-Packs (pinned, sha256-verified) so the
+    # exact target resolves without depending on the live pyOCD pack index.
+    for pack in discover_local_packs():
+        cmd.extend(["--pack", str(pack)])
     return cmd
 
 
@@ -234,8 +243,11 @@ def check_pyserial_installed() -> bool:
     return ok
 
 
-def list_target_names() -> set[str]:
-    _, out, _ = run(["pyocd", "list", "--targets"])
+def list_target_names(pack_args: list[str] | None = None) -> set[str]:
+    cmd = ["pyocd", "list", "--targets"]
+    if pack_args:
+        cmd.extend(pack_args)
+    _, out, _ = run(cmd)
     names: set[str] = set()
     for line in out.splitlines():
         stripped = line.strip()
@@ -339,7 +351,11 @@ def check_probes(boards_to_check: list[BoardConfig]) -> dict[str, ProbeInfo | No
 
 def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -> dict[str, bool]:
     header("CMSIS-Pack / target availability")
-    installed_targets = list_target_names()
+    local_packs = discover_local_packs()
+    pack_args: list[str] = []
+    for pack in local_packs:
+        pack_args.extend(["--pack", str(pack)])
+    installed_targets = list_target_names(pack_args)
 
     results: dict[str, bool] = {}
     for board in boards_to_check:
@@ -351,25 +367,31 @@ def check_target_packs(boards_to_check: list[BoardConfig], auto_install: bool) -
 
         check(False, f"{board.display_name}: target '{board.pyocd_target}' not found")
         if auto_install:
-            log(INFO, f"Installing pack for {board.pack_name}...")
-            rc, _, _ = run(["pyocd", "pack", "install", board.pack_name], capture=False)
-            if rc == 0:
-                ok = board.pyocd_target.lower() in list_target_names()
-                check(
-                    ok,
-                    f"Pack installed, target '{board.pyocd_target}' now {'available' if ok else 'still missing'}",
-                )
-                results[board.board_id] = ok
-            else:
-                check(
-                    False,
-                    f"Pack install failed - try manually: uv run pyocd pack find {board.pack_name}",
-                )
+            log(INFO, f"Provisioning pinned packs for {board.pack_name}...")
+            try:
+                provisioned = ensure_all()
+            except PackProvisionError as exc:
+                check(False, f"Pinned pack provisioning failed: {exc}")
                 results[board.board_id] = False
+                continue
+            if provisioned:
+                log(INFO, f"Provisioned {len(provisioned)} pinned pack(s)")
+            local_packs = discover_local_packs()
+            pack_args = []
+            for pack in local_packs:
+                pack_args.extend(["--pack", str(pack)])
+            ok = board.pyocd_target.lower() in list_target_names(pack_args)
+            via = " via pinned local pack" if ok and local_packs else ""
+            check(
+                ok,
+                f"Target '{board.pyocd_target}' now {'available' if ok else 'still missing'}{via}",
+            )
+            results[board.board_id] = ok
         else:
-            print(f"      Fix: uv run pyocd pack find {board.pack_name}")
-            print(f"           uv run pyocd pack install {board.pack_name}")
-            print("      Or re-run with --install-packs")
+            print("      Fix: re-run with --install-packs to provision pinned packs")
+            print(
+                f"      If this board is not yet covered, add a pinned entry for {board.pack_name} to packs/manifest.yaml"
+            )
             results[board.board_id] = False
 
     return results
@@ -872,7 +894,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--install-packs",
         action="store_true",
-        help="Automatically install missing CMSIS-Packs",
+        help="Automatically provision missing pinned CMSIS-Packs from packs/manifest.yaml",
     )
     parser.add_argument(
         "--port",

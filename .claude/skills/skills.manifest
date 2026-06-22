@@ -1,0 +1,15 @@
+# Firmware-CLI superpowers → skills manifest
+# Data, not code branches: each row maps a skill directory to its single
+# source-of-truth playbook under ../../superpowers/. The sync_references
+# script copies that playbook into <skill-dir>/reference/ so each skill is
+# self-contained and portable while superpowers/ stays the one editing home.
+#
+# Format:  <skill-dir>   <source-playbook-filename>
+#
+superpowers-index          agent_index_START_HERE.md
+superpowers-consistency    agent_consistency_playbook.md
+superpowers-coding         agent_coding_playbook.md
+superpowers-doc-sync       agent_doc_sync_playbook.md
+superpowers-portability    agent_portability_playbook.md
+superpowers-tool-docs      agent_script_doc_playbook.md
+superpowers-spec-loop      spec_build_review_loop_playbook.md

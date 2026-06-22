@@ -102,6 +102,46 @@ For one board:
 uv run python stage0_check.py --board-id nrf52833dk
 ```
 
+### Step 4a: Known-good per-board command sequences
+
+Use these exact commands when you want the shortest known-good Stage 0 path for
+one board.
+
+Windows PowerShell, `nucleo_l476rg`:
+
+```powershell
+uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs
+uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg
+```
+
+Why this exact form:
+
+- `--install-packs` is the correct repo path for STM32L4 target support on a
+  fresh host
+- the pinned pack path is deterministic and does not depend on the live pyOCD
+  pack index
+- the reference firmware flash + UART check is what makes this a real Stage 0
+  proof rather than only a host-visibility check
+
+Windows PowerShell, `nrf52833dk`:
+
+```powershell
+uv run python host_bootstrap.py --board-id nrf52833dk
+uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk
+```
+
+Why this exact form:
+
+- Nordic target support is built into pyOCD on the verified hosts, so no pinned
+  pack step is required here
+- `--recover-test` is part of the official Nordic Stage 0 proof path
+
+If these pass, the next command is:
+
+```powershell
+uv run python -m tests.harness.stage1_smoke --board-id <board>
+```
+
 ### Step 5: Start the MCP server after Stage 0 is acceptable
 
 ```bash
@@ -217,9 +257,10 @@ sequence it appears.
 | `host_bootstrap.py reported that setup is still incomplete.` | Env repaired but probe/serial/pack readiness still failed | Read the `host_bootstrap.py` output, fix the named blocker -> rerun `host_bootstrap.py` |
 | `[FAIL] pyOCD not found - run: uv sync` / `pyocd missing` / `pyserial missing` / `pyOCD not found` / `pyserial not found` | Repo environment incomplete | `uv sync` (or `host_bootstrap.py --install-missing`) -> rerun the same script |
 | `[FAIL] <path> is missing required field ...` | Invalid board config | Correct the board YAML -> rerun |
-| `[WARN] No debug probes detected` / `<board> ... no probes detected` | Board absent, USB/cable (charge-only) issue, driver/tooling issue, or another process owns the probe | Repair host visibility -> rerun `host_bootstrap.py --board-id <board>` |
+| `[WARN] No debug probes detected` / `<board> ... no probes detected` (esp. Windows, when a `COM*` port is still visible) | Board absent, USB/cable (charge-only) issue, missing debug-interface driver, or another process owns the probe | Repair host visibility — Windows ST-Link: install the ST-Link driver via STM32CubeProgrammer/STSW-LINK009 and replug (WinUSB/Zadig only as fallback); see [init.md](./init.md) "Windows ST-Link driver" -> rerun `host_bootstrap.py --board-id <board>` |
+| `pyocd list --probes` says no probes on Windows, but plain `pyocd list` still shows the ST-Link row | pyOCD Windows console/encoding quirk rather than true hardware absence | Use the repo's shared probe path (`host_bootstrap.py`, `stage0_check.py`, the MCP server). The shared `probe_inventory` fallback now retries against plain `pyocd list` and accepts the Windows nonzero-exit/valid-stdout case. If both commands truly show nothing, fall back to driver/cable/process checks and rerun |
 | `<board> ... probes detected, but none matched this board` | Probe exists but hint/family match was inconclusive | Narrow to the right `--board-id`, fix `probe_hint_terms`, or disconnect unrelated hardware -> rerun `stage0_check.py --board-id <board>` |
-| `<board>: target '<target>' not found` / `[WARN] target '<target>' not found` | Required pyOCD target pack missing | Rerun with `--install-packs` (or `uv run pyocd pack install <pack>`) |
+| `<board>: target '<target>' not found` / `[WARN] target '<target>' not found` / `✖︎` next to the target in `pyocd list` | Required pyOCD target not built in and its pinned pack is not provisioned yet, or the operator is relying on a partial live pyOCD pack index | Rerun with `--install-packs` to fetch the pinned pack from `packs/manifest.yaml` (deterministic; does NOT use the live index). If a board's target is not covered, add a pin to `packs/manifest.yaml`. If you explicitly need the live index repaired for ad-hoc `pyocd pack find/install`, run `uv run pyocd-pack-repair` or `uv run pyocd-pack-repair --vendor Keil --pack-name STM32L4xx_DFP` — see [packs/live_index_repair.md](./packs/live_index_repair.md) |
 | `[FAIL] No serial ports detected` / `COM port not uniquely identifiable: ...` | UART not visible, or auto-detect ambiguous | Repair host USB/vendor tooling, or choose the port in the prompt / rerun with `--port <board>=<port>` |
 | `[WARN] <board> appears access-protected.` / `pyOCD found the probe but could not connect to the target MCU` | Locked target (esp. Nordic APPROTECT), or power/cable/firmware issue | If recover is supported and acceptable: rerun with `--recover-test <board>`; else check power/cable/probe firmware |
 | `[FAIL] Unable to read <silicon label>` | Silicon-identity read failed, commonly APPROTECT | Recover first, then rerun the normal board check |

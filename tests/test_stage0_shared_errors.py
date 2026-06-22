@@ -179,3 +179,60 @@ def test_run_recover_test_surfaces_policy_refusal(monkeypatch, capsys) -> None:
     captured = capsys.readouterr().out
     assert "Recover policy refused" in captured
     assert "[recover/manual-only]" in captured
+
+
+def test_check_target_packs_uses_local_pack_args(monkeypatch, tmp_path: Path, capsys) -> None:
+    pack_path = tmp_path / "Keil.STM32L4xx_DFP.3.1.0.pack"
+    pack_path.write_text("placeholder", encoding="utf-8")
+
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
+        seen.append(cmd)
+        if cmd[:3] == ["pyocd", "list", "--targets"]:
+            assert "--pack" in cmd
+            return 0, "stm32l476rgtx\n", ""
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(stage0_check, "run", fake_run)
+    monkeypatch.setattr(stage0_check, "discover_local_packs", lambda: [pack_path])
+
+    results = stage0_check.check_target_packs([make_board()], auto_install=False)
+
+    assert results == {"nucleo_l476rg": True}
+    captured = capsys.readouterr().out
+    assert "target 'stm32l476rgtx' available" in captured
+
+
+def test_check_target_packs_auto_install_uses_pinned_provisioning(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    pack_path = tmp_path / "Keil.STM32L4xx_DFP.3.1.0.pack"
+    pack_path.write_text("placeholder", encoding="utf-8")
+    stage = {"value": 0}
+
+    def fake_run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
+        if cmd[:3] != ["pyocd", "list", "--targets"]:
+            raise AssertionError(f"unexpected command: {cmd}")
+        if stage["value"] == 0:
+            return 0, "", ""
+        return 0, "stm32l476rgtx\n", ""
+
+    def fake_ensure_all():
+        stage["value"] = 1
+        return [pack_path]
+
+    monkeypatch.setattr(stage0_check, "run", fake_run)
+    monkeypatch.setattr(
+        stage0_check,
+        "discover_local_packs",
+        lambda: [] if stage["value"] == 0 else [pack_path],
+    )
+    monkeypatch.setattr(stage0_check, "ensure_all", fake_ensure_all)
+
+    results = stage0_check.check_target_packs([make_board()], auto_install=True)
+
+    assert results == {"nucleo_l476rg": True}
+    captured = capsys.readouterr().out
+    assert "Provisioning pinned packs" in captured
+    assert "via pinned local pack" in captured

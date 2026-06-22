@@ -25,6 +25,11 @@ Build recipe:
 ./firmware/nucleo_l476rg/reference/build_reference.sh
 ```
 
+After changing the tracked UART path or overlay for this board, rebuild the
+canonical artifacts before rerunning Stage 0 / Stage 1 / `R11` on another host.
+The flashed STM32 behavior only changes when the generated `reference/build/`
+artifacts are refreshed.
+
 What that script does:
 
 - bootstraps a small isolated `west + pyelftools` venv under
@@ -57,6 +62,16 @@ Stage 1 smoke-harness flow on a live bench:
 uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg
 ```
 
+If the benchmark corpus was changed too, rebuild the STM32 bug artifacts before
+running the expanded `R11` corpus:
+
+```bash
+./firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build_bug.sh
+./firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build_bug.sh
+./firmware/nucleo_l476rg/bugs/b003__silent_uart/build_bug.sh
+./firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build_bug.sh
+```
+
 Verified:
 
 - The repo now contains one canonical reference-firmware source tree and one
@@ -85,6 +100,11 @@ Verified:
 - The human operator confirmed that the visible ST-Link debug probe and the
   visible `/dev/cu.usbmodem144403` virtual COM port were exposed by the same
   physical USB-attached `nucleo_l476rg` board during the final STM32 bench run.
+- The tracked STM32 reference and bug apps now bind their UART path explicitly
+  to `USART2` and also pin Zephyr's chosen console to `usart2` through a shared
+  overlay under `firmware/nucleo_l476rg/common/`.
+  This removes reliance on implicit `printk` routing when the STM32 artifacts
+  are rebuilt on another host.
 
 Out of scope for this board package:
 

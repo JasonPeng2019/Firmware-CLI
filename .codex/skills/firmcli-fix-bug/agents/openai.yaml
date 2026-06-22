@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Fix Bug"
+  short_description: "Fix a Firmware-CLI bug end to end"
+  default_prompt: "Use $firmcli-fix-bug to reproduce, fix, validate, and document this Firmware-CLI bug end to end."

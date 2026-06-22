@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Review"
+  short_description: "Review a Firmware-CLI build against the spec"
+  default_prompt: "Use $firmcli-review to review the current Firmware-CLI build against its spec and emit review findings."

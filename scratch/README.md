@@ -1,4 +1,6 @@
-# scratch/ — throwaway local experiments
+# scratch/ - this folder is for throwaway files and temporary WIP files.
+
+ — throwaway local experiments
 
 This folder is **not shipped**.
 

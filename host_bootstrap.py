@@ -35,6 +35,11 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
     preview_board_config_paths,
 )
 from pyocd_debug_mcp.local_env import load_local_env  # noqa: E402
+from pyocd_debug_mcp.pack_provision import (  # noqa: E402
+    PackProvisionError,
+    discover_local_packs,
+    ensure_all,
+)
 from pyocd_debug_mcp.probe_inventory import list_connected_probes  # noqa: E402
 from pyocd_debug_mcp.serial_resolver import command_exists  # noqa: E402
 
@@ -190,8 +195,11 @@ def serial_summary(pyserial_ok: bool) -> int | None:
     return len(ports)
 
 
-def list_target_names() -> set[str]:
-    _, out, _ = run(["pyocd", "list", "--targets"])
+def list_target_names(pack_args: list[str] | None = None) -> set[str]:
+    cmd = ["pyocd", "list", "--targets"]
+    if pack_args:
+        cmd.extend(pack_args)
+    _, out, _ = run(cmd)
     names: set[str] = set()
     for line in out.splitlines():
         stripped = line.strip()
@@ -254,33 +262,48 @@ def target_pack_summary(
         log(FAIL, "pyocd missing - cannot check target packs")
         return {board.board_id: False for board in boards}
 
-    installed_targets = list_target_names()
+    # Provision pinned packs first (deterministic; does NOT depend on the live
+    # pyOCD pack index, which fetches ~1500 vendor descriptors and silently drops
+    # whole families on restrictive networks). See packs/manifest.yaml.
+    if install_packs:
+        try:
+            provisioned = ensure_all()
+            if provisioned:
+                log(PASS, f"Provisioned {len(provisioned)} pinned pack(s) into packs/")
+        except PackProvisionError as exc:
+            log(FAIL, f"Pinned pack provisioning failed: {exc}")
+
+    local_packs = discover_local_packs()
+    pack_args: list[str] = []
+    for pack in local_packs:
+        pack_args.extend(["--pack", str(pack)])
+
+    # Pack-aware availability: targets from local .pack files only appear when the
+    # listing is given the same --pack args the runtime uses.
+    installed_targets = list_target_names(pack_args)
     results: dict[str, bool] = {}
 
     for board in boards:
-        target_present = board.pyocd_target.lower() in installed_targets
-        if target_present:
-            log(PASS, f"{board.board_id}: target '{board.pyocd_target}' available")
+        if board.pyocd_target.lower() in installed_targets:
+            via = " (via pinned local pack)" if local_packs else ""
+            log(PASS, f"{board.board_id}: target '{board.pyocd_target}' available{via}")
             results[board.board_id] = True
             continue
 
         log(WARN, f"{board.board_id}: target '{board.pyocd_target}' not found")
         if install_packs:
-            print(f"  Attempting: pyocd pack install {board.pack_name}")
-            rc, _, _ = run(["pyocd", "pack", "install", board.pack_name], capture=False)
-            if rc == 0:
-                ok = board.pyocd_target.lower() in list_target_names()
-                log(
-                    PASS if ok else FAIL,
-                    f"{board.board_id}: pack install {'succeeded' if ok else 'did not expose target'}",
-                )
-                results[board.board_id] = ok
-            else:
-                log(FAIL, f"{board.board_id}: pack install failed")
-                results[board.board_id] = False
+            log(
+                FAIL,
+                f"{board.board_id}: no built-in target and no pinned pack provides "
+                f"'{board.pyocd_target}'",
+            )
+            print(
+                f"      Fix: add a pinned entry for {board.pack_name} to packs/manifest.yaml "
+                "(id/url/version/sha256), then rerun with --install-packs"
+            )
         else:
-            print(f"      Fix: uv run pyocd pack install {board.pack_name}")
-            results[board.board_id] = False
+            print("      Fix: rerun with --install-packs to provision pinned packs")
+        results[board.board_id] = False
 
     return results
 

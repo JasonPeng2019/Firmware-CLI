@@ -106,7 +106,9 @@ paths:
 Important architectural outcomes:
 
 - probe inventory no longer depends on unsupported `pyocd list --output json`
-- board-aware auto-selection now uses `pyocd list --probes`
+- board-aware auto-selection is now API-first:
+  - ask pyOCD for connected probes directly through `ConnectHelper.get_all_connected_probes(...)`
+  - fall back to parsing `pyocd list --probes`, then plain `pyocd list`, only if the direct API path fails or returns no usable probes
 - the shared path preserves real probe UIDs for both J-Link and ST-Link
 - the shared SWD adapter now carries the J-Link serial-open quirk handling in
   one place:
@@ -241,8 +243,8 @@ What that code does:
 
 ## Live Bench Facts
 
-These are the current real bench facts that were proven on the Mac host used
-for the scoped validation.
+These are the current real bench facts that were proven on the Mac and Windows
+hosts used for the scoped validation.
 
 ### `nucleo_l476rg`
 
@@ -260,6 +262,25 @@ Additional proven host quirk for this board on the current Mac host:
 That matters because direct ST-Link attach could otherwise fail with the
 pyOCD/ST-Link `DP wait` error even when the board is physically present.
 
+Additional proven Windows host facts for this board:
+
+- probe UID: `0670FF3031454D3043223536`
+- serial port: `COM9`
+- `host_bootstrap.py --board-id nucleo_l476rg --install-packs` passes
+- `stage0_check.py --board-id nucleo_l476rg --reference-firmware ...` passes
+- the local pinned `STM32L4xx_DFP` pack resolves `stm32l476rgtx` correctly on
+  Windows too
+- on this Windows host, `pyocd list --probes` can incorrectly report no probes,
+  while `pyocd list` still prints the real ST-Link row; the shared
+  `probe_inventory` path now falls back to plain `pyocd list` and also tolerates
+  the Windows console encoding error path where pyOCD returns a nonzero exit code
+  but still prints the valid probe table to stdout
+- on this Windows host, MCP stdio `connect(board_id="nucleo_l476rg")` could
+  also hang for roughly 30 to 40 seconds before attach because subprocess-based
+  probe auto-resolution was slow inside the live server process; the shared
+  fix is now to enumerate probes through the pyOCD Python API first, which makes
+  the real MCP `connect` path return promptly again
+
 ### `nrf52833dk`
 
 - probe UID: `685400693`
@@ -275,10 +296,10 @@ pyOCD/ST-Link `DP wait` error even when the board is physically present.
 
 ### STM32 Proof
 
-These live runs were completed successfully:
+These live runs were completed successfully on the scoped validation hosts:
 
 ```bash
-uv run python host_bootstrap.py --board-id nucleo_l476rg
+uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs
 uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg
 uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg
 ```
@@ -367,7 +388,7 @@ Why this is expected:
 Run the foundation checks for both boards:
 
 ```bash
-uv run python host_bootstrap.py --board-id nucleo_l476rg
+uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs
 uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg
 uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg
 
@@ -388,6 +409,14 @@ Why this is expected:
 - both boards already passed these exact workflows on the current Mac host
 - the reference firmware artifacts, board configs, and shared services are now
   aligned around those flows
+
+Windows retest note:
+
+- on a fresh Windows STM32 host, prefer the exact same STM32 sequence above with
+  `--install-packs`
+- this is the repo-standard way to provision the pinned `STM32L4xx_DFP` pack
+  before Stage 0 runs
+- this STM32 Windows sequence is now bench-proven on the current Windows host
 
 ### 3. MCP Server Launch
 
@@ -431,7 +460,7 @@ Run this sequence:
 9. `read_core_register(name="pc")`
 10. `read_memory(address="0x08000000", word_size=32)`
 11. `resume()`
-12. `read_serial(reset_on_open=true)`
+12. `read_serial(expected_text="boot ok", reset_on_open=true)`
 13. `unlock_recover(confirm=false)`
 14. `unlock_recover(confirm=true)`
 15. repeat `unlock_recover(confirm=true)` twice more
@@ -457,6 +486,9 @@ Expected result:
   `flash_firmware` becomes blocked
 - read-only tools still work after watcher blocks
 - disconnect/reconnect clears the block state
+- refusal/block policy outcomes stay in normal tool text with prefixes such as
+  `Refused [...]` and `Blocked [...]`, rather than surfacing as transport-level
+  MCP errors
 
 Why this is expected:
 
@@ -615,6 +647,10 @@ turnkey-product layer on top of this substrate, re-check these exact things:
   - `nucleo_l476rg` should refuse
 - watcher state still clears on disconnect/reconnect
   - because the benchmark runner assumes each case starts from a clean session
+- the STM32 benchmark target is the exact tracked `nucleo_l476rg` baseline, not
+  a near-family substitute
+  - because the R11 oracle assumes the tracked reference firmware, UART
+    contract, and symbol contract for that exact board id
 
 ## Benchmark Phase Status
 
@@ -639,6 +675,14 @@ Runner prerequisite:
 codex mcp add pyocd-debug -- uv run pyocd-debug-mcp
 codex mcp get pyocd-debug
 ```
+
+Runner guardrails:
+
+- before launching Codex for a case, the runner now enforces a per-board
+  Stage 1 smoke preflight
+- if that preflight fails, the case aborts immediately with a host-bench error
+  instead of spending minutes inside a non-converging Codex run
+- Codex execution is now time-bounded so a stuck case cannot hang indefinitely
 
 Single-case entrypoint:
 
@@ -987,3 +1031,46 @@ If resuming later:
 > frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
 > a native Python turnkey brain plus `pyocd-debug-brain`, but it still needs
 > live freeform and benchmark validation on the same scoped pair.
+Current Windows STM32 blocker on this host:
+
+- probe attach, flash, and symbol-resolution are green on the attached
+  `nucleo_l476rg`
+- UART capture is currently silent on Windows for the tracked STM32 reference
+  artifact, which blocks the STM32 `R11` green case preflight
+- to close that repo-side ambiguity, the tracked STM32 reference and bug apps
+  now pin the UART path explicitly to `USART2` and pin the Zephyr chosen
+  console to `usart2` through `firmware/nucleo_l476rg/common/`
+- those source changes still require a Zephyr rebuild of the STM32 artifacts
+  before the Windows STM32 Stage 0 / Stage 1 / `R11` green case can be rerun
+- the Windows host now has a discovered NCS/Zephyr workspace root at
+  `C:\ncs\v3.3.1`
+- the next Codex session should export:
+  - `ZEPHYR_WORKSPACE_DIR=C:\ncs\v3.3.1`
+  - `ZEPHYR_SDK_INSTALL_DIR=<the actual Zephyr SDK path on this host, if it is
+    not already exposed through the build environment>`
+- rebuild the STM32 artifacts in this order:
+  - `./firmware/nucleo_l476rg/reference/build_reference.sh`
+  - `./firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build_bug.sh`
+  - `./firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build_bug.sh`
+  - `./firmware/nucleo_l476rg/bugs/b003__silent_uart/build_bug.sh`
+  - `./firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build_bug.sh`
+- then rerun the Windows STM32 proof chain in this order:
+  - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
+- current benchmark-runner status on Windows:
+  - the old STM32 `R11` hang is fixed
+  - if the board is not green, `tests.harness.r11_benchmark` now fails fast at
+    Stage 1 preflight in a few seconds instead of spending minutes in a stuck
+    Codex run
+- after the STM32 green case passes again, continue the remaining implemented
+  Windows `R11` STM32 cases:
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
+- do not treat any agent/tool call that runs longer than 60 seconds as normal
+  during this Windows retest
+  - terminate it, diagnose the stall, and fix the underlying cause before
+    continuing

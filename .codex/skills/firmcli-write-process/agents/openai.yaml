@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Write Process"
+  short_description: "Deliver a tracked Firmware-CLI process"
+  default_prompt: "Use $firmcli-write-process to take this Firmware-CLI process from spec through validation with a live ledger."

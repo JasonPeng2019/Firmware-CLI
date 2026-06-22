@@ -69,6 +69,10 @@ Firmware-CLI/
 |-- host_bootstrap.py
 |-- stage0_check.py
 |-- stage0_setup.md
+|-- packs/
+|   |-- manifest.yaml
+|   |-- README.md
+|   `-- live_index_repair.md
 |-- boards/
 |   |-- nrf52833dk.yaml
 |   |-- nrf52840dk.yaml
@@ -144,6 +148,7 @@ Firmware-CLI/
 |       |-- board_config.py
 |       |-- board_config_cli.py
 |       |-- local_env.py
+|       |-- pack_index_repair.py
 |       |-- probe_inventory.py
 |       |-- reference_artifacts.py
 |       |-- serial_resolver.py
@@ -375,6 +380,14 @@ Verified:
   `/dev/cu.usbmodem144403`
 - the canonical Windows `R0` bootstrap path has been verified on a real Windows
   host
+- the STM32 Windows Stage 0 path is now also bench-proven on a real Windows
+  host: `host_bootstrap.py --board-id nucleo_l476rg --install-packs` and
+  `stage0_check.py --board-id nucleo_l476rg --reference-firmware ...` both pass,
+  with `COM9` + ST-Link visibility confirmed through the shared path
+- the Windows MCP stdio `connect(board_id="nucleo_l476rg")` regression is also
+  closed on real hardware: shared probe discovery now uses the pyOCD Python API
+  first instead of paying the subprocess `pyocd list` penalty inside the live
+  server process
 - the scoped Nordic board is now `nrf52833dk`, and its Stage 0 path is bench
   proven on this Mac host for probe visibility, exact silicon identity, flash,
   UART `boot ok`, recover, and shared USB confirmation

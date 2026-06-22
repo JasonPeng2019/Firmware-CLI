@@ -255,6 +255,40 @@ def test_prepare_workspace_keeps_tracked_bug_fixture_unchanged(
     assert copied_source.read_text(encoding="utf-8") == "changed\n"
 
 
+def test_stage1_preflight_caches_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str, float]] = []
+    monkeypatch.setattr(r11, "_STAGE1_PREFLIGHT_CACHE", {})
+
+    def fake_smoke(*, board_id: str, probe_uid: str, serial_read_seconds: float) -> object:
+        calls.append((board_id, probe_uid, serial_read_seconds))
+        return object()
+
+    monkeypatch.setattr(r11, "run_stage1_smoke", fake_smoke)
+
+    r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
+    r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
+
+    assert calls == [("nucleo_l476rg", "probe-1", r11.DEFAULT_SERIAL_READ_SECONDS)]
+
+
+def test_stage1_preflight_caches_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str, float]] = []
+    monkeypatch.setattr(r11, "_STAGE1_PREFLIGHT_CACHE", {})
+
+    def fake_smoke(*, board_id: str, probe_uid: str, serial_read_seconds: float) -> object:
+        calls.append((board_id, probe_uid, serial_read_seconds))
+        raise RuntimeError("UART output did not contain 'boot ok'")
+
+    monkeypatch.setattr(r11, "run_stage1_smoke", fake_smoke)
+
+    with pytest.raises(RuntimeError, match="Benchmark preflight failed for nucleo_l476rg"):
+        r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
+    with pytest.raises(RuntimeError, match="Rerun Stage 0 and Stage 1 smoke on this host before R11"):
+        r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
+
+    assert calls == [("nucleo_l476rg", "probe-1", r11.DEFAULT_SERIAL_READ_SECONDS)]
+
+
 def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     case = r11.load_case("nrf52833dk__b001_wrong_boot_text")
     board = r11._load_board(case.board_id)
@@ -359,9 +393,11 @@ def test_run_codex_uses_noninteractive_full_access_flags(
         cmd: list[str],
         *,
         cwd: Path | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[int, str, str]:
         captured["cmd"] = cmd
         captured["cwd"] = cwd
+        captured["timeout_seconds"] = timeout_seconds
         return 0, '{"type":"done"}\n', ""
 
     monkeypatch.setattr(r11, "_session_dirs", fake_session_dirs)
@@ -386,6 +422,7 @@ def test_run_codex_uses_noninteractive_full_access_flags(
         "prompt text",
     ]
     assert captured["cwd"] == r11.REPO_ROOT
+    assert captured["timeout_seconds"] == r11.DEFAULT_CODEX_TIMEOUT_SECONDS
     assert run.exit_code == 0
     assert run.new_session_dirs == (tmp_path / "20260620T000000Z-deadbeef",)
 
@@ -449,6 +486,7 @@ def test_run_case_fails_when_no_session_directory_is_created(
     result_path.write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_ensure_stage1_preflight", lambda _board_id, _probe_uid: None)
     monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
     monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
     monkeypatch.setattr(
@@ -534,6 +572,7 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_ensure_stage1_preflight", lambda _board_id, _probe_uid: None)
     monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
     monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
     monkeypatch.setattr(
@@ -652,6 +691,7 @@ def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_d
     unrelated_root.mkdir()
 
     monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_ensure_stage1_preflight", lambda _board_id, _probe_uid: None)
     monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
     monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
     monkeypatch.setattr(

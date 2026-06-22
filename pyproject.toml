@@ -9,6 +9,7 @@ dependencies = [
     "anthropic>=0.96.0",           # official Anthropic SDK for the optional Claude API provider
     "mcp[cli]>=1.2.0",              # official MCP Python SDK; [cli] pulls in the `mcp` dev/inspector tooling
     "openai>=2.0.0",               # official OpenAI SDK for the R12 turnkey brain
+    "httpx>=0.27",                 # deterministic pack provisioning + live-index repair downloads
     "pyocd>=0.44.0",               # Cortex-M debug/flash/inspection; current stable is 0.44.1
     "pyserial>=3.5",               # serial-port discovery and UART smoke checks
     "pyyaml>=6.0",                 # YAML board-config loading
@@ -18,6 +19,7 @@ dependencies = [
 [project.scripts]
 pyocd-debug-mcp = "pyocd_debug_mcp.server:main"
 pyocd-debug-brain = "pyocd_debug_mcp.brain.cli:main"
+pyocd-pack-repair = "pyocd_debug_mcp.pack_index_repair:main"
 
 # PEP 735 dependency groups — installed by `uv sync` (default) and excluded from the published wheel.
 [dependency-groups]
