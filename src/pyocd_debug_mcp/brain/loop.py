@@ -6,10 +6,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-import sys
-from typing import TYPE_CHECKING
-
-import anyio
 
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
@@ -38,9 +34,7 @@ from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT
-
-if TYPE_CHECKING:
-    from tests.harness.stage1_smoke import Stage1SmokeResult
+from pyocd_debug_mcp.services.symbols import resolve_symbol
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -180,6 +174,7 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- Do not pass a generic target override such as cortex_m.\n"
         "- Use read_memory with a string hex address such as 0x08000000, not an integer.\n"
         "- Once a session_id exists, do not call connect again unless you intentionally disconnected or attached to the wrong board.\n"
+        "- If run_green_check fails, stay on the current session and continue debugging from that same session.\n"
         "- Gather evidence before editing code.\n"
         "- Use unlock_recover only when the symptoms justify it and the task policy allows it.\n"
         "- When code edits are allowed, replace whole files only; do not describe patches in prose.\n"
@@ -345,24 +340,36 @@ def _result_session_id(state: BrainState) -> str | None:
     return None
 
 
-def _verify_green(
-    invocation: TurnkeyInvocation,
-    board: BoardConfig,
-    state: BrainState,
-) -> Stage1SmokeResult:
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-    from tests.harness.stage1_smoke import run_stage1_smoke
+def _parse_hex_text(text: str, *, label: str) -> int:
+    candidate = text.strip()
+    try:
+        return int(candidate, 0)
+    except ValueError as exc:
+        raise RuntimeError(f"Could not parse {label} from tool response: {candidate}") from exc
 
-    flash_artifact, elf = _green_check_artifacts(invocation, board)
-    return run_stage1_smoke(
-        board_id=board.board_id,
-        probe_uid=state.probe_uid,
-        port=invocation.port,
-        flash_artifact=flash_artifact,
-        elf=elf,
-        serial_read_seconds=invocation.serial_read_seconds,
-    )
+
+def _extract_uart_excerpt(text: str) -> str:
+    marker = "excerpt="
+    index = text.find(marker)
+    if index < 0:
+        return text
+    return text[index + len(marker) :].strip()
+
+
+def _normalize_flash_path(
+    path_value: object,
+    *,
+    workspace_root: Path | None,
+) -> str | None:
+    if not isinstance(path_value, str):
+        return None
+    normalized = path_value.strip()
+    if not normalized:
+        return None
+    candidate = Path(normalized).expanduser()
+    if candidate.is_absolute() or workspace_root is None:
+        return str(candidate.resolve())
+    return str((workspace_root / candidate).resolve())
 
 
 async def _execute_server_tool(
@@ -404,6 +411,13 @@ async def _execute_server_tool(
     elif action.tool_name == "flash_firmware":
         if "path" not in arguments and invocation.flash_artifact is not None:
             arguments["path"] = str(invocation.flash_artifact)
+        elif "path" in arguments:
+            normalized_path = _normalize_flash_path(
+                arguments.get("path"),
+                workspace_root=invocation.workspace_root,
+            )
+            if normalized_path is not None:
+                arguments["path"] = normalized_path
     elif action.tool_name == "read_serial":
         if invocation.port is not None:
             arguments.setdefault("port", invocation.port)
@@ -533,20 +547,82 @@ async def _execute_green_check(
     state: BrainState,
     client: LocalMCPClient,
 ) -> str:
-    if state.session_id is not None:
-        await _disconnect_before_green_check(client, state)
-    smoke = await anyio.to_thread.run_sync(_verify_green, invocation, board, state)
+    flash_artifact, symbol_artifact = _green_check_artifacts(invocation, board)
+    flash_result = await client.call_tool(
+        "flash_firmware",
+        {"path": str(flash_artifact), "halt_after_reset": True},
+    )
+    if flash_result.refusal_code or flash_result.blocked_code:
+        state.last_result_text = flash_result.text
+        return flash_result.text
+
+    pc_result = await client.call_tool("read_core_register", {"name": "pc"})
+    if pc_result.refusal_code or pc_result.blocked_code:
+        state.last_result_text = pc_result.text
+        return pc_result.text
+    pc = _parse_hex_text(pc_result.text, label="pc")
+
     symbol_ok = True
-    if (
-        invocation.expected_symbol_name is not None
-        and smoke.resolved_symbol.name != invocation.expected_symbol_name
-    ):
-        symbol_ok = False
-    if (
-        invocation.expected_symbol_value_u32 is not None
-        and smoke.resolved_symbol.value_u32 != invocation.expected_symbol_value_u32
-    ):
-        symbol_ok = False
+    symbol_name = invocation.expected_symbol_name
+    resolved_symbol_name = "(skipped)"
+    resolved_symbol_value: int | None = None
+    if symbol_name is not None:
+        resolved_symbol = resolve_symbol(symbol_artifact, symbol_name)
+        value_result = await client.call_tool(
+            "read_memory",
+            {
+                "address": f"0x{resolved_symbol.address:08X}",
+                "word_size": 32,
+            },
+        )
+        if value_result.refusal_code or value_result.blocked_code:
+            state.last_result_text = value_result.text
+            return value_result.text
+        resolved_symbol_name = resolved_symbol.name
+        resolved_symbol_value = _parse_hex_text(
+            value_result.text,
+            label=f"symbol {resolved_symbol.name}",
+        )
+        if (
+            invocation.expected_symbol_value_u32 is not None
+            and resolved_symbol_value != invocation.expected_symbol_value_u32
+        ):
+            _update_verification_state(
+                state,
+                flash_ok=True,
+                uart_ok=state.verification.uart_ok,
+                symbol_ok=False,
+                green_check_ok=False,
+            )
+            raise RuntimeError(
+                f"{resolved_symbol.name} value mismatch: actual=0x{resolved_symbol_value:08X} "
+                f"expected=0x{invocation.expected_symbol_value_u32:08X}"
+            )
+
+    expected_text = invocation.expected_uart_substring or board.expected_uart_substring
+    read_serial_args: dict[str, object] = {
+        "read_seconds": invocation.serial_read_seconds,
+        "reset_on_open": True,
+    }
+    if expected_text:
+        read_serial_args["expected_text"] = expected_text
+    if invocation.port is not None:
+        read_serial_args["port"] = invocation.port
+
+    serial_result = await client.call_tool("read_serial", read_serial_args)
+    if serial_result.refusal_code or serial_result.blocked_code:
+        state.last_result_text = serial_result.text
+        return serial_result.text
+    if not serial_result.text.startswith("UART matched"):
+        _update_verification_state(
+            state,
+            flash_ok=True,
+            uart_ok=False,
+            symbol_ok=symbol_ok,
+            green_check_ok=False,
+        )
+        raise RuntimeError(serial_result.text)
+
     _update_verification_state(
         state,
         flash_ok=True,
@@ -556,25 +632,16 @@ async def _execute_green_check(
     )
     state.actions_taken.append("run_green_check")
     state.last_action_summary = "run_green_check()"
+    symbol_fragment = (
+        f"symbol={resolved_symbol_name}=0x{resolved_symbol_value:08X}, "
+        if resolved_symbol_value is not None
+        else ""
+    )
     state.last_result_text = (
-        f"Green check passed on {board.board_id}: pc=0x{smoke.pc:08X}, "
-        f"symbol={smoke.resolved_symbol.name}=0x{smoke.resolved_symbol.value_u32:08X}, "
-        f"uart_excerpt={smoke.capture_excerpt}"
+        f"Green check passed on {board.board_id}: pc=0x{pc:08X}, "
+        f"{symbol_fragment}uart_excerpt={_extract_uart_excerpt(serial_result.text)}"
     )
     return state.last_result_text
-
-
-async def _disconnect_before_green_check(client: LocalMCPClient, state: BrainState) -> None:
-    try:
-        result = await client.call_tool("disconnect", {})
-    except Exception:  # noqa: BLE001 - green check should still attempt the canonical verifier
-        return
-
-    state.register_tool_use("disconnect")
-    state.actions_taken.append("disconnect")
-    state.register_disconnect()
-    state.last_action_summary = "disconnect(for-green-check)"
-    state.last_result_text = result.text
 
 
 def _check_local_convergence(state: BrainState) -> TurnkeyRunResult | None:
@@ -837,6 +904,7 @@ async def run_turnkey(
         if state.session_id is not None:
             try:
                 await client.call_tool("disconnect", {})
+                state.register_disconnect()
             except MCPClientError:
                 pass
 

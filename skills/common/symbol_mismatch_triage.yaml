@@ -12,9 +12,13 @@ priority: 30
 facts:
   - The Stage 1 reference contract expects stage1_known_value to read back as 0x1234ABCD.
   - A wrong symbol value with otherwise healthy UART is usually an application/data bug, not a recover problem.
+  - The symbol contract includes keeping stage1_known_value resolvable from the ELF, not merely retyping the constant in source.
+  - The healthy declaration form is flash-backed `const uint32_t stage1_known_value = ...`; converting it into RAM-backed mutable storage changes what green verification reads after reset-and-halt.
 diagnostic_hints:
   - If UART is healthy but the known symbol value is wrong, inspect the tracked source that defines the known value before changing other behavior.
 verification_checks:
   - Re-run green verification after fixing the known value.
+  - Preserve the existing loop/runtime access pattern so the repaired symbol remains live in the final ELF.
+  - If the case only needs a symbol-value repair, keep the declaration form and change the literal value rather than rewriting the storage class.
 forbidden_actions:
   - Do not classify a pure known-value mismatch as a physical fault unless connection or read failures also appear.

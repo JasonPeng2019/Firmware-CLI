@@ -35,7 +35,12 @@ class WorkspaceSession:
 
     def read_file(self, relative_path: str) -> str:
         path = self._resolve_existing_file(relative_path)
-        return path.read_text(encoding="utf-8")
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise WorkspaceError(
+                f"Workspace file is not UTF-8 text and cannot be read through read_file: {relative_path}"
+            ) from exc
 
     def replace_file(self, relative_path: str, content: str) -> Path:
         if not self.code_edits_allowed:
@@ -115,15 +120,17 @@ class WorkspaceSession:
         normalized = relative_path.replace("\\", "/").strip()
         if not normalized:
             raise WorkspaceError("Workspace edit path cannot be empty.")
+        candidate = self._resolve_relative_path(normalized)
+        relative = candidate.relative_to(self.root).as_posix()
         if self.allowed_edit_roots and not any(
-            normalized == root or normalized.startswith(f"{root}/")
+            relative == root or relative.startswith(f"{root}/")
             for root in self.allowed_edit_roots
         ):
             allowed = ", ".join(self.allowed_edit_roots)
             raise WorkspaceError(
                 f"Workspace edit path '{relative_path}' is outside the allowed edit roots: {allowed}"
             )
-        return self._resolve_relative_path(normalized)
+        return candidate
 
     def _resolve_relative_path(self, relative_path: str) -> Path:
         candidate = (self.root / relative_path).resolve()

@@ -13,11 +13,15 @@ priority: 50
 facts:
   - Application-level success UART can be absent even when the board still boots and the known symbol remains healthy.
   - A Zephyr banner alone does not satisfy the benchmark success condition; the tracked application success string still matters.
+  - Restoring the application success UART must not break the existing live stage1_known_value symbol contract.
+  - The healthy known-symbol contract uses a flash-backed `const uint32_t stage1_known_value = 0x1234ABCD;` declaration that must survive reset-and-halt verification.
 diagnostic_hints:
   - Distinguish missing application success output from a halted-target observability fault.
   - If the known symbol remains healthy and the target is running, inspect the application print path before assuming a runtime-state problem.
 verification_checks:
   - Use read_serial after reset and compare against the tracked expected UART substring.
   - If edits are allowed, inspect the application main source for missing printk/boot text logic.
+  - Keep the loop and live symbol-use pattern intact unless the case explicitly says the symbol path itself is broken.
+  - Do not move `stage1_known_value` into RAM by changing it from `const` to a mutable/volatile declaration.
 forbidden_actions:
   - Do not classify application-silent UART as observability-only without checking runtime state.

@@ -19,6 +19,7 @@ from pyocd_debug_mcp.brain.actions import (
     TurnkeyRunResult,
     VerificationSnapshot,
 )
+from pyocd_debug_mcp.brain.cli import build_parser as build_turnkey_cli_parser
 from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation, load_provider_config
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey
 from pyocd_debug_mcp.brain.provider_claude_cli import (
@@ -30,7 +31,7 @@ from pyocd_debug_mcp.brain.mcp_client import ToolTextResult
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
-from pyocd_debug_mcp.brain.workspace import prepare_workspace_session
+from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
 from tests.harness import r11_benchmark as r11
 
 
@@ -174,6 +175,23 @@ def test_prepare_workspace_session_tracks_diff_without_copy(tmp_path: Path) -> N
     assert "b/src/main.c" in diff_path.read_text(encoding="utf-8")
 
 
+def test_prepare_workspace_session_refuses_binary_read(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "src").mkdir(parents=True)
+    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xFF\x10")
+
+    session = prepare_workspace_session(
+        workspace_root=workspace_root,
+        allowed_edit_roots=("src",),
+        build_command="./build.sh",
+        code_edits_allowed=True,
+        label="unit-binary",
+    )
+
+    with pytest.raises(WorkspaceError, match="not UTF-8 text"):
+        session.read_file("src/firmware.bin")
+
+
 def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -231,21 +249,29 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
                 ToolTextResult(
                     tool_name="read_serial",
                     text="UART matched on /dev/cu.usbmodem0006854006931 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
+                ),
+                ToolTextResult(
+                    tool_name="read_serial",
+                    text="UART matched on /dev/cu.usbmodem0006854006931 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
                 )
             ],
+            "flash_firmware": [
+                ToolTextResult(
+                    tool_name="flash_firmware",
+                    text="Flashed /tmp/reference.hex via pyocd-native; target left halted.",
+                )
+            ],
+            "read_core_register": [
+                ToolTextResult(tool_name="read_core_register", text="0x20000000")
+            ],
             "disconnect": [
-                ToolTextResult(tool_name="disconnect", text="Disconnected."),
                 ToolTextResult(tool_name="disconnect", text="Disconnected."),
             ],
         }
     )
     monkeypatch.setattr(
-        "pyocd_debug_mcp.brain.loop._verify_green",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            pc=0x20000000,
-            resolved_symbol=SimpleNamespace(name="stage1_known_value", value_u32=0x1234ABCD),
-            capture_excerpt="boot ok",
-        ),
+        "pyocd_debug_mcp.brain.loop.resolve_symbol",
+        lambda *_args, **_kwargs: SimpleNamespace(name="stage1_known_value", address=0x20000010),
     )
 
     execution = anyio.run(
@@ -266,6 +292,70 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
     assert (execution.run_root / "logs" / "brain_trace.jsonl").exists()
     assert (execution.run_root / "logs" / "model_turns.jsonl").exists()
+
+
+def test_run_turnkey_treats_binary_read_as_workspace_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "src").mkdir(parents=True)
+    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xFF\x10")
+
+    invocation = build_turnkey_invocation(
+        mode="benchmark",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Inspect the workspace and diagnose the fault.",
+        model="gpt-test",
+        max_iters=2,
+        serial_read_seconds=1.0,
+        workspace_root=workspace_root,
+        build_command="./build.sh",
+        case_id="nucleo_l476rg__b_test_binary_read",
+        case_kind="injected_bug",
+        expected_uart_substring="boot ok",
+        expected_symbol_name="stage1_known_value",
+        expected_symbol_value_u32=0x1234ABCD,
+        code_edits_allowed=True,
+        allowed_edit_roots=("src",),
+        recover_allowed=False,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Inspect the workspace file first.",
+                    "classification": "code_bug",
+                    "action": {"kind": "read_file", "path": "src/firmware.bin"},
+                }
+            ),
+            TurnDecision(
+                observation_summary="The binary read was refused cleanly, so summarize that limitation.",
+                classification="code_bug",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="code_bug",
+                    root_cause="The requested workspace path is a binary artifact, not a UTF-8 source file.",
+                    summary="Binary workspace reads are rejected cleanly.",
+                ),
+            ),
+        ]
+    )
+    client_factory = lambda: FakeClient({})  # noqa: E731
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, client_factory),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert "WorkspaceError" in execution.state.last_result_text
+    assert "not UTF-8 text" in execution.state.last_result_text
 
 
 def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
@@ -376,26 +466,35 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
                     tool_name="flash_firmware",
                     text="Flashed /tmp/firmware.hex via pyocd-native; target left running.",
                 ),
+                ToolTextResult(
+                    tool_name="flash_firmware",
+                    text="Flashed /tmp/firmware.hex via pyocd-native; target left halted.",
+                ),
             ],
             "read_serial": [
                 ToolTextResult(
                     tool_name="read_serial",
                     text="UART did not match on /dev/cu.usbmodem143103 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=1; duration=2.00s; excerpt=boot nope",
+                ),
+                ToolTextResult(
+                    tool_name="read_serial",
+                    text="UART matched on /dev/cu.usbmodem143103 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
                 )
             ],
+            "read_core_register": [
+                ToolTextResult(tool_name="read_core_register", text="0x08000B28")
+            ],
+            "read_memory": [
+                ToolTextResult(tool_name="read_memory", text="0x1234ABCD")
+            ],
             "disconnect": [
-                ToolTextResult(tool_name="disconnect", text="Disconnected."),
                 ToolTextResult(tool_name="disconnect", text="Disconnected."),
             ],
         }
     )
     monkeypatch.setattr(
-        "pyocd_debug_mcp.brain.loop._verify_green",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            pc=0x08000B28,
-            resolved_symbol=SimpleNamespace(name="stage1_known_value", value_u32=0x1234ABCD),
-            capture_excerpt="boot ok",
-        ),
+        "pyocd_debug_mcp.brain.loop.resolve_symbol",
+        lambda *_args, **_kwargs: SimpleNamespace(name="stage1_known_value", address=0x08001000),
     )
 
     execution = anyio.run(
@@ -469,19 +568,29 @@ def test_run_turnkey_refuses_healthy_finalize_before_green_check(
                     text="Connected to board 'nRF52833 DK' via probe 685400693 via pyocd-native. [board config: nrf52833dk] session_id=20260620T000000Z-deadbeef",
                 )
             ],
+            "flash_firmware": [
+                ToolTextResult(
+                    tool_name="flash_firmware",
+                    text="Flashed /tmp/reference.hex via pyocd-native; target left halted.",
+                )
+            ],
+            "read_core_register": [
+                ToolTextResult(tool_name="read_core_register", text="0x20000000")
+            ],
+            "read_serial": [
+                ToolTextResult(
+                    tool_name="read_serial",
+                    text="UART matched on /dev/cu.usbmodem0006854006931 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
+                )
+            ],
             "disconnect": [
-                ToolTextResult(tool_name="disconnect", text="Disconnected."),
                 ToolTextResult(tool_name="disconnect", text="Disconnected."),
             ],
         }
     )
     monkeypatch.setattr(
-        "pyocd_debug_mcp.brain.loop._verify_green",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            pc=0x20000000,
-            resolved_symbol=SimpleNamespace(name="stage1_known_value", value_u32=0x1234ABCD),
-            capture_excerpt="boot ok",
-        ),
+        "pyocd_debug_mcp.brain.loop.resolve_symbol",
+        lambda *_args, **_kwargs: SimpleNamespace(name="stage1_known_value", address=0x20000010),
     )
 
     execution = anyio.run(
@@ -557,6 +666,102 @@ def test_run_turnkey_refuses_redundant_connect() -> None:
     assert execution.brain_trace[1]["result_text"].startswith("Refused [brain/redundant-connect]")
 
 
+def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invocation = build_turnkey_invocation(
+        mode="benchmark",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Repair the missing application UART output and verify the board is healthy again.",
+        model="gpt-test",
+        max_iters=4,
+        serial_read_seconds=1.0,
+        case_id="nucleo_l476rg__b003_silent_uart",
+        case_kind="injected_bug",
+        expected_uart_substring="boot ok",
+        expected_symbol_name="stage1_known_value",
+        expected_symbol_value_u32=0x1234ABCD,
+        code_edits_allowed=True,
+        allowed_edit_roots=("src",),
+        recover_allowed=False,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to connect first.",
+                classification="code_bug",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Run the canonical verifier now that the board is connected.",
+                    "classification": "code_bug",
+                    "action": {"kind": "run_green_check"},
+                }
+            ),
+            TurnDecision(
+                observation_summary="Reconnect after the failed verifier.",
+                classification="code_bug",
+                action=ServerToolAction(tool_name="connect", arguments={"board_id": "nucleo_l476rg"}),
+            ),
+            TurnDecision(
+                observation_summary="Stop after the reconnect refusal.",
+                classification="code_bug",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="code_bug",
+                    root_cause="The verifier failed, but the original session remained active.",
+                    summary="Stopped after redundant reconnect refusal.",
+                ),
+            ),
+        ]
+    )
+    fake_client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'NUCLEO-L476RG' via probe 0668FF514988525067213913 via pyocd-native. [board config: nucleo_l476rg] session_id=20260620T000000Z-greenfail",
+                )
+            ],
+            "flash_firmware": [
+                ToolTextResult(
+                    tool_name="flash_firmware",
+                    text="Flashed /tmp/firmware.hex via pyocd-native; target left halted.",
+                )
+            ],
+            "read_core_register": [
+                ToolTextResult(tool_name="read_core_register", text="0x08000B28")
+            ],
+            "read_memory": [ToolTextResult(tool_name="read_memory", text="0x1234ABCD")],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.loop.resolve_symbol",
+        lambda *_args, **_kwargs: SimpleNamespace(name="stage1_known_value", address=0x08001000),
+    )
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.loop._parse_hex_text",
+        lambda text, *, label: (_ for _ in ()).throw(RuntimeError("forced symbol read failure"))
+        if label == "symbol stage1_known_value"
+        else int(text, 0),
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: fake_client),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert execution.state.session_ids_seen == ["20260620T000000Z-greenfail"]
+    assert execution.brain_trace[2]["result_text"].startswith("Refused [brain/redundant-connect]")
+
+
 def test_run_turnkey_normalizes_integer_read_memory_address() -> None:
     invocation = build_turnkey_invocation(
         mode="freeform",
@@ -614,6 +819,87 @@ def test_run_turnkey_normalizes_integer_read_memory_address() -> None:
 
     assert execution.result.final_status == "diagnosed_only"
     assert fake_client.calls[1] == ("read_memory", {"address": "0x08000000"})
+
+
+def test_run_turnkey_normalizes_relative_flash_path_against_workspace_root(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "build").mkdir(parents=True, exist_ok=True)
+
+    invocation = build_turnkey_invocation(
+        mode="benchmark",
+        provider="openai-api",
+        board_id="nrf52833dk",
+        task="Flash the prepared benchmark artifact.",
+        model="gpt-test",
+        max_iters=3,
+        serial_read_seconds=1.0,
+        workspace_root=workspace_root,
+        build_command="true",
+        case_id="nrf52833dk__k001_reference_green",
+        case_kind="known_good",
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to connect first.",
+                classification="healthy",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Flash the prepared workspace artifact.",
+                classification="healthy",
+                action=ServerToolAction(
+                    tool_name="flash_firmware",
+                    arguments={"path": "build/firmware.hex"},
+                ),
+            ),
+            TurnDecision(
+                observation_summary="Stop after the flash path normalization check.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Relative flash path normalization was exercised.",
+                    summary="Finished flash path normalization coverage.",
+                ),
+            ),
+        ]
+    )
+    fake_client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'nRF52833 DK' via probe 685400693 via pyocd-native. [board config: nrf52833dk] session_id=20260620T000000Z-flashpath",
+                )
+            ],
+            "flash_firmware": [
+                ToolTextResult(
+                    tool_name="flash_firmware",
+                    text="Flashed /tmp/workspace/build/firmware.hex via pyocd-native; target left running.",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: fake_client),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert fake_client.calls[1] == (
+        "flash_firmware",
+        {
+            "path": str((workspace_root / "build" / "firmware.hex").resolve()),
+        },
+    )
 
 
 def test_run_turnkey_defaults_benchmark_read_serial_to_expected_text_and_reset() -> None:
@@ -949,6 +1235,10 @@ def test_r12_benchmark_task_uses_turnkey_contract() -> None:
     assert "read_symbol_u32" in task
     assert "do not expect `read_symbol_u32` to exist as a direct tool" in task
     assert "connect with `connect(board_id=...)`" in task
+    assert "do not pass a generic target override such as `cortex_m`" in task
+    assert "prefer `flash_firmware()` with no explicit path" in task
+    assert "use relative workspace paths such as `src/src/main.c`" in task
+    assert "if `run_green_check` fails, stay on the current session instead of reconnecting" in task
 
 
 def test_r12_benchmark_task_guides_minimal_b001_repair() -> None:
@@ -958,8 +1248,53 @@ def test_r12_benchmark_task_guides_minimal_b001_repair() -> None:
 
     assert "expected changed files: src/src/main.c" in task
     assert "smallest source change" in task
+    assert "prefer surgical edits to the existing source over whole-file rewrites" in task
     assert "preserve `stage1_known_value = 0x1234ABCD`" in task
+    assert "keep `stage1_known_value` as the flash-backed `const uint32_t ...` declaration" in task
+    assert "do not convert `stage1_known_value` into a RAM-backed mutable/volatile variable" in task
     assert "fix the UART print path only" in task
+    assert "keep the existing loop and the live `*(const volatile uint32_t *)&stage1_known_value` read intact" in task
+    assert "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+    assert "restore the application success text from `boot nope` to `boot ok`" in task
+
+
+def test_prepare_workspace_session_allows_absolute_edit_path_within_allowed_root(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    source = workspace_root / "src" / "src" / "main.c"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("boot nope\n", encoding="utf-8")
+
+    session = prepare_workspace_session(
+        workspace_root=workspace_root,
+        allowed_edit_roots=("src",),
+        build_command="true",
+        code_edits_allowed=True,
+        label="absolute-edit",
+        copy_workspace=False,
+    )
+
+    session.replace_file(str(source.resolve()), "boot ok\n")
+
+    assert source.read_text(encoding="utf-8") == "boot ok\n"
+
+
+def test_r12_benchmark_task_guides_b003_to_preserve_live_symbol_path() -> None:
+    case = r11.load_case("nrf52833dk__b003_silent_uart")
+
+    task = r12_benchmark._render_case_task(case)
+
+    assert "missing application success UART" in task
+    assert "flash-backed `const uint32_t ...` declaration" in task
+    assert "keep the existing loop and live `stage1_known_value` read intact" in task
+    assert "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+
+
+def test_turnkey_cli_uses_higher_default_iteration_budget_for_benchmarks() -> None:
+    args = build_turnkey_cli_parser().parse_args(["benchmark", "--case-id", "nrf52833dk__b003_silent_uart"])
+
+    assert args.max_iters == 18
 
 
 def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path) -> None:

@@ -972,6 +972,9 @@ Pending verification:
 
 - `nrf52840dk` remains a retained alternate Nordic profile and still needs live
   proof if future support for that board becomes a project goal.
-- The new R12 turnkey path still needs live validation on the scoped pair:
-  freeform healthy verification on both boards, plus turnkey benchmark proof on
-  the same 12-case corpus.
+- The Codex-backed R12 turnkey path is now live-proven on the scoped pair
+  through the full frozen 12-case corpus.
+- R12 is still not closed because the required second-provider proof remains
+  open on this host:
+  `claude-cli --model sonnet` currently fails before any board action with a
+  provider-side model 404.

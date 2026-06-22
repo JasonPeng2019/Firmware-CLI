@@ -39,5 +39,13 @@ Both paths currently reuse the same 12-case corpus:
 
 - `pilot_v1_plus_b003_b004`
 
+Current live status:
+
+- the `R11` BYO-agent path is live-proven on the scoped pair
+- the `R12` turnkey path is live-proven through the full 12-case suite with
+  `codex-cli`
+- the `R12` second-provider closure check is still open because the current
+  `claude-cli --model sonnet` path fails before any board action on this host
+
 Keep bug-variant source trees under `firmware/<board>/bugs/`. Keep harness and
 test definitions under `tests/`.

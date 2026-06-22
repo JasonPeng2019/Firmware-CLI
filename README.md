@@ -18,8 +18,9 @@ pre-server.
 The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
-12-case Codex benchmark corpus. `R12` is now implemented in the repo as an
-in-progress turnkey product layer:
+12-case Codex benchmark corpus. `R12` is now implemented in the repo as a
+turnkey product layer with one live-proven provider path and one still-open
+provider proof gap:
 
 - native Python brain package
 - multi-provider decision backends
@@ -27,8 +28,19 @@ in-progress turnkey product layer:
 - board-aware skills tree
 - sibling turnkey benchmark runner
 
-The remaining `R12` work is live validation on the scoped pair and acceptance
-against the same 12-case corpus with lower operator burden.
+The current live status is:
+
+- `codex-cli` is now live-proven on the scoped pair through the full frozen
+  12-case turnkey suite:
+  `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
+- the normal turnkey path worked from `connect(board_id=...)` with no
+  hard-coded probe UID or serial-port override
+- `claude-cli --model sonnet` is still failing on this host before any board
+  interaction with:
+  `API Error: 404 ... model: claude-sonnet-4-20250514`
+
+So `R12` remains open, but only because the required second-provider proof is
+not yet green on this machine.
 
 ## What The Repo Currently Delivers
 
@@ -47,7 +59,8 @@ Today that means:
 - a local MCP server entrypoint plus host and Stage 0 validation scripts
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
-- an in-progress turnkey brain and turnkey benchmark path over the same corpus
+- a Codex-proven turnkey brain and turnkey benchmark path over the same corpus
+- an open second-provider validation gap for Claude CLI on this host
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -506,7 +519,7 @@ Verified:
   corpus and the existing case manifests instead of inventing a second
   benchmark taxonomy
 
-Pending verification:
+Latest turnkey verification:
 
 - benchmark bug-repair cases now allow a longer default `codex exec` budget so
   diagnose -> patch/build -> flash/verify runs are not cut off by a blanket
@@ -516,10 +529,21 @@ Pending verification:
   alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
 - `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof
 
-- `R12` live proof is still pending on the scoped pair:
-  - freeform turnkey verify/diagnose runs on both boards
-  - turnkey benchmark pilot runs on the 12-case corpus
-  - acceptance against the lower-burden product criteria in
-    `markdowns/curr/r12_turnkey_spec.md`
+- `R12` is now live-proven through the full frozen 12-case corpus with the
+  `codex-cli` provider on `nrf52833dk + nucleo_l476rg`:
+  - freeform healthy verification passed on both boards
+  - the full `pilot_v1_plus_b003_b004` turnkey suite passed:
+    `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
+  - the normal path used `connect(board_id=...)` without hard-coded UID or
+    serial-port tuning
+  - no forbidden recover usage occurred on non-recover cases
+  - no case watcher-blocked due to turnkey thrash
+- `R12` is still not closed because the required second-provider proof is red
+  on this host:
+  - `uv run pyocd-debug-brain run --provider claude-cli --model sonnet ...`
+    failed before any board action with
+    `API Error: 404 ... model: claude-sonnet-4-20250514`
+  - the Claude six-case pilot and full 12-case suite were therefore not run in
+    this pass
 - the broader self-contained no-`NCS` portability claim still needs true fresh
   Windows and macOS host validation

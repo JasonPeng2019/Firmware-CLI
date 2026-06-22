@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_group.add_argument("--suite")
     benchmark_parser.add_argument("--provider")
     benchmark_parser.add_argument("--model")
-    benchmark_parser.add_argument("--max-iters", type=int, default=12)
+    benchmark_parser.add_argument("--max-iters", type=int, default=18)
     benchmark_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
     return parser
 

@@ -13,11 +13,15 @@ priority: 20
 facts:
   - A wrong or missing application UART success string can be a real firmware bug even when flashing and symbol checks still pass.
   - UART mismatches should be compared against the tracked expected substring, not guessed from prose.
+  - For these benchmark fixtures, a UART-only repair should preserve the existing live stage1_known_value path so the ELF symbol contract stays green.
+  - The healthy symbol contract is the flash-backed `const uint32_t stage1_known_value = 0x1234ABCD;` form, not a RAM-backed mutable replacement.
 diagnostic_hints:
   - If the symbol value is healthy but the UART success text is wrong, the most likely fault is in the application print path.
   - Distinguish a wrong UART string from a silent UART caused by halted runtime state.
 verification_checks:
   - Read serial after reset.
   - If code edits are allowed, inspect the application main source before changing anything else.
+  - Prefer changing the existing UART print path over replacing the whole file or removing the loop that keeps the symbol live.
+  - Do not change the symbol declaration from `const` to `volatile`; the green check reads the symbol immediately after reset-and-halt.
 forbidden_actions:
   - Do not use unlock_recover as a first-line response to a UART mismatch.

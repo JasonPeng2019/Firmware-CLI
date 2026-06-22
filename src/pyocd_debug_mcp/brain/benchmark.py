@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tests.harness import r11_benchmark as r11  # noqa: E402
 
-DEFAULT_MAX_ITERS = 12
+DEFAULT_MAX_ITERS = 18
 
 
 def _render_case_task(case: r11.BenchmarkCase) -> str:
@@ -36,6 +36,9 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
         "- connect with `connect(board_id=...)`",
         "- do not pass a hard-coded probe UID",
         "- do not pass a generic target override such as `cortex_m`",
+        "- prefer `flash_firmware()` with no explicit path so the client uses the prepared case artifact",
+        "- use relative workspace paths such as `src/src/main.c`, not absolute workspace paths",
+        "- if `run_green_check` fails, stay on the current session instead of reconnecting",
         "- use `run_green_check` for the canonical final healthy verification",
         "- do not expect `read_symbol_u32` to exist as a direct tool in this client",
         "",
@@ -67,7 +70,12 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
                 f"- expected changed files: {', '.join(case.success_criteria.expected_changed_files) or '(none)'}",
                 f"- build command: {case.allowed_actions.build_command or '(none)'}",
                 "- make the smallest source change that fixes the failing observable",
+                "- prefer surgical edits to the existing source over whole-file rewrites when the symptom maps to one line or one local path",
                 "- preserve any healthy tracked observable that is not implicated by the current symptom",
+                "- keep the existing include set, loop structure, and live `stage1_known_value` read unless the case explicitly requires changing them",
+                "- keep `stage1_known_value` as the flash-backed `const uint32_t ...` declaration unless the case explicitly requires changing only its literal value",
+                "- do not convert `stage1_known_value` into a RAM-backed mutable/volatile variable; the green check reads it immediately after reset-and-halt",
+                "- the green check requires `stage1_known_value` to remain resolvable from the ELF and readable back at `0x1234ABCD`, not just present as a source literal",
                 "- after any repair, rebuild and then run `run_green_check` before finalizing",
             ]
         )
@@ -76,6 +84,9 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
                 [
                     "- this case's intended fault is the application UART success text, not the known symbol contract",
                     "- preserve `stage1_known_value = 0x1234ABCD` and fix the UART print path only",
+                    "- do not replace the file with a new minimal `main`; keep the existing loop and the live `*(const volatile uint32_t *)&stage1_known_value` read intact",
+                    "- keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form",
+                    "- the intended repair is to restore the application success text from `boot nope` to `boot ok`",
                 ]
             )
         elif case.case_id.endswith("__b002_wrong_known_value"):
@@ -83,6 +94,8 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
                 [
                     "- this case's intended fault is the known symbol value, not the UART success text",
                     "- preserve the `boot ok` UART behavior and repair the symbol/value path only",
+                    "- keep the declaration flash-backed and change only the literal value needed to restore `0x1234ABCD`",
+                    "- keep the live `stage1_known_value` read and loop structure intact while restoring the tracked symbol value",
                 ]
             )
         elif case.case_id.endswith("__b003_silent_uart"):
@@ -90,6 +103,8 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
                 [
                     "- this case's intended fault is missing application success UART, while the known symbol contract stays healthy",
                     "- restore the application UART success output without rewriting unrelated symbol logic",
+                    "- keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form",
+                    "- keep the existing loop and live `stage1_known_value` read intact while restoring the missing application success output",
                 ]
             )
         elif case.case_id.endswith("__b004_dual_signal_regression"):
@@ -97,6 +112,8 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
                 [
                     "- this case intentionally breaks both the UART success text and the known symbol value",
                     "- restore both tracked contracts, but still prefer a minimal repair inside the expected changed file",
+                    "- keep the declaration flash-backed while restoring the `stage1_known_value` literal to `0x1234ABCD`",
+                    "- keep the symbol resolvable in the ELF by preserving a live `stage1_known_value` read while restoring both tracked signals",
                 ]
             )
     elif case.kind == "observability_fault":

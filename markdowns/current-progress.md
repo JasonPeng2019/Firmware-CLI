@@ -44,8 +44,9 @@ live-proven on the scoped pair:
 - mutation watcher behavior
 - the first Codex-driven benchmark pilot
 
-`R12` is now implemented in code, and the first live Codex-backed turnkey proof
-is now partially complete. The repo now contains:
+`R12` is now implemented in code, and the Codex-backed turnkey path has now
+cleared the full frozen 12-case acceptance corpus on the scoped pair. The repo
+now contains:
 
 - the native Python brain package under `src/pyocd_debug_mcp/brain/`
 - the top-level `skills/` tree
@@ -58,14 +59,15 @@ is now partially complete. The repo now contains:
 - the sibling turnkey benchmark path over the same 12-case corpus
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
 
-What is still missing is the full turnkey acceptance run over the complete
-12-case corpus and the live cross-provider comparison work.
+What is still missing is the second-provider proof needed to call the turnkey
+layer fully closed.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:
 
-- run the full 12-case turnkey suite on the current scoped pair
-- run a second live provider/model path against the same turnkey ladder
+- make one second live provider path work against the same turnkey ladder
+  without changing the scoped corpus or the closure bar
+- rerun the freeform -> pilot -> full-suite ladder for that second provider
 - run a true fresh-machine Windows validation of the managed Zephyr/no-NCS path
 - run the equivalent macOS managed-Zephyr validation on a clean host setup
 
@@ -815,8 +817,9 @@ What that means:
 
 ## Turnkey Brain Status
 
-The turnkey layer is now in the repo and has first-pass live proof on the
-scoped pair through the Codex CLI path, but it is not fully closed yet.
+The turnkey layer is now in the repo and has full live Codex-backed proof on
+the scoped pair, but it is not fully closed yet because the required second
+provider path is still blocked on this host.
 
 ### Latest Live Codex Turnkey Evidence
 
@@ -836,6 +839,14 @@ following through the turnkey path with `PYOCD_TURNKEY_PROVIDER=codex-cli`:
   - `nrf52833dk__b001_wrong_boot_text`
   - `nucleo_l476rg__f001_halted_target_silent_uart`
   - `nrf52833dk__f001_halted_target_silent_uart`
+- the full frozen 12-case suite also passed end to end:
+  - command:
+    `uv run pyocd-debug-brain benchmark --provider codex-cli --suite pilot_v1_plus_b003_b004`
+  - outcome:
+    `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
+  - no case required explicit UID or serial-port tuning
+  - no case watcher-blocked from turnkey thrash
+  - no forbidden recover usage occurred on non-recover cases
 
 Recorded freeform sessions:
 
@@ -857,18 +868,81 @@ Recorded six-case pilot sessions:
 - `20260622T081440Z-9a0f4dc6`:
   `nrf52833dk__f001_halted_target_silent_uart` -> `FULL_SUCCESS`, score `100`
 
+Recorded full-suite sessions:
+
+- `20260622T211939Z-fb47c2f3`:
+  `nucleo_l476rg__k001_reference_green` -> `FULL_SUCCESS`, score `100`
+- `20260622T212201Z-fe90654f`:
+  `nrf52833dk__k001_reference_green` -> `FULL_SUCCESS`, score `100`
+- `20260622T212514Z-bce664a7`:
+  `nucleo_l476rg__b001_wrong_boot_text` -> `FULL_SUCCESS`, score `100`
+- `20260622T212948Z-82eff454`:
+  `nrf52833dk__b001_wrong_boot_text` -> `FULL_SUCCESS`, score `100`
+- `20260622T213434Z-176a3cbe`:
+  `nucleo_l476rg__b002_wrong_known_value` -> `FULL_SUCCESS`, score `100`
+- `20260622T214123Z-da9a888d`:
+  `nrf52833dk__b002_wrong_known_value` -> `FULL_SUCCESS`, score `100`
+- `20260622T214530Z-51579242`:
+  `nucleo_l476rg__f001_halted_target_silent_uart` -> `FULL_SUCCESS`, score `100`
+- `20260622T215011Z-eea0d767`:
+  `nrf52833dk__f001_halted_target_silent_uart` -> `FULL_SUCCESS`, score `100`
+- `20260622T215255Z-460a2987`:
+  `nucleo_l476rg__b003_silent_uart` -> `FULL_SUCCESS`, score `100`
+- `20260622T220304Z-0897b005`:
+  `nrf52833dk__b003_silent_uart` -> `FULL_SUCCESS`, score `100`
+- `20260622T221056Z-eae2cf78`:
+  `nucleo_l476rg__b004_dual_signal_regression` -> `FULL_SUCCESS`, score `100`
+- `20260622T221559Z-96a09a7c`:
+  `nrf52833dk__b004_dual_signal_regression` -> `FULL_SUCCESS`, score `100`
+
 Important live issues that were exposed and fixed during this pass:
 
 - the turnkey loop previously counted intermediate flash/read states as failed
   repair cycles and could block a repaired code-bug case before
   `run_green_check` had a chance to verify the fix
-- the turnkey loop previously kept the old active `session_id` after
-  `run_green_check` intentionally disconnected, which misled later turns into
-  acting on a dead session instead of reconnecting cleanly
+- the turnkey loop previously treated `run_green_check` as an out-of-band
+  verifier that disconnected the active MCP session; failed green checks could
+  then force a second session and automatically violate the one-session
+  benchmark rule
+- `flash_firmware(path="build/firmware.hex")` from the turnkey benchmark could
+  previously resolve against the repo root instead of the prepared case
+  workspace; relative flash paths are now normalized against the prepared
+  workspace root
 - the injected-bug benchmark prompt was too loose for single-symptom bug cases,
   so the model could over-repair and damage a healthy tracked observable; the
   prompt now explicitly requires minimal repairs and case-family-specific
   preservation rules
+
+### Latest Live Claude CLI Evidence
+
+The second-provider proof is currently blocked before any board-specific
+validation can happen on this macOS host.
+
+Attempted commands:
+
+```bash
+uv run pyocd-debug-brain run --provider claude-cli --model sonnet --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider claude-cli --model sonnet --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+```
+
+Observed result on both commands:
+
+- no `session_id` was created
+- no board session directory was created under `runs/<session_id>/...`
+- the failure happened inside the Claude CLI provider before any live board
+  action
+- the exact provider error was:
+  - `API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-4-20250514"}}`
+
+Why this matters:
+
+- this is a provider configuration / entitlement failure on the current host,
+  not a Stage 0 / Stage 1 / MCP substrate failure
+- because freeform smoke failed before the first live board action, the Claude
+  six-case pilot and the Claude full 12-case suite were intentionally **not**
+  run in this pass
+- the turnkey layer therefore remains open until a real second-provider ladder
+  completes successfully
 
 ### Turnkey Commands
 
@@ -943,7 +1017,8 @@ path has now been shown to do all of the following:
 - explain healthy reference firmware in board-grounded terms rather than vague
   generic prose
 
-For the six-case pilot above, the turnkey path has also now been shown to:
+For the six-case pilot and full Codex suite above, the turnkey path has also
+now been shown to:
 
 - confirm known-good cases as healthy
 - repair the `b001_wrong_boot_text` code bug on both boards
@@ -957,20 +1032,18 @@ For the six-case pilot above, the turnkey path has also now been shown to:
 The following proof work is still required before the turnkey product layer
 should be treated as complete:
 
-- run the full 12-case turnkey suite with the current Codex-backed path:
-  - `uv run pyocd-debug-brain benchmark --provider codex-cli --suite pilot_v1_plus_b003_b004`
-- confirm that the other injected-bug families also hold through the turnkey
-  path:
-  - `b002_wrong_known_value`
-  - `b003_silent_uart`
-  - `b004_dual_signal_regression`
-- compare at least one second live provider/model path against the same corpus:
-  - native OpenAI API
-  - native Anthropic API
-  - or a live Claude CLI configuration that actually resolves a working local
-    model
-- update `README.md` after the full live turnkey evidence is complete so the
-  repo-wide status matches this file
+- make the Claude CLI provider usable on this host for the planned comparison:
+  - the current `--model sonnet` path resolves to an unavailable model on this
+    account/host and returns a 404 before any board work begins
+- once Claude freeform smoke is working, rerun the same closure ladder:
+  - freeform healthy verification on both boards
+  - six-case pilot
+  - full `pilot_v1_plus_b003_b004` suite
+- if Claude is not the intended second-provider path after all, explicitly
+  freeze a replacement provider/model path and rerun the same ladder rather
+  than changing the closure bar informally
+- after a real second-provider pass exists, update the remaining repo-facing
+  status text so `R12` can be treated as closed
 
 ### Why Those Checks Matter
 
@@ -1038,23 +1111,20 @@ work is all in the turnkey product layer.
 
 ### Immediate Next Tasks
 
-1. Run the full 12-case turnkey suite on the current Codex-backed path:
-   - `uv run pyocd-debug-brain benchmark --provider codex-cli --suite pilot_v1_plus_b003_b004`
-2. Record the full-suite results here and in `README.md`:
-   - per-case outcome
-   - average score
-   - whether any case fell below `50`
-   - whether any watcher block or recover misuse occurred
-3. Pick one second live provider/model path and run the same ladder:
+1. Fix the second-provider path on this host.
+   - the current `claude-cli --model sonnet` flow fails before any board action
+     with:
+     `API Error: 404 ... model: claude-sonnet-4-20250514`
+2. Once that provider issue is fixed, rerun the same ladder:
    - freeform healthy run on both boards
-   - at minimum the same six-case pilot
-   - ideally the full 12-case suite
-4. Compare the second provider against the already-proven Codex-backed path:
+   - six-case pilot
+   - full `pilot_v1_plus_b003_b004` suite
+3. Compare the second provider against the already-proven Codex-backed path:
    - same case outcomes
    - same safety behavior
    - whether the normal path still works from `board_id` only
-5. Only after the full-suite and second-provider evidence exists, decide
-   whether the turnkey layer is ready to be treated as closed.
+4. Only after the second-provider evidence exists, decide whether the turnkey
+   layer is ready to be treated as closed.
 
 ### Remaining Proof Work Before Broader Deployment Claims
 
@@ -1177,8 +1247,10 @@ If resuming later:
 > pair: Stage 0, the Stage 1 smoke harness, the current MCP surface,
 > per-session logging, flash/recover guardrails, the mutation watcher, and the
 > frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
-> a native Python turnkey brain plus `pyocd-debug-brain`, but it still needs
-> live freeform and benchmark validation on the same scoped pair.
+> a native Python turnkey brain plus `pyocd-debug-brain`, and the Codex-backed
+> turnkey path has now passed the full frozen 12-case suite on the scoped
+> pair. `R12` is still open only because the required second-provider proof is
+> currently blocked by the local Claude CLI model configuration on this host.
 Current Windows STM32 retest status on this host:
 
 - the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the

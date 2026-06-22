@@ -388,6 +388,15 @@ Verified:
   scoped pair: `nucleo_l476rg` and `nrf52833dk`
 - the canonical Windows `R0` bootstrap path has been verified on a real
   Windows host
+- the Codex-backed turnkey path is now live-proven on the scoped pair through
+  the full frozen `pilot_v1_plus_b003_b004` suite
+
+Still open:
+
+- the Claude CLI turnkey path is not yet live-proven on this host because
+  `uv run pyocd-debug-brain run --provider claude-cli --model sonnet ...`
+  currently fails before any board action with a provider-side 404 for the
+  resolved model slug
 - Windows ST-Link probe visibility is verified on a real Windows host: after
   installing the ST-Link driver via STM32CubeProgrammer and replugging, pyOCD
   enumerates the Nucleo ST-Link with no WinUSB/Zadig step
