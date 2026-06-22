@@ -54,5 +54,13 @@ def read_symbol_u32(
     name: str,
 ) -> ResolvedSymbol:
     resolved = resolve_symbol(elf_path, name)
-    value = target_control.read_memory(handle, resolved.address, 32)
+    prior_state = target_control.get_state(handle).upper()
+    should_resume = prior_state != "HALTED"
+    if should_resume:
+        target_control.halt(handle)
+    try:
+        value = target_control.read_memory(handle, resolved.address, 32)
+    finally:
+        if should_resume:
+            target_control.resume(handle)
     return replace(resolved, value_u32=value)

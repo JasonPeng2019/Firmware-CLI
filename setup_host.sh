@@ -6,6 +6,7 @@ BOARD_CONFIGS=()
 BOARD_IDS=()
 SKIP_UV_SYNC=0
 SKIP_HOST_BOOTSTRAP=0
+ENSURE_ZEPHYR_BUILD_ENV=0
 DRY_RUN=0
 
 section() {
@@ -42,6 +43,7 @@ Options:
   --board-id ID             Board id to target, repeatable
   --skip-uv-sync            Skip uv sync
   --skip-host-bootstrap     Skip host_bootstrap.py
+  --ensure-zephyr-build-env Provision the local Zephyr workspace/SDK needed for repo firmware rebuilds
   --dry-run                 Print intended actions without executing them
 EOF
 }
@@ -66,6 +68,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-host-bootstrap)
       SKIP_HOST_BOOTSTRAP=1
+      shift
+      ;;
+    --ensure-zephyr-build-env)
+      ENSURE_ZEPHYR_BUILD_ENV=1
       shift
       ;;
     --dry-run)
@@ -244,6 +250,16 @@ run_host_bootstrap() {
   run_step "${cmd[*]}" "${cmd[@]}"
 }
 
+run_zephyr_build_bootstrap() {
+  if [[ "$ENSURE_ZEPHYR_BUILD_ENV" -ne 1 ]]; then
+    status "INFO" "Skipping Zephyr build bootstrap (use --ensure-zephyr-build-env when this host must rebuild firmware locally)"
+    return
+  fi
+  section "Zephyr build bootstrap"
+  local cmd=(uv run pyocd-zephyr-build --ensure-only)
+  run_step "${cmd[*]}" "${cmd[@]}"
+}
+
 section "macOS host setup"
 
 ensure_homebrew
@@ -273,6 +289,7 @@ if [[ "$needs_stlink" == "1" ]]; then
   ensure_stm32_cubeprogrammer_path
 fi
 
+run_zephyr_build_bootstrap
 run_host_bootstrap
 
 section "Done"

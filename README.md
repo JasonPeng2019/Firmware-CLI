@@ -153,6 +153,7 @@ Firmware-CLI/
 |       |-- reference_artifacts.py
 |       |-- serial_resolver.py
 |       |-- server.py
+|       |-- zephyr_build.py
 |       `-- target_errors.py
 |-- scratch/
 |   `-- README.md
@@ -264,6 +265,17 @@ On macOS, the preferred host bootstrap entry point is:
 bash ./setup_host.sh --board-id nrf52833dk
 ```
 
+When the machine must also rebuild the repo-owned Zephyr firmware locally, opt
+into the managed Zephyr bootstrap during host setup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nucleo_l476rg -EnsureZephyrBuildEnv
+```
+
+```bash
+bash ./setup_host.sh --board-id nucleo_l476rg --ensure-zephyr-build-env
+```
+
 Run host bootstrap for all tracked boards:
 
 ```bash
@@ -351,12 +363,64 @@ Start the MCP server:
 uv run pyocd-debug-mcp
 ```
 
+## Zephyr Rebuilds
+
+Repo-owned firmware rebuilds now go through one cross-platform entrypoint:
+
+```bash
+uv run pyocd-zephyr-build --ensure-only
+```
+
+What it does:
+
+- reuses an existing Zephyr workspace when `ZEPHYR_WORKSPACE_DIR`,
+  `ZEPHYR_BASE`, `~/zephyrproject`, or a detected NCS workspace is already
+  present
+- otherwise bootstraps a managed upstream Zephyr workspace under the local
+  cache and pins it to `zephyrproject-rtos/zephyr` tag `v4.3.0`
+- reuses `ZEPHYR_SDK_INSTALL_DIR` or an existing SDK when one is already on the
+  machine
+- otherwise detects common global NCS toolchain installs and, if none are
+  usable, downloads and installs the Zephyr SDK toolchain component it needs
+  into the local cache with the repo helper's own managed archive/setup path
+  rather than requiring a preinstalled `west sdk install` extractor workflow
+
+Direct board builds are then:
+
+```bash
+uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg
+uv run pyocd-zephyr-build --app-dir firmware/nrf52833dk/reference/src --build-dir firmware/nrf52833dk/reference/build --board nrf52833dk/nrf52833
+uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840
+```
+
+The helper preserves the live Zephyr build tree and defaults to incremental
+`west build -p auto` behavior so repeated agent rebuilds stay fast. Pass
+`--pristine always` when a full clean reconfigure is actually required.
+
+For `R11` benchmark cases, the nested Codex prompt is intentionally
+self-contained so the benchmark agent spends its time on the board task rather
+than re-reading repo workflow docs. That benchmark-only rule does not change
+the real product path: non-benchmark deployment runs should still load the repo
+workflow docs and skills before they edit, rebuild, flash, or diagnose.
+
+The per-board `build_reference.sh` / `build_bug.sh` wrappers now delegate to
+that same helper. `NCS` is optional: if it is already installed, the helper
+reuses it; if not, the helper can provision a managed upstream-Zephyr build
+path itself.
+
+Current limitation:
+
+- managed Zephyr SDK install is not supported on macOS `x86_64` by current
+  Zephyr releases, so Intel Macs must point `ZEPHYR_SDK_INSTALL_DIR` at a
+  preinstalled older supported SDK or use another supported host
+
 ## Docs
 
 - Setup and bootstrap: [init.md](./init.md)
 - Bench bring-up operator guide (setup_host, host_bootstrap, stage0_check): [stage0_setup.md](./stage0_setup.md)
 - MCP server runtime tools: documented in the tool docstrings in `src/pyocd_debug_mcp/server.py` (read by the MCP client over the protocol)
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
+- Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
 - `R11` benchmark contract: [markdowns/curr/r11_benchmark_spec.md](./markdowns/curr/r11_benchmark_spec.md)
@@ -444,11 +508,18 @@ Verified:
 
 Pending verification:
 
-- `nrf52840dk` remains an alternate Nordic profile with repo-owned baseline
-  source/build assets, but it still needs its own live bench proof if future
-  support for that alternate board becomes a project goal
+- benchmark bug-repair cases now allow a longer default `codex exec` budget so
+  diagnose -> patch/build -> flash/verify runs are not cut off by a blanket
+  sub-60-second cap while they are still making progress
+- the retained alternate Nordic profile `nrf52840dk` is now live-proven on
+  this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
+  alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
+- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof
+
 - `R12` live proof is still pending on the scoped pair:
   - freeform turnkey verify/diagnose runs on both boards
   - turnkey benchmark pilot runs on the 12-case corpus
   - acceptance against the lower-burden product criteria in
     `markdowns/curr/r12_turnkey_spec.md`
+- the broader self-contained no-`NCS` portability claim still needs true fresh
+  Windows and macOS host validation

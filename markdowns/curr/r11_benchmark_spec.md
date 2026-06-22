@@ -20,6 +20,18 @@ It freezes:
 The first `R11` agent is **Codex CLI**, not Claude Code and not manual
 Inspector use.
 
+Current post-fix proof note:
+
+- the benchmark contract is settled and the STM32 Windows side has now been
+  re-proved live in the current post-fix state
+- the retained alternate Nordic profile `nrf52840dk` has now also been
+  live-proved for Zephyr rebuild, Stage 0, Stage 1, and its alternate six-case
+  `R11` suite on this Windows host
+- the remaining proof follow-up is not a spec change: re-run the official
+  scoped Nordic board `nrf52833dk` in the same post-fix state, then re-run the
+  managed Zephyr/no-NCS deployment path on true fresh Windows and macOS hosts
+  before treating the broader portability claim as fully closed
+
 ## External-Agent Path
 
 - agent: `Codex CLI`
@@ -251,6 +263,16 @@ The canonical entrypoint is:
 uv run python -m tests.harness.r11_benchmark --suite pilot_v1
 ```
 
+Operational timeout contract:
+
+- the runner must expose `--codex-timeout-seconds`
+- the default embedded `codex exec` budget should be long enough for live
+  diagnose -> patch/build -> flash/verify bug cases to finish without a blanket
+  sub-60-second cap
+- the runner should still fail obviously non-progressing Codex runs with a real
+  timeout rather than hanging indefinitely, and `--codex-timeout-seconds`
+  remains the explicit override surface
+
 Required capabilities:
 
 - load and validate `case.yaml`
@@ -274,6 +296,12 @@ Board-scoped benchmark prompts must state all of the following explicitly:
 - connect with `connect(board_id="...")`
 - do not pass a generic target override such as `cortex_m`
 - do not hard-code or guess a probe UID
+- benchmark prompts are intentionally self-contained and should not spend time
+  re-reading repo workflow docs or skills
+- this self-contained prompt rule is benchmark-only; real deployment agents
+  should still read workflow docs and skills before they act
+- injected-bug cases must be split into the phases
+  `diagnose -> patch/build -> flash/verify`
 - avoid reconnect churn unless the first session clearly attached to the wrong
   board or cannot complete verification
 - if a reconnect is necessary, the final structured `session_id` must be the

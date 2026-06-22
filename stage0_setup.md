@@ -75,6 +75,11 @@ macOS:
 bash ./setup_host.sh --board-id nrf52833dk
 ```
 
+If the host must also rebuild repo-owned Zephyr firmware locally, add
+`-EnsureZephyrBuildEnv` on Windows or `--ensure-zephyr-build-env` on macOS.
+The resulting `pyocd-zephyr-build` path defaults to incremental rebuilds; use
+`--pristine always` only when you intentionally need a clean Zephyr reconfigure.
+
 Use `--board-id <board>` or `-BoardId <board>` when only one physical bench board is attached and you do
 not want unrelated tracked boards to dominate the result.
 
@@ -122,6 +127,10 @@ Why this exact form:
   pack index
 - the reference firmware flash + UART check is what makes this a real Stage 0
   proof rather than only a host-visibility check
+- if the repo firmware is silent, rebuild and flash upstream Zephyr
+  `samples/hello_world` for the same board before blaming repo code; if that
+  control sample is also silent, classify the issue as a bench UART/driver or
+  solder-bridge problem
 
 Windows PowerShell, `nrf52833dk`:
 
@@ -160,8 +169,9 @@ runs `host_bootstrap.py --install-packs` unless skipped. **Destructive only in t
 system software / modifying user PATH (Windows).**
 
 - Operator-facing flags: `-BoardId`/`--board-id` (scope to the attached board); `-SkipHostBootstrap`/
-  `--skip-host-bootstrap`; `-SkipUvSync`/`--skip-uv-sync`; `-DryRun`/`--dry-run` (print intended actions,
-  change nothing).
+  `--skip-host-bootstrap`; `-SkipUvSync`/`--skip-uv-sync`; `-EnsureZephyrBuildEnv`/
+  `--ensure-zephyr-build-env` (also provision the Zephyr workspace/SDK used for local firmware rebuilds);
+  `-DryRun`/`--dry-run` (print intended actions, change nothing).
 - Windows additionally automates: Python 3.12 via `winget`, `uv` via `pip`, PATH repair, SEGGER J-Link,
   Nordic nRF Command Line Tools; attempts PATH repair for an existing STM32CubeProgrammer install.
 - macOS additionally automates: Homebrew, `uv`, `libusb`, Nordic tools via cask; attempts ST PATH repair.
@@ -212,6 +222,27 @@ optional `board_id` (or `PYOCD_BOARD_ID` env; plus `board_config`/`PYOCD_BOARD_C
 file) to load that board's facts from `boards/<board>.yaml` through the **same shared loader the Stage 0
 scripts use** — then it needs no raw `target`, and `get_board_info` reports the loaded facts.
 
+### `uv run pyocd-zephyr-build` — local Zephyr rebuild substrate
+
+Cross-platform helper for repo-owned Zephyr firmware builds. It is the path an
+agent should use when it must edit firmware, rebuild it, and then hand the
+artifact to Stage 0 / Stage 1 / `R11`.
+
+- Operator-facing flags: `--ensure-only` (resolve/bootstrap workspace + SDK
+  without building); `--app-dir`; `--build-dir`; `--board`; `--workspace-dir`;
+  `--sdk-dir`; `--skip-workspace-bootstrap`; `--skip-sdk-install`.
+- Reuse policy: prefer an existing Zephyr workspace or SDK already on the host
+  (`ZEPHYR_WORKSPACE_DIR`, `ZEPHYR_BASE`, current `west` workspace,
+  `~/zephyrproject`, detected `NCS`, `ZEPHYR_SDK_INSTALL_DIR`, or
+  workspace-adjacent SDKs).
+- No-NCS path: if none of those are present, bootstrap an upstream Zephyr
+  workspace pinned to `v4.3.0` plus a managed SDK install in the local cache.
+- Current limit: managed SDK install is not available on macOS `x86_64` under
+  current Zephyr releases; that host must point `ZEPHYR_SDK_INSTALL_DIR` at a
+  preinstalled older supported SDK instead.
+- Ready signal: `runtime ready: workspace=... sdk=...`; build success prints the
+  canonical `firmware.elf`/`firmware.hex` paths.
+
 ## 4. Branch Points
 
 - If the machine is fresh or host tooling is uncertain, start with `setup_host` rather than
@@ -225,6 +256,9 @@ scripts use** — then it needs no raw `target`, and `get_board_info` reports th
   non-interactive run -> rerun with `--port BOARD_ID=PORT`
 - If `stage0_check.py` reports APPROTECT or access-protected symptoms on a Nordic board and destructive
   recovery is acceptable, rerun with `--recover-test <board>`.
+- If the board is Stage-0-ready but the host still cannot rebuild repo-owned
+  firmware, run `uv run pyocd-zephyr-build --ensure-only` or rerun `setup_host`
+  with the Zephyr-build flag enabled.
 - If a run ends with only manual items, treat it as partial Stage 0 completion, not a full bring-up pass.
 
 ## 5. Handoffs Between Steps

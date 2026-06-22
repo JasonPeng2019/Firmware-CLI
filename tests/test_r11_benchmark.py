@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,7 @@ def test_all_r11_case_manifests_load() -> None:
         if (case_dir / "case.yaml").exists():
             cases.append(r11.load_case(case_dir.name))
 
-    assert len(cases) == 12
+    assert len(cases) == 18
     assert {case.scoring_profile for case in cases} == {r11.DEFAULT_SCORING_PROFILE}
 
 
@@ -59,13 +60,28 @@ def test_expanded_pilot_suite_loads_in_frozen_order() -> None:
     ]
 
 
+def test_nrf52840dk_suite_loads_in_frozen_order() -> None:
+    cases = r11.load_suite("nrf52840dk_v1_plus_b003_b004")
+
+    assert [case.case_id for case in cases] == [
+        "nrf52840dk__k001_reference_green",
+        "nrf52840dk__b001_wrong_boot_text",
+        "nrf52840dk__b002_wrong_known_value",
+        "nrf52840dk__f001_halted_target_silent_uart",
+        "nrf52840dk__b003_silent_uart",
+        "nrf52840dk__b004_dual_signal_regression",
+    ]
+
+
 @pytest.mark.parametrize(
     "case_id",
     [
         "nucleo_l476rg__b003_silent_uart",
         "nrf52833dk__b003_silent_uart",
+        "nrf52840dk__b003_silent_uart",
         "nucleo_l476rg__b004_dual_signal_regression",
         "nrf52833dk__b004_dual_signal_regression",
+        "nrf52840dk__b004_dual_signal_regression",
     ],
 )
 def test_new_case_manifests_keep_default_scoring_profile(case_id: str) -> None:
@@ -255,6 +271,22 @@ def test_prepare_workspace_keeps_tracked_bug_fixture_unchanged(
     assert copied_source.read_text(encoding="utf-8") == "changed\n"
 
 
+def test_prepare_workspace_copies_board_common_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(r11, "WORKSPACES_ROOT", tmp_path / "workspaces")
+    case = r11.load_case("nucleo_l476rg__b001_wrong_boot_text")
+
+    workspace = r11._prepare_workspace(case)
+
+    assert (workspace.workspace_root / "common" / "nucleo_l476rg.overlay").exists()
+    assert (workspace.workspace_root / "common" / "stage1_uart.h").exists()
+    cmake_text = (workspace.workspace_root / "src" / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "${CMAKE_CURRENT_SOURCE_DIR}/../common/nucleo_l476rg.overlay" in cmake_text
+    assert "${CMAKE_CURRENT_SOURCE_DIR}/../common" in cmake_text
+
+
 def test_stage1_preflight_caches_success(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str, float]] = []
     monkeypatch.setattr(r11, "_STAGE1_PREFLIGHT_CACHE", {})
@@ -427,16 +459,169 @@ def test_run_codex_uses_noninteractive_full_access_flags(
     assert run.new_session_dirs == (tmp_path / "20260620T000000Z-deadbeef",)
 
 
+def test_run_codex_honors_explicit_timeout_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        r11,
+        "_session_dirs",
+        lambda: {"20260620T000000Z-deadbeef": tmp_path / "20260620T000000Z-deadbeef"},
+    )
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
+    ) -> tuple[int, str, str]:
+        captured["timeout_seconds"] = timeout_seconds
+        return 0, '{"type":"done"}\n', ""
+
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+
+    r11._run_codex(case, workspace_root, "prompt text", timeout_seconds=42.0)
+
+    assert captured["timeout_seconds"] == 42.0
+
+
+def test_run_build_command_uses_cmd_on_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_cmd(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
+    ) -> tuple[int, str, str]:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["timeout_seconds"] = timeout_seconds
+        return 0, "", ""
+
+    monkeypatch.setattr(r11, "_run_cmd", fake_run_cmd)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    r11._run_build_command("uv run pyocd-zephyr-build --ensure-only", tmp_path)
+
+    assert captured["cmd"] == [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "uv run pyocd-zephyr-build --ensure-only",
+    ]
+    assert captured["cwd"] == tmp_path
+
+
+def test_build_parser_exposes_codex_timeout_override() -> None:
+    parser = r11.build_parser()
+
+    args = parser.parse_args(["--case-id", "nucleo_l476rg__k001_reference_green"])
+
+    assert args.codex_timeout_seconds == r11.DEFAULT_CODEX_TIMEOUT_SECONDS
+
+
+def test_run_case_forwards_requested_timeout_to_codex(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = r11.load_case("nucleo_l476rg__k001_reference_green")
+    board = r11._load_board(case.board_id)
+    workspace_root = tmp_path / "workspace"
+    snapshot_root = tmp_path / "snapshot"
+    workspace_root.mkdir()
+    snapshot_root.mkdir()
+    prepared = r11.PreparedCase(
+        case=case,
+        board=board,
+        workspace=r11.PreparedWorkspace(
+            source_root=workspace_root,
+            workspace_root=workspace_root,
+            snapshot_root=snapshot_root,
+        ),
+        probe_uid="probe-123",
+        flash_artifact=tmp_path / "firmware.hex",
+        symbol_artifact=tmp_path / "firmware.elf",
+    )
+    prepared.flash_artifact.write_text("hex", encoding="utf-8")
+    prepared.symbol_artifact.write_text("elf", encoding="utf-8")
+    prompt_path = workspace_root / ".r11_prompt.txt"
+    result_path = workspace_root / ".r11_codex_result.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    result_path.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(r11, "_ensure_codex_registration", lambda: None)
+    monkeypatch.setattr(r11, "_ensure_stage1_preflight", lambda _board_id, _probe_uid: None)
+    monkeypatch.setattr(r11, "_prepare_case", lambda _case: prepared)
+    monkeypatch.setattr(r11, "_prepare_target_state", lambda _prepared: None)
+
+    def fake_run_codex(
+        _case: r11.BenchmarkCase,
+        _workspace: Path,
+        _prompt: str,
+        timeout_seconds: float = r11.DEFAULT_CODEX_TIMEOUT_SECONDS,
+    ) -> r11.CodexRunArtifacts:
+        captured["timeout_seconds"] = timeout_seconds
+        return r11.CodexRunArtifacts(
+            exit_code=1,
+            stdout_text="",
+            stderr_text="failed",
+            result_path=result_path,
+            prompt_path=prompt_path,
+            new_session_dirs=(),
+        )
+
+    monkeypatch.setattr(r11, "_run_codex", fake_run_codex)
+
+    report = r11.run_case(case.case_id, codex_timeout_seconds=180.0)
+
+    assert captured["timeout_seconds"] == 180.0
+    assert report.final_status == "unresolved"
+
+
 def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
     case = r11.load_case("nucleo_l476rg__k001_reference_green")
 
     prompt = r11._render_prompt(case)
 
+    assert "do not read repo workflow skills, playbooks, or markdown docs" in prompt
+    assert "the real deployment workflow should still read its repo workflow docs and skills before acting" in prompt
+    assert 'read_symbol_u32(elf_path="build/firmware.elf", symbol_name="stage1_known_value")' in prompt
     assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
     assert "`board_id` exactly as `nucleo_l476rg`" in prompt
     assert "do not derive `case_id` from the workspace directory name" in prompt
     assert "do not pass a generic target override such as `cortex_m`" in prompt
     assert "avoid reconnect churn unless the first session clearly attached to the wrong board" in prompt
+
+
+def test_render_prompt_adds_bug_case_phase_contract() -> None:
+    case = r11.load_case("nucleo_l476rg__b001_wrong_boot_text")
+
+    prompt = r11._render_prompt(case)
+
+    assert "Bug-case phase contract:" in prompt
+    assert "1. Diagnose:" in prompt
+    assert "2. Patch/build:" in prompt
+    assert "3. Flash/verify:" in prompt
+
+
+def test_render_prompt_adds_observability_fault_contract() -> None:
+    case = r11.load_case("nrf52840dk__f001_halted_target_silent_uart")
+
+    prompt = r11._render_prompt(case)
+
+    assert "Case-specific context:" in prompt
+    assert "runner intentionally prepared the target with post-flash state `halted`" in prompt
+    assert "initial `HALTED` or `SLEEPING` state is evidence for this case" in prompt
+    assert "classify the case as `observability_fault`" in prompt
+    assert "do not reinterpret a later reset, resume, or reflash" in prompt
 
 
 def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:
@@ -492,7 +677,7 @@ def test_run_case_fails_when_no_session_directory_is_created(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=1,
             stdout_text="",
             stderr_text="failed",
@@ -578,7 +763,7 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=0,
             stdout_text='{"type":"done"}\n',
             stderr_text="",
@@ -697,7 +882,7 @@ def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_d
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt: r11.CodexRunArtifacts(
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
             exit_code=0,
             stdout_text='{"type":"done"}\n',
             stderr_text="",

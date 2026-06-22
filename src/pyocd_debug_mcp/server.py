@@ -62,6 +62,7 @@ from pyocd_debug_mcp.services.session_runtime import (
     utc_now_text,
 )
 from pyocd_debug_mcp.services import target_control
+from pyocd_debug_mcp.services.symbols import read_symbol_u32 as read_symbol_u32_from_elf
 from pyocd_debug_mcp.services.uart_capture import capture_uart_output
 from pyocd_debug_mcp.target_errors import (
     LockedTargetError,
@@ -693,6 +694,26 @@ def read_memory_block(address: str, length: int) -> str:
             return " ".join(f"{byte:02X}" for byte in values)
 
         return _run_logged_tool("read_memory_block", {"address": address, "length": length}, operation)
+
+
+@mcp.tool()
+def read_symbol_u32(elf_path: str, symbol_name: str) -> str:
+    """Resolve ``symbol_name`` in ``elf_path`` and read its 32-bit value from target memory."""
+    with _lock:
+        normalized_args = {"elf_path": elf_path, "symbol_name": symbol_name}
+
+        def operation() -> str:
+            resolved = read_symbol_u32_from_elf(_handle(), elf_path, symbol_name)
+            if resolved.value_u32 is None:  # pragma: no cover - service always populates this field
+                raise RuntimeError(f"Resolved symbol '{symbol_name}' did not produce a 32-bit value.")
+            resolved_path = Path(elf_path).expanduser().resolve()
+            return (
+                f"Symbol {resolved.name} from {resolved_path} "
+                f"@0x{resolved.address:08X} size={resolved.size} type={resolved.type} "
+                f"value_u32=0x{resolved.value_u32:08X}"
+            )
+
+        return _run_logged_tool("read_symbol_u32", normalized_args, operation)
 
 
 @mcp.tool()

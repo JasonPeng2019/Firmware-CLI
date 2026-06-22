@@ -25,18 +25,18 @@ truth path plus the tracked Stage 1 smoke harness are now bench-proven on live
 ## Build Recipe
 
 ```bash
-./firmware/nrf52833dk/reference/build_reference.sh
+uv run pyocd-zephyr-build --app-dir firmware/nrf52833dk/reference/src --build-dir firmware/nrf52833dk/reference/build --board nrf52833dk/nrf52833
 ```
 
 What that script does:
 
-- bootstraps a small isolated `west + pyelftools` venv under
-  `~/.cache/firmware-cli-zephyr-west` by default
-- uses the Zephyr workspace at `~/zephyrproject` by default
-- requires a usable Zephyr SDK installation
+- uses the repo-owned `pyocd-zephyr-build` helper
+- reuses an existing Zephyr workspace or SDK when one is already present
+- otherwise bootstraps a managed upstream Zephyr workspace plus SDK in the
+  local cache
 - builds the app for `nrf52833dk/nrf52833`
-- cleans `reference/build/` back down to the canonical artifact surface before
-  copying outputs in
+- preserves the live Zephyr build tree inside `reference/build/` so repeated
+  agent rebuilds stay fast and remain under the no-hang watchdog
 - copies `zephyr/zephyr.elf` to the canonical `firmware.elf` name
 - copies `zephyr/zephyr.hex` to `firmware.hex` when present
 
@@ -46,6 +46,10 @@ Validated toolchain note for this bench:
 - the current official Zephyr SDK line no longer ships macOS `x86_64` bundles,
   so Intel Macs need an older supported SDK release or another supported
   toolchain path
+
+The legacy `build_reference.sh` / `build_bug.sh` wrappers still exist for bash
+users, but they now delegate to the same `pyocd-zephyr-build` helper. `NCS` is
+optional for this board package.
 
 ## Frozen Board Facts
 

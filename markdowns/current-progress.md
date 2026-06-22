@@ -19,14 +19,18 @@ roadmap checkpoint shorthand.
 
 ## Current Position
 
-In roadmap terms, all scoped work through `R11` is complete on the official
-board pair:
+In roadmap terms, all scoped work through `R11` is implemented for the
+official board pair:
 
 - `nrf52833dk`
 - `nucleo_l476rg`
 
-That means the following are already implemented and live-proven on the scoped
-pair:
+Historical live proof already exists for the scoped pair through `R11`, and
+the latest post-fix rerun on this Windows host has now re-proved the STM32
+side end to end. That means `R12` is no longer blocked on the STM32 path.
+
+That means the following are already implemented, and at least historically
+live-proven on the scoped pair:
 
 - repo/environment standardization
 - board bring-up and Stage 0 validation
@@ -55,9 +59,20 @@ contains:
 What is still missing is the live turnkey validation on the scoped pair and the
 acceptance run over the same 12-case benchmark corpus.
 
-The repo also still contains `nrf52840dk`, but it is now a retained
-alternate/future Nordic profile. It is not the current blocker for the scoped
-project path.
+The remaining proof work before making the broader "fresh customer machine"
+portability claim is now narrower:
+
+- rerun the official scoped Nordic `R11` live chain (`nrf52833dk`) in the
+  current post-fix benchmark state
+- run a true fresh-machine Windows validation of the managed Zephyr/no-NCS path
+- run the equivalent macOS managed-Zephyr validation, especially because the
+  latest benchmark/build changes have only been live-rerun on Windows STM32 so
+  far
+
+The repo also still contains `nrf52840dk` as a retained alternate Nordic
+profile. It is not the current blocker for the scoped project path, but it is
+now live-proven on this Windows host for Zephyr rebuild, Stage 0, Stage 1, and
+the alternate six-case `R11` suite.
 
 ## What Has Been Implemented
 
@@ -683,6 +698,13 @@ Runner guardrails:
 - if that preflight fails, the case aborts immediately with a host-bench error
   instead of spending minutes inside a non-converging Codex run
 - Codex execution is now time-bounded so a stuck case cannot hang indefinitely
+- the runner now gives embedded `codex exec` bug-repair cases a longer default
+  budget so diagnose -> patch/build -> flash/verify runs can finish cleanly
+  instead of being cut off by a blanket sub-60-second cap
+- benchmark prompts are intentionally self-contained and tell the nested agent
+  not to spend time re-reading workflow docs or skills
+- that self-contained prompt rule is benchmark-specific only; real deployment
+  runs should still read the repo workflow docs and skills before acting
 
 Single-case entrypoint:
 
@@ -759,6 +781,19 @@ Observed benchmark result:
 - `nrf52833dk__b003_silent_uart`: `FULL_SUCCESS`, score `100`
 - `nucleo_l476rg__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
 - `nrf52833dk__b004_dual_signal_regression`: `FULL_SUCCESS`, score `100`
+- alternate retained Nordic profile `nrf52840dk` is now also live-proven on
+  this Windows host:
+  - `uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840`
+  - `uv run python host_bootstrap.py --board-id nrf52840dk`
+  - `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__k001_reference_green`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b001_wrong_boot_text`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b002_wrong_known_value`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__f001_halted_target_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b003_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nrf52840dk__b004_dual_signal_regression`
+  - all six alternate `nrf52840dk` cases reached `FULL_SUCCESS`, score `100`
 
 What that means:
 
@@ -879,6 +914,21 @@ These are the core product claims for the first turnkey layer:
 - no reliance on prompt authoring, Codex installation, or MCP registration
 - no reopening of the underlying server/substrate architecture
 
+Latest post-fix Windows STM32 rerun:
+
+- the benchmark timeout/failure-boundary fix has now also been re-proved live
+  on the attached Windows `nucleo_l476rg`
+- the following commands all passed in the current post-fix state:
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
+  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
+- all six STM32 cases reached `FULL_SUCCESS`, score `100`
+- this rerun closes the old Windows STM32 benchmark timeout boundary and is the
+  concrete reason `R12` is now unblocked on the STM32 side
+
 Important runner-accounting outcome:
 
 - the benchmark runner no longer requires exactly one MCP session directory per
@@ -944,6 +994,26 @@ work is all in the turnkey product layer.
    - do not expand the benchmark corpus again before turnkey reliability is
      stable
 
+### Remaining Proof Work Before Broader Deployment Claims
+
+The repo is ready to move on to `R12` on the STM32 side, but a few proof tasks
+still remain before the team should treat the latest portability/build-path
+changes as fully bench-proven for customers:
+
+1. Re-run the official scoped Nordic `R11` live chain in the current post-fix
+   benchmark state, so the latest runner/build-path changes are re-proven on
+   `nrf52833dk`, not only historically proven from earlier runs.
+2. Run a true fresh-machine Windows validation without relying on a preexisting
+   NCS install:
+   host bootstrap, managed Zephyr bring-up, firmware rebuild, Stage 0, Stage 1,
+   and at least one live benchmark case.
+3. Run the equivalent macOS validation for the managed Zephyr/no-NCS path,
+   because the latest benchmark/build-path changes have not yet been re-proven
+   live on macOS in the current post-fix state.
+4. Record the results of those validations back into this file and `README.md`
+   before treating the broader cross-platform self-contained deployment claim as
+   fully closed.
+
 ### What `R11` Already Proved
 
 The first live benchmark pass has already proved all of the following:
@@ -969,16 +1039,32 @@ The first live benchmark pass has already proved all of the following:
 
 These are real tasks, but they are not the current blocker:
 
-- Windows follow-up for the official `nrf52833dk` bench path
-- future live proof for `nrf52840dk` if that alternate profile becomes a real
-  support target
+- post-fix Nordic live rerun for the official `nrf52833dk` bench path
+- fresh-machine Windows managed-Zephyr / no-NCS validation
+- fresh-machine macOS managed-Zephyr / no-NCS validation
+- optional future parity rerun on `nrf52840dk` if that alternate profile is
+  promoted from retained proof path to an official scoped support target
 - further corpus expansion after the current twelve-case set is trustworthy
 
-## nRF52840 Bench-Check Prerequisites
+## nRF52840 Alternate Nordic Status
 
-Before bench-checking `nrf52840dk`, do the following. These exist because the
-52840 has no committed reference artifact yet and because the toolchain choice
-must match what the agent will use when it rebuilds firmware.
+`nrf52840dk` is no longer waiting on first proof. It now has a real Windows
+host proof stack on attached hardware. The numbered items below are historical
+setup notes; the current proven results are:
+
+- `uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840`
+- `uv run python host_bootstrap.py --board-id nrf52840dk`
+- `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
+- `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+- all six implemented `nrf52840dk` `R11` cases reached `FULL_SUCCESS`:
+  `k001`, `b001`, `b002`, `f001`, `b003`, `b004`
+
+What is still not proven by this alternate-board run:
+
+- the official scoped Nordic board `nrf52833dk` has not yet been re-run in the
+  latest post-fix benchmark/build state
+- a truly fresh Windows or macOS host without a preexisting `NCS` install has
+  not yet been validated end to end with the managed no-`NCS` path
 
 1. **Install NCS (nRF/Nordic only).** Install **nRF Connect SDK (NCS)** via the
    nRF Connect for VS Code extension (Toolchain Manager). The GUI/IDE is only the
@@ -1031,46 +1117,35 @@ If resuming later:
 > frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
 > a native Python turnkey brain plus `pyocd-debug-brain`, but it still needs
 > live freeform and benchmark validation on the same scoped pair.
-Current Windows STM32 blocker on this host:
+Current Windows STM32 retest status on this host:
 
-- probe attach, flash, and symbol-resolution are green on the attached
-  `nucleo_l476rg`
-- UART capture is currently silent on Windows for the tracked STM32 reference
-  artifact, which blocks the STM32 `R11` green case preflight
-- to close that repo-side ambiguity, the tracked STM32 reference and bug apps
-  now pin the UART path explicitly to `USART2` and pin the Zephyr chosen
-  console to `usart2` through `firmware/nucleo_l476rg/common/`
-- those source changes still require a Zephyr rebuild of the STM32 artifacts
-  before the Windows STM32 Stage 0 / Stage 1 / `R11` green case can be rerun
-- the Windows host now has a discovered NCS/Zephyr workspace root at
-  `C:\ncs\v3.3.1`
-- the next Codex session should export:
-  - `ZEPHYR_WORKSPACE_DIR=C:\ncs\v3.3.1`
-  - `ZEPHYR_SDK_INSTALL_DIR=<the actual Zephyr SDK path on this host, if it is
-    not already exposed through the build environment>`
-- rebuild the STM32 artifacts in this order:
-  - `./firmware/nucleo_l476rg/reference/build_reference.sh`
-  - `./firmware/nucleo_l476rg/bugs/b001__wrong_boot_text/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b002__wrong_known_value/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b003__silent_uart/build_bug.sh`
-  - `./firmware/nucleo_l476rg/bugs/b004__dual_signal_regression/build_bug.sh`
-- then rerun the Windows STM32 proof chain in this order:
+- the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the
+  full implemented STM32 `R11` case set
+- `stage0_check.py` now passes again on Windows for the tracked STM32 reference
+  artifact, including flash and UART `boot ok`
+- `tests.harness.stage1_smoke` now passes again on Windows for
+  `nucleo_l476rg`, including `stage1_known_value = 0x1234ABCD`
+- the benchmark failure boundary was the runner's old blanket sub-60-second
+  Codex budget, not a remaining STM32 board-control defect
+- the benchmark runner now gives bug-repair cases a longer default Codex budget
+  so diagnose -> patch/build -> flash/verify runs can finish cleanly
+- the benchmark prompts remain intentionally self-contained so the nested
+  benchmark agent stays on the board task instead of re-reading workflow docs
+- that self-contained benchmark behavior is not the deployment rule; real
+  workflow/deployment runs should still read repo workflow docs and skills
+  before acting
+- the currently live-proven Windows STM32 commands are:
   - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
   - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
-- current benchmark-runner status on Windows:
-  - the old STM32 `R11` hang is fixed
-  - if the board is not green, `tests.harness.r11_benchmark` now fails fast at
-    Stage 1 preflight in a few seconds instead of spending minutes in a stuck
-    Codex run
-- after the STM32 green case passes again, continue the remaining implemented
-  Windows `R11` STM32 cases:
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
   - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
-- do not treat any agent/tool call that runs longer than 60 seconds as normal
-  during this Windows retest
-  - terminate it, diagnose the stall, and fix the underlying cause before
-    continuing
+- during this Windows retest, the right boundary is no longer a flat 60-second
+  wall
+  - short runtime calls such as a single UART read should still fail fast if
+    they stall
+  - longer operations such as rebuilds, flashes, and full benchmark cases can
+    legitimately run longer when they are still making progress

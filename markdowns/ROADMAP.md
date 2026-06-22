@@ -7,6 +7,12 @@
 > describe work that is **done**; `R11` is now also complete as the proven
 > BYO-agent benchmark milestone. Read those sections as history, not as pending work. For
 > live status see `current-progress.md`; for the file map see `repo_file_index.md`.
+>
+> **Current post-fix proof boundary:** the latest STM32 Windows rerun has
+> re-proved the `R11` path and unblocked `R12` on STM32. The remaining proof
+> gaps are narrower and live in `current-progress.md`: re-run Nordic in the
+> current post-fix state, plus true fresh-machine Windows/macOS managed
+> Zephyr/no-NCS deployment validation.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
