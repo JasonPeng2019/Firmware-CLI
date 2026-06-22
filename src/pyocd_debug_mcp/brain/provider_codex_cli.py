@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import subprocess
 import tempfile
 
 import anyio
 
-from pyocd_debug_mcp.brain.actions import TurnDecision
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 
@@ -33,20 +31,14 @@ class CodexCLIDecisionProvider:
         for _attempt in range(2):
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-codex-") as tmpdir:
                 tmp_path = Path(tmpdir)
-                schema_path = tmp_path / "turn_decision.schema.json"
                 output_path = tmp_path / "turn_decision.json"
-                schema_path.write_text(
-                    json.dumps(TurnDecision.model_json_schema(), indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8",
-                )
                 result = subprocess.run(
                     _build_codex_command(
                         model=self._model,
                         working_dir=tmp_path,
-                        schema_path=schema_path,
                         output_path=output_path,
+                        prompt=_compose_prompt(instructions, current_prompt),
                     ),
-                    input=_compose_prompt(instructions, current_prompt),
                     text=True,
                     capture_output=True,
                     check=False,
@@ -87,31 +79,29 @@ def _build_codex_command(
     *,
     model: str | None,
     working_dir: Path,
-    schema_path: Path,
     output_path: Path,
+    prompt: str,
 ) -> list[str]:
     command = [
         "codex",
+        "-a",
+        "never",
+        "-s",
+        "danger-full-access",
         "exec",
-        "-",
+        "-C",
+        str(working_dir),
         "--skip-git-repo-check",
         "--ignore-rules",
         "--ephemeral",
         "--color",
         "never",
-        "-s",
-        "read-only",
-        "-a",
-        "never",
-        "-C",
-        str(working_dir),
-        "--output-schema",
-        str(schema_path),
         "-o",
         str(output_path),
     ]
     if model:
         command.extend(["--model", model])
+    command.append(prompt)
     return command
 
 

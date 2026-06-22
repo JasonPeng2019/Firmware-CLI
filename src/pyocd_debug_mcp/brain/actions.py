@@ -104,8 +104,108 @@ class TurnkeyRunResult(_StrictModel):
 
 
 def decision_schema_text() -> str:
-    return json.dumps(TurnDecision.model_json_schema(), indent=2, sort_keys=True)
+    return json.dumps(turn_decision_output_schema(), indent=2, sort_keys=True)
 
 
 def result_schema_text() -> str:
     return json.dumps(TurnkeyRunResult.model_json_schema(), indent=2, sort_keys=True)
+
+
+def turn_decision_output_schema() -> dict[str, object]:
+    action_variants: list[dict[str, object]] = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "tool_name", "arguments"],
+            "properties": {
+                "kind": {"type": "string", "const": "server_tool"},
+                "tool_name": {
+                    "type": "string",
+                    "enum": [
+                        "connect",
+                        "disconnect",
+                        "get_board_info",
+                        "get_state",
+                        "halt",
+                        "resume",
+                        "reset",
+                        "read_core_register",
+                        "read_memory",
+                        "flash_firmware",
+                        "read_serial",
+                        "unlock_recover",
+                    ],
+                },
+                "arguments": {"type": "object", "additionalProperties": True},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "path"],
+            "properties": {
+                "kind": {"type": "string", "const": "read_file"},
+                "path": {"type": "string", "minLength": 1},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "path", "content"],
+            "properties": {
+                "kind": {"type": "string", "const": "replace_file"},
+                "path": {"type": "string", "minLength": 1},
+                "content": {"type": "string"},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "build_command"],
+            "properties": {
+                "kind": {"type": "string", "const": "run_build"},
+                "build_command": {"type": ["string", "null"]},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind"],
+            "properties": {
+                "kind": {"type": "string", "const": "run_green_check"},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "final_status", "classification", "root_cause", "summary"],
+            "properties": {
+                "kind": {"type": "string", "const": "finalize"},
+                "final_status": {
+                    "type": "string",
+                    "enum": ["fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"],
+                },
+                "classification": {
+                    "type": "string",
+                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault"],
+                },
+                "root_cause": {"type": "string", "minLength": 1},
+                "summary": {"type": "string", "minLength": 1},
+            },
+        },
+    ]
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TurnDecision",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["observation_summary", "classification", "action"],
+        "properties": {
+            "observation_summary": {"type": "string", "minLength": 1},
+            "classification": {
+                "type": ["string", "null"],
+                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", None],
+            },
+            "action": {"oneOf": action_variants},
+        },
+    }

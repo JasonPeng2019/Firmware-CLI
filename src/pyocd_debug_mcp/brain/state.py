@@ -37,6 +37,7 @@ class BrainState:
     no_progress_streak: int = 0
     repeated_build_failure_count: int = 0
     stagnant_fix_cycle_count: int = 0
+    pending_fix_evaluation: bool = False
     last_build_failure_signature: str | None = None
     last_no_progress_signature: str | None = None
     last_verification_signature: tuple[bool, bool, bool, bool] | None = None
@@ -60,6 +61,11 @@ class BrainState:
             self.flash_count += 1
         elif tool_name == "unlock_recover":
             self.recover_count += 1
+
+    def register_disconnect(self) -> None:
+        self.session_id = None
+        self.probe_uid = None
+        self.route_used = None
 
     def register_build(self) -> None:
         self.build_count += 1
@@ -103,4 +109,5 @@ class BrainState:
             "no_progress_streak": self.no_progress_streak,
             "repeated_build_failure_count": self.repeated_build_failure_count,
             "stagnant_fix_cycle_count": self.stagnant_fix_cycle_count,
+            "pending_fix_evaluation": self.pending_fix_evaluation,
         }

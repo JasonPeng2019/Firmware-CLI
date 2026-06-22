@@ -9,6 +9,8 @@ from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
 
+import anyio
+
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
     BoardConfig,
@@ -16,6 +18,7 @@ from pyocd_debug_mcp.board_config import (
 )
 from pyocd_debug_mcp.brain.actions import (
     Classification,
+    decision_schema_text,
     ReadFileAction,
     FinalizeAction,
     ReplaceFileAction,
@@ -175,10 +178,13 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- Return exactly one JSON object that matches the TurnDecision schema.\n"
         "- Prefer connecting with connect(board_id=...) and do not guess probe UIDs.\n"
         "- Do not pass a generic target override such as cortex_m.\n"
+        "- Use read_memory with a string hex address such as 0x08000000, not an integer.\n"
+        "- Once a session_id exists, do not call connect again unless you intentionally disconnected or attached to the wrong board.\n"
         "- Gather evidence before editing code.\n"
         "- Use unlock_recover only when the symptoms justify it and the task policy allows it.\n"
         "- When code edits are allowed, replace whole files only; do not describe patches in prose.\n"
         "- Use run_green_check when you believe the target is healthy again.\n"
+        "- Do not return final_status=healthy_confirmed or final_status=fixed until run_green_check has succeeded in this client.\n"
         f"- {benchmark_note}\n"
     )
 
@@ -191,11 +197,15 @@ def _build_turn_prompt(
     workspace: WorkspaceSession | None,
 ) -> str:
     verification = state.verification
+    flash_artifact, symbol_artifact = _default_artifacts(invocation, board)
     return (
         "Task:\n"
         f"{invocation.task.strip()}\n\n"
         "Board facts:\n"
         f"{_format_board_facts(board, invocation)}\n\n"
+        "Reference artifacts:\n"
+        f"flash_artifact={flash_artifact}\n"
+        f"symbol_artifact={symbol_artifact}\n\n"
         "Workspace/build context:\n"
         f"{_workspace_summary(workspace)}\n\n"
         "Current state:\n"
@@ -225,7 +235,7 @@ def _build_turn_prompt(
         "- run_green_check\n"
         "- finalize(final_status, classification, root_cause, summary)\n\n"
         "TurnDecision JSON schema:\n"
-        f"{TurnDecision.model_json_schema()}\n"
+        f"{decision_schema_text()}\n"
     )
 
 
@@ -297,6 +307,7 @@ def _update_verification_state(
     uart_ok: bool,
     symbol_ok: bool,
     green_check_ok: bool,
+    track_stagnation: bool = True,
 ) -> None:
     state.verification = VerificationSnapshot(
         flash_ok=flash_ok,
@@ -305,11 +316,15 @@ def _update_verification_state(
         green_check_ok=green_check_ok,
     )
     signature = state.verification_signature()
-    if signature == state.last_verification_signature:
-        state.stagnant_fix_cycle_count += 1
-    else:
+    if track_stagnation and state.pending_fix_evaluation:
+        if signature == state.last_verification_signature:
+            state.stagnant_fix_cycle_count += 1
+        else:
+            state.stagnant_fix_cycle_count = 0
+        state.pending_fix_evaluation = False
+    elif signature != state.last_verification_signature:
         state.stagnant_fix_cycle_count = 0
-        state.last_verification_signature = signature
+    state.last_verification_signature = signature
 
 
 def _render_refusal(code: str, message: str) -> str:
@@ -320,6 +335,14 @@ def _normalize_session_id(session_id: str | None) -> Path | None:
     if not session_id:
         return None
     return RUNS_ROOT / session_id
+
+
+def _result_session_id(state: BrainState) -> str | None:
+    if state.session_id is not None:
+        return state.session_id
+    if state.session_ids_seen:
+        return state.session_ids_seen[-1]
+    return None
 
 
 def _verify_green(
@@ -352,6 +375,17 @@ async def _execute_server_tool(
     arguments = dict(action.arguments)
     if action.tool_name == "connect":
         arguments.setdefault("board_id", board.board_id)
+        if (
+            state.session_id is not None
+            and arguments.get("board_id", board.board_id) == board.board_id
+            and arguments.get("unique_id") in {None, ""}
+            and arguments.get("target") is None
+            and arguments.get("board_config") is None
+        ):
+            raise TurnkeyRefusal(
+                "brain/redundant-connect",
+                "Already connected to this board. Reuse the current session or disconnect first.",
+            )
         if invocation.mode == "benchmark":
             if arguments.get("unique_id") is not None:
                 raise TurnkeyRefusal(
@@ -363,6 +397,10 @@ async def _execute_server_tool(
                     "brain/connect-target-override-forbidden",
                     "Benchmark cases must not pass an explicit target override.",
                 )
+    elif action.tool_name == "read_memory":
+        address = arguments.get("address")
+        if isinstance(address, int):
+            arguments["address"] = f"0x{address:08X}"
     elif action.tool_name == "flash_firmware":
         if "path" not in arguments and invocation.flash_artifact is not None:
             arguments["path"] = str(invocation.flash_artifact)
@@ -370,6 +408,16 @@ async def _execute_server_tool(
         if invocation.port is not None:
             arguments.setdefault("port", invocation.port)
         arguments.setdefault("read_seconds", invocation.serial_read_seconds)
+        if arguments.get("expected_text") in {None, ""}:
+            expected_text = invocation.expected_uart_substring or board.expected_uart_substring
+            if expected_text:
+                arguments["expected_text"] = expected_text
+        if (
+            invocation.mode == "benchmark"
+            and invocation.case_kind in {"known_good", "injected_bug"}
+            and "reset_on_open" not in arguments
+        ):
+            arguments["reset_on_open"] = True
     elif action.tool_name == "unlock_recover" and not invocation.recover_allowed:
         raise TurnkeyRefusal(
             "brain/recover-forbidden",
@@ -379,7 +427,6 @@ async def _execute_server_tool(
     result = await client.call_tool(action.tool_name, arguments=arguments)
     state.register_tool_use(action.tool_name)
     state.actions_taken.append(action.tool_name)
-    state.mcp_tools_used.append(action.tool_name)
     state.last_action_summary = f"{action.tool_name}({arguments})"
     state.last_result_text = result.text
 
@@ -393,6 +440,8 @@ async def _execute_server_tool(
             probe_uid=result.probe_uid,
             route_used=result.route_used,
         )
+    elif action.tool_name == "disconnect" and result.text.startswith("Disconnected"):
+        state.register_disconnect()
     if action.tool_name == "flash_firmware" and result.text.startswith("Flashed "):
         _update_verification_state(
             state,
@@ -400,6 +449,7 @@ async def _execute_server_tool(
             uart_ok=state.verification.uart_ok,
             symbol_ok=state.verification.symbol_ok,
             green_check_ok=state.verification.green_check_ok,
+            track_stagnation=False,
         )
     if action.tool_name == "read_serial":
         matched = result.text.startswith("UART matched")
@@ -439,6 +489,7 @@ def _execute_replace_file(
             "This run has no editable workspace attached.",
         )
     workspace.replace_file(action.path, action.content)
+    state.pending_fix_evaluation = True
     state.actions_taken.append(f"replace_file:{action.path}")
     state.last_action_summary = f"replace_file({action.path})"
     state.last_result_text = f"Replaced {action.path}."
@@ -456,6 +507,7 @@ def _execute_build(
             "This run has no workspace/build context.",
         )
     state.register_build()
+    state.pending_fix_evaluation = True
     build = workspace.run_build(action.build_command)
     state.actions_taken.append("run_build")
     state.last_action_summary = f"run_build({action.build_command or workspace.build_command})"
@@ -475,12 +527,15 @@ def _execute_build(
     return failure_text
 
 
-def _execute_green_check(
+async def _execute_green_check(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
     state: BrainState,
+    client: LocalMCPClient,
 ) -> str:
-    smoke = _verify_green(invocation, board, state)
+    if state.session_id is not None:
+        await _disconnect_before_green_check(client, state)
+    smoke = await anyio.to_thread.run_sync(_verify_green, invocation, board, state)
     symbol_ok = True
     if (
         invocation.expected_symbol_name is not None
@@ -507,6 +562,19 @@ def _execute_green_check(
         f"uart_excerpt={smoke.capture_excerpt}"
     )
     return state.last_result_text
+
+
+async def _disconnect_before_green_check(client: LocalMCPClient, state: BrainState) -> None:
+    try:
+        result = await client.call_tool("disconnect", {})
+    except Exception:  # noqa: BLE001 - green check should still attempt the canonical verifier
+        return
+
+    state.register_tool_use("disconnect")
+    state.actions_taken.append("disconnect")
+    state.register_disconnect()
+    state.last_action_summary = "disconnect(for-green-check)"
+    state.last_result_text = result.text
 
 
 def _check_local_convergence(state: BrainState) -> TurnkeyRunResult | None:
@@ -544,7 +612,7 @@ def _blocked_result(
     return TurnkeyRunResult(
         board_id=state.board_id,
         case_id=state.case_id,
-        session_id=state.session_id,
+        session_id=_result_session_id(state),
         final_status="blocked",
         classification=classification,
         root_cause=message,
@@ -562,11 +630,16 @@ def _final_result_from_action(
     action: FinalizeAction,
     workspace: WorkspaceSession | None,
 ) -> TurnkeyRunResult:
+    if action.final_status in {"healthy_confirmed", "fixed"} and not state.verification.green_check_ok:
+        raise TurnkeyRefusal(
+            "brain/finalize-without-green-check",
+            "A successful run_green_check is required before finalizing a healthy or fixed result.",
+        )
     changed_files = list(workspace.changed_files()) if workspace is not None else []
     return TurnkeyRunResult(
         board_id=state.board_id,
         case_id=state.case_id,
-        session_id=state.session_id,
+        session_id=_result_session_id(state),
         final_status=action.final_status,
         classification=action.classification,
         root_cause=action.root_cause,
@@ -706,7 +779,12 @@ async def run_turnkey(
                 elif isinstance(action, RunBuildAction):
                     result_text = _execute_build(workspace, action, state)
                 elif isinstance(action, RunGreenCheckAction):
-                    result_text = _execute_green_check(invocation, board, state)
+                    result_text = await _execute_green_check(
+                        invocation,
+                        board,
+                        state,
+                        client,
+                    )
                 elif isinstance(action, ReadFileAction):
                     result_text = _execute_read_file(workspace, action.path, state)
                 elif isinstance(action, FinalizeAction):

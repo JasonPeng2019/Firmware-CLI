@@ -3,8 +3,7 @@ title: Healthy baseline verification
 applies_to:
   board_ids: []
   mcu_families: []
-  case_kinds:
-    - known_good
+  case_kinds: []
   task_terms:
     - healthy
     - baseline

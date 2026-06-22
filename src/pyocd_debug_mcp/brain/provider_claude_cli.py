@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 
@@ -36,9 +37,9 @@ class ClaudeCLIDecisionProvider:
                     cwd=tmpdir,
                     check=False,
                 )
-                output_text = result.stdout.strip()
-                if result.returncode != 0 and not output_text:
-                    last_error = ProviderResponseError(result.stderr.strip())
+                output_text, command_error = _extract_claude_output_text(result)
+                if command_error is not None:
+                    last_error = command_error
                     current_prompt = (
                         f"{turn_prompt}\n\n"
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
@@ -69,7 +70,7 @@ def _build_claude_command(*, model: str | None, instructions: str, prompt: str) 
         "claude",
         "--print",
         "--output-format",
-        "text",
+        "json",
         "--append-system-prompt",
         instructions,
     ]
@@ -77,3 +78,33 @@ def _build_claude_command(*, model: str | None, instructions: str, prompt: str) 
         command.extend(["--model", model])
     command.append(prompt)
     return command
+
+
+def _extract_claude_output_text(
+    result: subprocess.CompletedProcess[str],
+) -> tuple[str, ProviderResponseError | None]:
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    if not stdout:
+        if result.returncode != 0:
+            return "", ProviderResponseError(stderr or "Claude CLI returned no output.")
+        return "", ProviderResponseError("Claude CLI returned an empty response.")
+
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        if result.returncode != 0:
+            return "", ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
+        return stdout, None
+
+    if isinstance(payload, dict):
+        if payload.get("is_error") is True:
+            message = str(payload.get("result") or payload)
+            return "", ProviderResponseError(message)
+        result_text = payload.get("result")
+        if isinstance(result_text, str) and result_text.strip():
+            return result_text.strip(), None
+
+    if result.returncode != 0:
+        return "", ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
+    return "", ProviderResponseError("Claude CLI returned an unrecognized JSON response.")

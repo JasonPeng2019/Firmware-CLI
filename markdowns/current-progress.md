@@ -26,8 +26,10 @@ official board pair:
 - `nucleo_l476rg`
 
 Historical live proof already exists for the scoped pair through `R11`, and
-the latest post-fix rerun on this Windows host has now re-proved the STM32
-side end to end. That means `R12` is no longer blocked on the STM32 path.
+the latest mixed-board macOS rerun has now re-proved both scoped boards
+through Stage 0 and Stage 1. That means the remaining work is no longer in the
+shared hardware substrate; it is in the turnkey product layer and the broader
+cross-host portability claims.
 
 That means the following are already implemented, and at least historically
 live-proven on the scoped pair:
@@ -42,8 +44,8 @@ live-proven on the scoped pair:
 - mutation watcher behavior
 - the first Codex-driven benchmark pilot
 
-`R12` is now implemented in code, but it is not yet live-proven. The repo now
-contains:
+`R12` is now implemented in code, and the first live Codex-backed turnkey proof
+is now partially complete. The repo now contains:
 
 - the native Python brain package under `src/pyocd_debug_mcp/brain/`
 - the top-level `skills/` tree
@@ -56,18 +58,16 @@ contains:
 - the sibling turnkey benchmark path over the same 12-case corpus
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
 
-What is still missing is the live turnkey validation on the scoped pair and the
-acceptance run over the same 12-case benchmark corpus.
+What is still missing is the full turnkey acceptance run over the complete
+12-case corpus and the live cross-provider comparison work.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:
 
-- rerun the official scoped Nordic `R11` live chain (`nrf52833dk`) in the
-  current post-fix benchmark state
+- run the full 12-case turnkey suite on the current scoped pair
+- run a second live provider/model path against the same turnkey ladder
 - run a true fresh-machine Windows validation of the managed Zephyr/no-NCS path
-- run the equivalent macOS managed-Zephyr validation, especially because the
-  latest benchmark/build changes have only been live-rerun on Windows STM32 so
-  far
+- run the equivalent macOS managed-Zephyr validation on a clean host setup
 
 The repo also still contains `nrf52840dk` as a retained alternate Nordic
 profile. It is not the current blocker for the scoped project path, but it is
@@ -815,8 +815,60 @@ What that means:
 
 ## Turnkey Brain Status
 
-The turnkey layer is now in the repo, but it is still awaiting live proof on
-the scoped pair.
+The turnkey layer is now in the repo and has first-pass live proof on the
+scoped pair through the Codex CLI path, but it is not fully closed yet.
+
+### Latest Live Codex Turnkey Evidence
+
+Live reruns on the current mixed-board macOS host now establish all of the
+following through the turnkey path with `PYOCD_TURNKEY_PROVIDER=codex-cli`:
+
+- healthy freeform verification passed on `nucleo_l476rg`
+- healthy freeform verification passed on `nrf52833dk`
+- the turnkey client started and stopped the MCP server itself
+- the normal path connected by `board_id` only
+- no explicit probe UID or serial-port override was needed
+- turnkey artifacts were written under `runs/<session_id>/...`
+- a clean six-case live pilot passed end to end:
+  - `nucleo_l476rg__k001_reference_green`
+  - `nrf52833dk__k001_reference_green`
+  - `nucleo_l476rg__b001_wrong_boot_text`
+  - `nrf52833dk__b001_wrong_boot_text`
+  - `nucleo_l476rg__f001_halted_target_silent_uart`
+  - `nrf52833dk__f001_halted_target_silent_uart`
+
+Recorded freeform sessions:
+
+- `nucleo_l476rg`: `20260622T060957Z-41201f6d`
+- `nrf52833dk`: `20260622T064455Z-3cb81b85`
+
+Recorded six-case pilot sessions:
+
+- `20260622T075340Z-2ea5e8d1`:
+  `nucleo_l476rg__k001_reference_green` -> `FULL_SUCCESS`, score `100`
+- `20260622T075647Z-e2a70406`:
+  `nrf52833dk__k001_reference_green` -> `FULL_SUCCESS`, score `100`
+- `20260622T080133Z-f1e887c7`:
+  `nucleo_l476rg__b001_wrong_boot_text` -> `FULL_SUCCESS`, score `100`
+- `20260622T080806Z-659b48bc`:
+  `nrf52833dk__b001_wrong_boot_text` -> `FULL_SUCCESS`, score `100`
+- `20260622T081211Z-a032305a`:
+  `nucleo_l476rg__f001_halted_target_silent_uart` -> `FULL_SUCCESS`, score `100`
+- `20260622T081440Z-9a0f4dc6`:
+  `nrf52833dk__f001_halted_target_silent_uart` -> `FULL_SUCCESS`, score `100`
+
+Important live issues that were exposed and fixed during this pass:
+
+- the turnkey loop previously counted intermediate flash/read states as failed
+  repair cycles and could block a repaired code-bug case before
+  `run_green_check` had a chance to verify the fix
+- the turnkey loop previously kept the old active `session_id` after
+  `run_green_check` intentionally disconnected, which misled later turns into
+  acting on a dead session instead of reconnecting cleanly
+- the injected-bug benchmark prompt was too loose for single-symptom bug cases,
+  so the model could over-repair and damage a healthy tracked observable; the
+  prompt now explicitly requires minimal repairs and case-family-specific
+  preservation rules
 
 ### Turnkey Commands
 
@@ -872,12 +924,13 @@ Full turnkey benchmark roll-up:
 uv run pyocd-debug-brain benchmark --suite pilot_v1_plus_b003_b004 --model <model>
 ```
 
-### What Should Be Verified In The First Live Turnkey Pass
+### What Has Already Been Verified Live
 
-For both `nucleo_l476rg` and `nrf52833dk`, verify:
+For both `nucleo_l476rg` and `nrf52833dk`, the current Codex-backed turnkey
+path has now been shown to do all of the following:
 
-- `pyocd-debug-brain run` creates a real `session_id`
-- the CLI creates:
+- create a real `session_id`
+- create:
   - `runs/<session_id>/run-metadata/turnkey_request.json`
   - `runs/<session_id>/run-metadata/turnkey_result.json`
   - `runs/<session_id>/run-metadata/turnkey_state.json`
@@ -885,25 +938,39 @@ For both `nucleo_l476rg` and `nrf52833dk`, verify:
   - `runs/<session_id>/logs/model_turns.jsonl`
   - `runs/<session_id>/logs/prompt.txt`
   - `runs/<session_id>/applied-patches/turnkey.diff`
-- the normal path uses `connect(board_id=...)` with no hard-coded probe UID
-- the normal path does not require an explicit serial port override
-- healthy freeform runs can explain why the board is healthy rather than merely
-  saying it is healthy
+- connect with `connect(board_id=...)` rather than a hard-coded UID
+- work without an explicit serial-port override on the normal path
+- explain healthy reference firmware in board-grounded terms rather than vague
+  generic prose
 
-For the turnkey benchmark path, verify:
+For the six-case pilot above, the turnkey path has also now been shown to:
 
-- the same 12 benchmark cases are reused
-- each case runs from one turnkey CLI command
-- the API-backed paths do not require Codex CLI or manual MCP registration
-- the CLI-backed paths do not require manual MCP registration and inherit the
-  existing local Codex/Claude authentication state
-- known-good cases still reach full success
-- observability-fault cases still diagnose non-code/runtime-state problems
-- at least 6 of the 8 injected-bug cases reach full success
-- no case scores below 50
-- suite average is at least 85
-- no forbidden recover usage appears on non-recover cases
-- no case watcher-blocks because the turnkey loop thrashes
+- confirm known-good cases as healthy
+- repair the `b001_wrong_boot_text` code bug on both boards
+- classify the halted-target silent-UART cases as observability/runtime-state
+  problems rather than firmware code bugs
+- produce complete benchmark artifacts under the canonical
+  `runs/<session_id>/...` roots
+
+### What Still Needs To Be Verified Before Calling Turnkey Closed
+
+The following proof work is still required before the turnkey product layer
+should be treated as complete:
+
+- run the full 12-case turnkey suite with the current Codex-backed path:
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --suite pilot_v1_plus_b003_b004`
+- confirm that the other injected-bug families also hold through the turnkey
+  path:
+  - `b002_wrong_known_value`
+  - `b003_silent_uart`
+  - `b004_dual_signal_regression`
+- compare at least one second live provider/model path against the same corpus:
+  - native OpenAI API
+  - native Anthropic API
+  - or a live Claude CLI configuration that actually resolves a working local
+    model
+- update `README.md` after the full live turnkey evidence is complete so the
+  repo-wide status matches this file
 
 ### Why Those Checks Matter
 
@@ -914,20 +981,18 @@ These are the core product claims for the first turnkey layer:
 - no reliance on prompt authoring, Codex installation, or MCP registration
 - no reopening of the underlying server/substrate architecture
 
-Latest post-fix Windows STM32 rerun:
+Latest scoped substrate reruns:
 
-- the benchmark timeout/failure-boundary fix has now also been re-proved live
-  on the attached Windows `nucleo_l476rg`
-- the following commands all passed in the current post-fix state:
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
-- all six STM32 cases reached `FULL_SUCCESS`, score `100`
-- this rerun closes the old Windows STM32 benchmark timeout boundary and is the
-  concrete reason `R12` is now unblocked on the STM32 side
+- both board-level truth paths were rerun successfully on the current macOS
+  mixed-board host:
+  - `uv run python host_bootstrap.py --board-id nucleo_l476rg`
+  - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
+  - `uv run python host_bootstrap.py --board-id nrf52833dk`
+  - `uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nrf52833dk`
+- this re-established that the remaining work is in the turnkey client rather
+  than in Stage 0 / Stage 1 substrate drift
 
 Important runner-accounting outcome:
 
@@ -973,26 +1038,23 @@ work is all in the turnkey product layer.
 
 ### Immediate Next Tasks
 
-1. Run the first live turnkey freeform verify/diagnose pass on:
-   - `nucleo_l476rg`
-   - `nrf52833dk`
-2. Confirm the turnkey run artifacts are written correctly into
-   `runs/<session_id>/...`.
-3. Run the first turnkey benchmark pilot on the frozen 12-case corpus:
-   - start with one known-good case per board
-   - then one bug case per board
-   - then one observability-fault case per board
-   - then the full `pilot_v1_plus_b003_b004` suite
-4. Record the observed turnkey benchmark results back into this file and
-   `README.md`.
-5. Compare turnkey results against the already-proven `R11` results:
-   - benchmark outcome parity
-   - lower operator burden
-   - no hidden Codex/MCP registration dependency
-6. If the live turnkey pass exposes real gaps:
-   - fix the turnkey loop, skill set, prompt bundle, or benchmark wrapper
-   - do not expand the benchmark corpus again before turnkey reliability is
-     stable
+1. Run the full 12-case turnkey suite on the current Codex-backed path:
+   - `uv run pyocd-debug-brain benchmark --provider codex-cli --suite pilot_v1_plus_b003_b004`
+2. Record the full-suite results here and in `README.md`:
+   - per-case outcome
+   - average score
+   - whether any case fell below `50`
+   - whether any watcher block or recover misuse occurred
+3. Pick one second live provider/model path and run the same ladder:
+   - freeform healthy run on both boards
+   - at minimum the same six-case pilot
+   - ideally the full 12-case suite
+4. Compare the second provider against the already-proven Codex-backed path:
+   - same case outcomes
+   - same safety behavior
+   - whether the normal path still works from `board_id` only
+5. Only after the full-suite and second-provider evidence exists, decide
+   whether the turnkey layer is ready to be treated as closed.
 
 ### Remaining Proof Work Before Broader Deployment Claims
 

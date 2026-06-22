@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import anyio
@@ -28,16 +28,106 @@ DEFAULT_MAX_ITERS = 12
 
 
 def _render_case_task(case: r11.BenchmarkCase) -> str:
-    return case.prompt_template.format(
-        board_id=case.board_id,
-        case_id=case.case_id,
-        build_command=case.allowed_actions.build_command or "(no local rebuild expected)",
-        flash_artifact=case.artifacts.flash_artifact,
-        symbol_artifact=case.artifacts.symbol_artifact,
-        uart_substring=case.expected_observables.uart_substring,
-        symbol_name=case.expected_observables.symbol_name,
-        symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
+    lines = [
+        f"You are validating benchmark case `{case.case_id}` on `{case.board_id}`.",
+        f"Case title: {case.title}",
+        "",
+        "Use only the turnkey client's action surface. In particular:",
+        "- connect with `connect(board_id=...)`",
+        "- do not pass a hard-coded probe UID",
+        "- do not pass a generic target override such as `cortex_m`",
+        "- use `run_green_check` for the canonical final healthy verification",
+        "- do not expect `read_symbol_u32` to exist as a direct tool in this client",
+        "",
+        "Tracked observables:",
+        f"- expected UART substring: `{case.expected_observables.uart_substring}`",
+        f"- expected symbol: `{case.expected_observables.symbol_name}` = 0x{case.expected_observables.symbol_value_u32:08X}",
+        f"- expected classification: `{case.success_criteria.expected_classification}`",
+    ]
+
+    if case.kind == "known_good":
+        lines.extend(
+            [
+                "",
+                "This case is intended to already be healthy.",
+                "- treat the workspace as read-only",
+                "- gather enough evidence to confirm the healthy baseline",
+                "- once healthy evidence is complete, run `run_green_check` and finalize",
+                "- do not edit source files or rebuild",
+            ]
+        )
+    elif case.kind == "injected_bug":
+        lines.extend(
+            [
+                "",
+                "This case contains an injected code bug.",
+                "- diagnose the fault from board evidence plus the provided workspace",
+                "- only edit files under the allowed roots",
+                f"- allowed edit roots: {', '.join(case.allowed_actions.allowed_edit_roots) or '(none)'}",
+                f"- expected changed files: {', '.join(case.success_criteria.expected_changed_files) or '(none)'}",
+                f"- build command: {case.allowed_actions.build_command or '(none)'}",
+                "- make the smallest source change that fixes the failing observable",
+                "- preserve any healthy tracked observable that is not implicated by the current symptom",
+                "- after any repair, rebuild and then run `run_green_check` before finalizing",
+            ]
+        )
+        if case.case_id.endswith("__b001_wrong_boot_text"):
+            lines.extend(
+                [
+                    "- this case's intended fault is the application UART success text, not the known symbol contract",
+                    "- preserve `stage1_known_value = 0x1234ABCD` and fix the UART print path only",
+                ]
+            )
+        elif case.case_id.endswith("__b002_wrong_known_value"):
+            lines.extend(
+                [
+                    "- this case's intended fault is the known symbol value, not the UART success text",
+                    "- preserve the `boot ok` UART behavior and repair the symbol/value path only",
+                ]
+            )
+        elif case.case_id.endswith("__b003_silent_uart"):
+            lines.extend(
+                [
+                    "- this case's intended fault is missing application success UART, while the known symbol contract stays healthy",
+                    "- restore the application UART success output without rewriting unrelated symbol logic",
+                ]
+            )
+        elif case.case_id.endswith("__b004_dual_signal_regression"):
+            lines.extend(
+                [
+                    "- this case intentionally breaks both the UART success text and the known symbol value",
+                    "- restore both tracked contracts, but still prefer a minimal repair inside the expected changed file",
+                ]
+            )
+    elif case.kind == "observability_fault":
+        lines.extend(
+            [
+                "",
+                "This case is an observability/runtime-state fault, not a code bug.",
+                "- do not edit source files",
+                "- prefer runtime-state tools such as get_state, reset, resume, and read_serial",
+                "- once the runtime state is restored, run `run_green_check` and finalize",
+            ]
+        )
+
+    if not case.allowed_actions.recover_allowed:
+        lines.extend(
+            [
+                "",
+                "Policy:",
+                "- `unlock_recover` is not a valid action for this case",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "Final answer requirements:",
+            "- return the result through the turnkey client's `finalize` action",
+            "- the final classification and summary must match the observed board behavior",
+        ]
     )
+    return "\n".join(lines)
 
 
 def _execution_to_agent_result(result: TurnkeyRunResult) -> r11.ParsedAgentResult:
@@ -196,10 +286,27 @@ async def run_case_async(
         allowed_edit_roots=case.allowed_actions.allowed_edit_roots,
         recover_allowed=case.allowed_actions.recover_allowed,
     )
+    before_session_dirs = r11._session_dirs()
     execution = await run_turnkey_with_provider(invocation, provider_config=provider_config)
+    after_session_dirs = r11._session_dirs()
+    new_session_roots = tuple(
+        after_session_dirs[name]
+        for name in sorted(set(after_session_dirs) - set(before_session_dirs))
+    )
 
+    resolved_session_id = execution.result.session_id
     run_root = execution.run_root
-    if execution.result.session_id is None or run_root is None:
+    if resolved_session_id is None and len(new_session_roots) == 1:
+        resolved_session_id = new_session_roots[0].name
+    if run_root is None and resolved_session_id is not None:
+        run_root = after_session_dirs.get(resolved_session_id)
+    if resolved_session_id is not None and execution.result.session_id != resolved_session_id:
+        execution = replace(
+            execution,
+            result=execution.result.model_copy(update={"session_id": resolved_session_id}),
+            run_root=run_root,
+        )
+    if resolved_session_id is None or run_root is None:
         verification = r11.VerificationSummary(
             flash_ok=False,
             uart_ok=False,
@@ -234,7 +341,10 @@ async def run_case_async(
             run_root=None,
         )
 
-    if len(execution.state.session_ids_seen) != 1:
+    session_ids_seen = execution.state.session_ids_seen or (
+        [resolved_session_id] if resolved_session_id is not None else []
+    )
+    if len(session_ids_seen) != 1:
         verification = r11.VerificationSummary(
             flash_ok=False,
             uart_ok=False,
@@ -262,7 +372,7 @@ async def run_case_async(
         return r11.CaseRunReport(
             case_id=case.case_id,
             board_id=case.board_id,
-            session_id=execution.result.session_id,
+            session_id=resolved_session_id,
             final_status="blocked",
             score_report=score_report,
             verification=verification,
@@ -280,7 +390,7 @@ async def run_case_async(
     return r11.CaseRunReport(
         case_id=case.case_id,
         board_id=case.board_id,
-        session_id=execution.result.session_id,
+        session_id=resolved_session_id,
         final_status=execution.result.final_status,
         score_report=score_report,
         verification=verification,

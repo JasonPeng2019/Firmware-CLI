@@ -213,6 +213,40 @@ def test_build_parser_defaults_to_incremental_pristine_mode() -> None:
     assert args.pristine == "auto"
 
 
+def test_ensure_west_python_reinstalls_when_pyelftools_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    west_venv_dir = tmp_path / "west-venv"
+    bin_dir = west_venv_dir / ("Scripts" if zephyr_build.sys.platform == "win32" else "bin")
+    bin_dir.mkdir(parents=True)
+    executable_suffix = ".exe" if zephyr_build.sys.platform == "win32" else ""
+    west_python = bin_dir / f"python{executable_suffix}"
+    cmake = bin_dir / f"cmake{executable_suffix}"
+    ninja = bin_dir / f"ninja{executable_suffix}"
+    west_python.write_text("", encoding="utf-8")
+    cmake.write_text("", encoding="utf-8")
+    ninja.write_text("", encoding="utf-8")
+
+    run_calls: list[list[str]] = []
+
+    def fake_has_module(_python: Path, module: str) -> bool:
+        return module == "patoolib"
+
+    def fake_run(cmd: list[str], cwd: Path | None = None, env=None, timeout_seconds: int = 600) -> None:
+        del cwd, env, timeout_seconds
+        run_calls.append(cmd)
+
+    monkeypatch.setattr(zephyr_build, "_python_has_module", fake_has_module)
+    monkeypatch.setattr(zephyr_build, "_run", fake_run)
+
+    resolved = zephyr_build._ensure_west_python(west_venv_dir)
+
+    assert resolved == west_python
+    assert any(cmd[:5] == [str(west_python), "-m", "pip", "install", "--upgrade"] for cmd in run_calls)
+    assert any("pyelftools" in cmd for cmd in run_calls)
+
+
 def test_should_use_scratch_build_for_long_windows_paths(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(zephyr_build, "sys", type("Sys", (), {"platform": "win32"})())
     long_root = tmp_path

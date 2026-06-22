@@ -279,6 +279,7 @@ def _ensure_west_python(west_venv_dir: Path) -> Path:
         west_python.exists()
         and all(tool.exists() for tool in required_tools)
         and _python_has_module(west_python, "patoolib")
+        and _python_has_module(west_python, "elftools")
     ):
         return west_python
 
@@ -287,7 +288,20 @@ def _ensure_west_python(west_venv_dir: Path) -> Path:
         _print_step(f"bootstrap west venv: {west_venv_dir}")
         _run([sys.executable, "-m", "venv", str(west_venv_dir)])
     _run([str(west_python), "-m", "pip", "install", "--upgrade", "pip"])
-    _run([str(west_python), "-m", "pip", "install", "west", "cmake", "ninja", "patool", "py7zr"])
+    _run(
+        [
+            str(west_python),
+            "-m",
+            "pip",
+            "install",
+            "west",
+            "cmake",
+            "ninja",
+            "patool",
+            "py7zr",
+            "pyelftools",
+        ]
+    )
     return west_python
 
 
