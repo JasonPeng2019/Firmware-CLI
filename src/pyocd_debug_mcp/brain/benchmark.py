@@ -32,6 +32,8 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
         board_id=case.board_id,
         case_id=case.case_id,
         build_command=case.allowed_actions.build_command or "(no local rebuild expected)",
+        flash_artifact=case.artifacts.flash_artifact,
+        symbol_artifact=case.artifacts.symbol_artifact,
         uart_substring=case.expected_observables.uart_substring,
         symbol_name=case.expected_observables.symbol_name,
         symbol_value_u32_hex=f"0x{case.expected_observables.symbol_value_u32:08X}",
