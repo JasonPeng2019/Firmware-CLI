@@ -84,15 +84,15 @@ missing before this merge pass:
 - generic alternate-suite acceptance logic so retained-board turnkey suites no
   longer fail only because the suite is not the scoped pair
 
-What is still missing is the second-provider proof needed to call the turnkey
-layer fully closed.
+What is still missing is full official-pair second-provider proof and
+fresh-machine portability proof needed to call the turnkey layer fully closed.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:
 
-- make one second live provider path work against the same turnkey ladder
-  without changing the scoped corpus or the closure bar
-- rerun the freeform -> pilot -> full-suite ladder for that second provider
+- extend the now-working second live provider path across the full official
+  scoped pair and full turnkey ladder without changing the scoped corpus or the
+  closure bar
 - run a true fresh-machine Windows validation of the managed Zephyr/no-NCS path
 - run the equivalent macOS managed-Zephyr validation on a clean host setup
 
@@ -948,17 +948,23 @@ Important live issues that were exposed and fixed during this pass:
 
 ### Latest Live Claude CLI Evidence
 
-The second-provider proof is currently blocked before any board-specific
-validation can happen on this macOS host.
+The second-provider path is no longer globally blocked. The latest live status
+is:
 
-Attempted commands:
+- historical macOS `--model sonnet` attempts failed before board action
+- current Windows STM32 Claude runs are now green on the attached
+  `nucleo_l476rg`
+- the remaining gap is full official-pair closure, not basic provider
+  usability
+
+Historical macOS attempted commands:
 
 ```bash
 uv run pyocd-debug-brain run --provider claude-cli --model sonnet --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --model sonnet --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 ```
 
-Observed result on both commands:
+Historical macOS observed result on both commands:
 
 - no `session_id` was created
 - no board session directory was created under `runs/<session_id>/...`
@@ -967,13 +973,29 @@ Observed result on both commands:
 - the exact provider error was:
   - `API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-4-20250514"}}`
 
+New Windows STM32 evidence:
+
+```bash
+uv run pyocd-debug-brain run --provider claude-cli --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain benchmark --provider claude-cli --case-id nucleo_l476rg__k001_reference_green
+```
+
+Observed result on the Windows Nucleo pass:
+
+- freeform run passed with `session_id=20260623T052725Z-a07db21b`
+- benchmark known-good case passed with `session_id=20260623T052856Z-121bed12`
+- the provider reached real board action, created normal run artifacts, and
+  completed verification successfully
+
 Why this matters:
 
-- this is a provider configuration / entitlement failure on the current host,
-  not a Stage 0 / Stage 1 / MCP substrate failure
-- because freeform smoke failed before the first live board action, the Claude
-  six-case pilot and the Claude full 12-case suite were intentionally **not**
-  run in this pass
+- the old macOS 404 was a host/provider configuration failure, not a Stage 0 /
+  Stage 1 / MCP substrate failure
+- the newer Windows proof shows the Claude provider seam itself is viable in
+  the merged product
+- the Claude six-case pilot and full 12-case official-pair suite are still
+  intentionally pending until the scoped Nordic board is attached for a real
+  closure pass
 - the turnkey layer therefore remains open until a real second-provider ladder
   completes successfully
 
@@ -1079,18 +1101,16 @@ now been shown to:
 The following proof work is still required before the turnkey product layer
 should be treated as complete:
 
-- make the Claude CLI provider usable on this host for the planned comparison:
-  - the current `--model sonnet` path resolves to an unavailable model on this
-    account/host and returns a 404 before any board work begins
-- once Claude freeform smoke is working, rerun the same closure ladder:
-  - freeform healthy verification on both boards
-  - six-case pilot
-  - full `pilot_v1_plus_b003_b004` suite
+- extend the now-working Claude CLI path from the attached STM32 proof to the
+  official scoped pair closure ladder:
+  - healthy freeform verification on both scoped boards
+  - six-case pilot-equivalent coverage for the attached board(s)
+  - full `pilot_v1_plus_b003_b004` suite once the official pair is attached
 - if Claude is not the intended second-provider path after all, explicitly
   freeze a replacement provider/model path and rerun the same ladder rather
   than changing the closure bar informally
-- after a real second-provider pass exists, update the remaining repo-facing
-  status text so `R12` can be treated as closed
+- after a real official-pair second-provider pass exists, update the remaining
+  repo-facing status text so `R12` can be treated as closed
 
 ### Why Those Checks Matter
 
@@ -1158,19 +1178,18 @@ work is all in the turnkey product layer.
 
 ### Immediate Next Tasks
 
-1. Fix the second-provider path on this host.
-   - the current `claude-cli --model sonnet` flow fails before any board action
-     with:
-     `API Error: 404 ... model: claude-sonnet-4-20250514`
-2. Once that provider issue is fixed, rerun the same ladder:
+1. Re-run the official scoped Nordic `R12` live chain in the latest merged
+   benchmark state on `nrf52833dk`, not just historically.
+2. Extend the second-provider ladder from the newly proven STM32 Claude runs to
+   the full official scoped pair:
    - freeform healthy run on both boards
-   - six-case pilot
-   - full `pilot_v1_plus_b003_b004` suite
+   - six-case pilot-equivalent coverage for the attached board(s)
+   - full `pilot_v1_plus_b003_b004` suite when the pair is attached together
 3. Compare the second provider against the already-proven Codex-backed path:
    - same case outcomes
    - same safety behavior
    - whether the normal path still works from `board_id` only
-4. Only after the second-provider evidence exists, decide whether the turnkey
+4. Only after the official-pair second-provider evidence exists, decide whether the turnkey
    layer is ready to be treated as closed.
 
 ### Remaining Proof Work Before Broader Deployment Claims
@@ -1345,8 +1364,10 @@ If resuming later:
 > frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
 > a native Python turnkey brain plus `pyocd-debug-brain`, and the Codex-backed
 > turnkey path has now passed the full frozen 12-case suite on the scoped
-> pair. `R12` is still open only because the required second-provider proof is
-> currently blocked by the local Claude CLI model configuration on this host.
+> pair. `R12` is still open because the full official-pair second-provider
+> closure ladder and the fresh-machine no-`NCS` portability proof are not done
+> yet, even though the Claude CLI path is now live-proven on the attached
+> Windows STM32 host.
 Current Windows STM32 retest status on this host:
 
 - the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the
@@ -1359,20 +1380,36 @@ Current Windows STM32 retest status on this host:
   Codex budget, not a remaining STM32 board-control defect
 - the benchmark runner now gives bug-repair cases a longer default Codex budget
   so diagnose -> patch/build -> flash/verify runs can finish cleanly
+- the later Windows STM32 reproof also exposed and fixed a second real runner
+  defect:
+  - long Codex turnkey prompts could overflow the Windows command-line length
+    limit during `nucleo_l476rg__b003_silent_uart`
+  - the fix now sends Codex prompts over stdin with `codex exec -`, and the
+    failing case plus the remaining STM32 ladder were rerun to green
+- the Claude CLI provider is no longer blocked on this host:
+  - `uv run pyocd-debug-brain run --provider claude-cli --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."`
+    passed with session root `20260623T052725Z-a07db21b`
+  - `uv run pyocd-debug-brain benchmark --provider claude-cli --case-id nucleo_l476rg__k001_reference_green`
+    passed with session root `20260623T052856Z-121bed12`
 - the benchmark prompts remain intentionally self-contained so the nested
   benchmark agent stays on the board task instead of re-reading workflow docs
 - that self-contained benchmark behavior is not the deployment rule; real
   workflow/deployment runs should still read repo workflow docs and skills
   before acting
 - the currently live-proven Windows STM32 commands are:
+  - `uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs`
+  - `uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg`
   - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
   - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__k001_reference_green`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b001_wrong_boot_text`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b002_wrong_known_value`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__f001_halted_target_silent_uart`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b003_silent_uart`
-  - `uv run python -m tests.harness.r11_benchmark --case-id nucleo_l476rg__b004_dual_signal_regression`
+  - `uv run pyocd-debug-brain run --provider codex-cli --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__k001_reference_green`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__b001_wrong_boot_text`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__b002_wrong_known_value`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__f001_halted_target_silent_uart`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__b003_silent_uart`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nucleo_l476rg__b004_dual_signal_regression`
+  - `uv run pyocd-debug-brain run --provider claude-cli --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."`
+  - `uv run pyocd-debug-brain benchmark --provider claude-cli --case-id nucleo_l476rg__k001_reference_green`
 - during this Windows retest, the right boundary is no longer a flat 60-second
   wall
   - short runtime calls such as a single UART read should still fail fast if

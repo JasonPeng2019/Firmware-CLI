@@ -1302,7 +1302,6 @@ def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path)
         model="gpt-5.5",
         working_dir=tmp_path,
         output_path=tmp_path / "out.json",
-        prompt="turn prompt",
     )
     assert command[:6] == ["codex", "-a", "never", "-s", "danger-full-access", "exec"]
     assert "-o" in command
@@ -1310,7 +1309,7 @@ def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path)
     assert "gpt-5.5" in command
     assert "-C" in command
     assert str(tmp_path) in command
-    assert command[-1] == "turn prompt"
+    assert command[-1] == "-"
 
 
 def test_claude_cli_command_supports_optional_model() -> None:

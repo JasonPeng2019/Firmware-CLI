@@ -278,6 +278,7 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
     def fake_run(command: list[str], **kwargs: object) -> object:
         captured["encoding"] = kwargs.get("encoding")
         captured["errors"] = kwargs.get("errors")
+        captured["input"] = kwargs.get("input")
         (output_dir / "turn_decision.json").write_text(
             json.dumps(
                 {
@@ -305,6 +306,7 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
+    assert captured["input"] == "sys\n\nprompt\n"
 
 
 def test_claude_cli_provider_uses_utf8_subprocess_capture(

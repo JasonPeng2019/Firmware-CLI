@@ -32,13 +32,14 @@ class CodexCLIDecisionProvider:
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-codex-") as tmpdir:
                 tmp_path = Path(tmpdir)
                 output_path = tmp_path / "turn_decision.json"
+                prompt_text = _compose_prompt(instructions, current_prompt)
                 result = subprocess.run(
                     _build_codex_command(
                         model=self._model,
                         working_dir=tmp_path,
                         output_path=output_path,
-                        prompt=_compose_prompt(instructions, current_prompt),
                     ),
+                    input=prompt_text,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
@@ -82,7 +83,6 @@ def _build_codex_command(
     model: str | None,
     working_dir: Path,
     output_path: Path,
-    prompt: str,
 ) -> list[str]:
     command = [
         "codex",
@@ -103,7 +103,7 @@ def _build_codex_command(
     ]
     if model:
         command.extend(["--model", model])
-    command.append(prompt)
+    command.append("-")
     return command
 
 

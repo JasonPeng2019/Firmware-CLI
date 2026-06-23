@@ -40,6 +40,34 @@ Roadmap anchor:
   - `uv run mypy src`
 - Re-ran the non-hardware ladder again in the final merged state on June 23,
   2026 and it still passed cleanly.
+- Re-proved the official scoped STM32 board in the latest merged Windows state:
+  - `uv run python host_bootstrap.py --board-id nucleo_l476rg --install-packs`
+  - `uv run pyocd-zephyr-build --app-dir firmware/nucleo_l476rg/reference/src --build-dir firmware/nucleo_l476rg/reference/build --board nucleo_l476rg`
+  - `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
+  - `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
+  - freeform Codex run session root: `20260623T050120Z-919e5a4b`
+- Re-proved all six implemented STM32 Codex turnkey benchmark cases on the
+  attached `nucleo_l476rg` in the latest merged state:
+  - `nucleo_l476rg__k001_reference_green` -> `20260623T050248Z-9551bc71`
+  - `nucleo_l476rg__b001_wrong_boot_text` -> `20260623T050523Z-134fe0ea`
+  - `nucleo_l476rg__b002_wrong_known_value` -> `20260623T050903Z-5f22ed8c`
+  - `nucleo_l476rg__f001_halted_target_silent_uart` -> `20260623T051209Z-a707826e`
+  - `nucleo_l476rg__b003_silent_uart` -> `20260623T052040Z-0bcc2980`
+  - `nucleo_l476rg__b004_dual_signal_regression` -> `20260623T052407Z-2ec67f33`
+- Fixed a real Windows portability defect exposed by the STM32 reproof:
+  - the Codex CLI provider used to append the fully composed turnkey prompt on
+    the command line
+  - `nucleo_l476rg__b003_silent_uart` reproduced `FileNotFoundError:
+    [WinError 206] The filename or extension is too long`
+  - the fix now sends the prompt over stdin with `codex exec -`, which is
+    portable and preserves the full prompt contract
+  - regression coverage was added and the non-hardware ladder was rerun clean
+- Re-proved the second provider on the attached STM32 at least through a live
+  healthy freeform run plus one benchmark case:
+  - `uv run pyocd-debug-brain run --provider claude-cli --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."`
+    -> session root `20260623T052725Z-a07db21b`
+  - `uv run pyocd-debug-brain benchmark --provider claude-cli --case-id nucleo_l476rg__k001_reference_green`
+    -> session root `20260623T052856Z-121bed12`
 - Re-proved the attached `nrf52840dk` substrate on this Windows host:
   - `uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840`
   - `uv run python host_bootstrap.py --board-id nrf52840dk`
@@ -78,10 +106,10 @@ Roadmap anchor:
 ## TODO
 
 - Re-run the official scoped-pair R12 ladder on `nrf52833dk + nucleo_l476rg`
-  after these mainline hardening changes, so the official pair is re-proven in
+  after these mainline hardening changes, so the Nordic half is re-proven in
   the latest post-merge state rather than only historically proven.
-- Clear the required second-provider closure ladder on the official scoped pair
-  once the chosen provider/model path is usable on this host.
+- Extend the second-provider proof from the attached STM32 smoke evidence above
+  to the full official scoped pair and full benchmark ladder.
 - Run true fresh-machine Windows and macOS no-`NCS` portability proof for the
   managed Zephyr path.
 
@@ -90,7 +118,8 @@ Roadmap anchor:
 - The official scoped product truth is still the pair `nrf52833dk +
   nucleo_l476rg`; the `nrf52840dk` proof here is retained-board parity, not a
   replacement scoped product claim.
-- The required second-provider R12 closure pass is still open.
+- The second-provider closure bar is no longer completely blocked on this host,
+  but the full official-pair ladder is still open.
 - Fresh-machine no-`NCS` proof is still open on both Windows and macOS.
 
 ## Hardware hand-off
@@ -119,6 +148,15 @@ Roadmap anchor:
   - `uv run ruff check .`
   - `uv run mypy src`
 - Live attached-board proof on June 23, 2026:
+  - the official STM32 board `nucleo_l476rg` passed `host_bootstrap.py`,
+    rebuild, `stage0_check.py`, and `stage1_smoke` again in the current merged
+    Windows state
+  - all six implemented STM32 Codex benchmark cases are green in the current
+    merged state
+  - the Codex Windows prompt-overflow defect was fixed and re-proven on real
+    hardware after reproducing it in `nucleo_l476rg__b003_silent_uart`
+  - the Claude CLI provider is now live-proven on this host for one STM32
+    healthy freeform run and one STM32 benchmark case
   - the retained-board reference rebuild passed for `nrf52840dk`
   - `host_bootstrap.py`, `stage0_check.py`, and `stage1_smoke` all passed on
     the connected `nrf52840dk`
@@ -130,7 +168,7 @@ Roadmap anchor:
 
 ## Pending verification
 
-- Official scoped-pair reproof in the latest merged state
-- Second-provider closure on the official pair
+- Official scoped Nordic reproof in the latest merged state
+- Second-provider full-ladder closure on the official pair
 - Fresh-machine Windows no-`NCS` proof
 - Fresh-machine macOS no-`NCS` proof
