@@ -357,6 +357,12 @@ Operator-shell note:
 
 - `pyocd-debug` uses the Rich + `prompt_toolkit` shell in a real TTY and
   falls back to plain non-live printing when stdout is not interactive
+- the REPL now defaults to summary-first output; use `/raw on` to show full
+  completed provider turns live
+- the REPL now supports persistent repair/artifact context and guided commands:
+  - `/workspace`, `/build-command`, `/flash-artifact`, `/elf`
+  - `/verify`, `/diagnose`, `/repair`
+  - `/prompt`, `/diff`, `/serial`, `/score`, `/events`
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
 

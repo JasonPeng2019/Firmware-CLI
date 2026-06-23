@@ -125,18 +125,30 @@ The current repo declares these console scripts in `pyproject.toml`:
 
 - `pyocd-debug-mcp`
 - `pyocd-debug-brain`
+- `pyocd-debug`
 
-This document is about the current `pyocd-debug-brain` surface.
+This document now distinguishes:
+
+- `pyocd-debug-brain`
+  - the stable headless/automation surface
+- `pyocd-debug`
+  - the operator-facing Pass 1 shell over the same brain/runtime
 
 ### Current Subcommands
 
-The current turnkey CLI has exactly two subcommands:
+The current headless turnkey CLI has exactly two subcommands:
 
 - `pyocd-debug-brain run`
 - `pyocd-debug-brain benchmark`
 
-There is no current shell mode, no REPL mode, no history mode, and no resume
-mode.
+The current operator-facing CLI adds:
+
+- `pyocd-debug` with no args for the REPL shell
+- `pyocd-debug run`
+- `pyocd-debug benchmark`
+- `pyocd-debug history`
+- `pyocd-debug show <session_id>`
+- `pyocd-debug rerun <session_id>`
 
 ### `run` Command: Current Contract
 
@@ -347,11 +359,11 @@ presentation/runtime file. The right move is to keep the current headless CLI
 stable and add a richer client-facing CLI UX layer on top of the same brain
 core.
 
-## Proposed Pure CLI UX Layer
+## Implemented Pure CLI UX Layer (Pass 1)
 
 ### Product Shape
 
-The UX layer should be a pure terminal shell, not a web frontend and not a
+The UX layer is now a pure terminal shell, not a web frontend and not a
 separate remote service.
 
 It should feel like a modern agent CLI:
@@ -363,34 +375,26 @@ It should feel like a modern agent CLI:
 - explainable
 - still scriptable when needed
 
-This means:
+That currently means:
 
 - the brain remains the headless engine
 - the UX layer becomes the operator shell
 - both share the same `TurnkeyInvocation`, `TurnkeyExecution`, provider layer,
   and MCP client
 
-### Recommended Integration Model
+### Implemented Integration Model
 
-Recommended design:
+Implemented design:
 
 - keep `pyocd-debug-brain` as the current stable command
-- add a new operator-facing command or subcommand for the richer shell
+- add a separate client-facing command:
+  - `pyocd-debug`
 
-Two viable naming options:
-
-- `pyocd-debug-brain console`
-- `pyocd-debug`
-
-Recommendation:
-
-- prefer a separate client-facing command such as `pyocd-debug`
-
-Reason:
+Why this was the right shape:
 
 - it cleanly separates headless automation from operator UX
-- it lets the project keep the current benchmark/docs surface intact
-- it gives room for a richer shell without overloading the benchmark CLI
+- it keeps the benchmark/docs surface for `pyocd-debug-brain` stable
+- it allows richer shell behavior without overloading the headless CLI
 
 ### UX Layer Goals
 
@@ -428,16 +432,45 @@ The shell should support:
 - opening into an interactive prompt
 - selecting provider/model defaults once for a session
 - selecting a board once for a session
+- setting repair/build context once for a session
 - issuing high-level commands such as:
   - verify
   - diagnose
   - repair
   - benchmark
   - history
-  - resume
+  - show
+  - rerun
   - artifacts
-  - disconnect
   - quit
+
+What is implemented today:
+
+- `/board <id>`
+- `/provider <name>`
+- `/model <name|default>`
+- `/workspace <path|clear>`
+- `/build-command "<cmd>"|clear`
+- `/flash-artifact <path|default>`
+- `/elf <path|default>`
+- `/run <task>`
+- `/verify [extra text]`
+- `/diagnose [extra text]`
+- `/repair [extra text]`
+- `/benchmark case <case_id>`
+- `/benchmark suite <suite_name>`
+- `/history`
+- `/show <session_id>`
+- `/rerun <session_id>`
+- `/artifacts [session_id]`
+- `/prompt [session_id]`
+- `/diff [session_id]`
+- `/serial [session_id]`
+- `/score [session_id]`
+- `/events [session_id]`
+- `/raw on|off|last`
+- `/help`
+- `/quit`
 
 The prompt should show live context, for example:
 
@@ -531,6 +564,11 @@ Important rule:
 For the first version, "resume/history" can mean session inspection and rerun
 guidance rather than true live reconnection to an in-progress agent run.
 
+This remains the implemented truth today:
+
+- `history` / `show` / `rerun` are real
+- true live reconnect/resume is still deferred
+
 ### 6. Richer Error / Refusal Presentation
 
 The current product already has stable refusal and block text:
@@ -556,6 +594,12 @@ This is especially important for:
 Unexpected runtime/backend failures should remain visibly different from policy
 refusals.
 
+Current implementation note:
+
+- refusal/block/failure panels are now rendered as literal text panels so
+  stable codes such as `Refused [ux/missing-repair-context]: ...` remain
+  visible to the operator
+
 ### 7. Better Artifact Discovery
 
 The UX layer should make the existing run artifacts easy to discover.
@@ -575,6 +619,15 @@ At minimum the operator should be able to see or open:
 The operator should not need to manually browse `runs/<session_id>/...` unless
 they want to.
 
+Current implementation note:
+
+- generic `/artifacts` inventory plus shortcut commands now exist for:
+  - `/prompt`
+  - `/diff`
+  - `/serial`
+  - `/score`
+  - `/events`
+
 ### 8. More Guided Operator Flow
 
 The UX layer should offer guided entry points for the common workflows people
@@ -589,6 +642,13 @@ will actually use:
 
 The goal is to reduce operator burden without weakening the current safety and
 benchmark contracts.
+
+Current implementation note:
+
+- `/verify`, `/diagnose`, and `/repair` are implemented as thin wrappers over
+  the existing freeform turnkey path
+- `/repair` refuses deterministically unless workspace/build context has been
+  set in the shell first
 
 ## Proposed Architecture
 

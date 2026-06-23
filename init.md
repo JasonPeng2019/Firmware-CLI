@@ -362,6 +362,23 @@ Turnkey notes:
     rendering
   - `history`, `show`, and `rerun` inspect saved `runs/<session_id>/...`
     artifacts
+  - the REPL now defaults to summary-first rendering; use `/raw on` to show
+    completed raw provider turns live
+  - the REPL now supports persistent repair/artifact context:
+    - `/workspace`
+    - `/build-command`
+    - `/flash-artifact`
+    - `/elf`
+  - the REPL now supports guided commands:
+    - `/verify`
+    - `/diagnose`
+    - `/repair`
+  - the REPL now supports artifact shortcuts:
+    - `/prompt`
+    - `/diff`
+    - `/serial`
+    - `/score`
+    - `/events`
   - in non-TTY output contexts it falls back to plain printing instead of
     requiring Rich live rendering support
 - Valid turnkey providers are:

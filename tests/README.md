@@ -46,7 +46,9 @@ Current UX-layer relationship:
   - benchmark path used by `tests/harness/r12_turnkey_benchmark.py`
 - `pyocd-debug`
   - operator-facing CLI over the same turnkey brain
-  - pretty/live rendering, history/show/rerun flows, and raw-output controls
+  - pretty/live rendering, history/show/rerun flows, summary-first raw-output
+    controls, persistent repair context, guided verify/diagnose/repair
+    commands, and artifact shortcuts
   - does not replace the harnesses or change the benchmark corpus/schema
 
 Current live status:
@@ -57,8 +59,8 @@ Current live status:
 - the `R12` second-provider closure check is still open because the current
   `claude-cli --model sonnet` path fails before any board action on this host
 - the Pass 1 `pyocd-debug` shell is implemented in code and covered by the
-  local non-hardware test/lint/typecheck ladder; provider-token streaming is
-  still the next UX follow-up
+  local non-hardware test/lint/typecheck ladder; provider-token streaming and
+  true live session resume are still the next UX follow-up
 
 Keep bug-variant source trees under `firmware/<board>/bugs/`. Keep harness and
 test definitions under `tests/`.

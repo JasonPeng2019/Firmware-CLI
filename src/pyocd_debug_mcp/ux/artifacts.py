@@ -8,6 +8,14 @@ from pathlib import Path
 
 from pyocd_debug_mcp.ux.history import SessionBundle
 
+ARTIFACT_SHORTCUT_LABELS: dict[str, tuple[str, ...]] = {
+    "prompt": ("prompt",),
+    "diff": ("turnkey_diff", "agent_diff"),
+    "serial": ("final_serial_excerpt",),
+    "score": ("score",),
+    "events": ("brain_events", "server_events"),
+}
+
 
 @dataclass(frozen=True)
 class ArtifactEntry:
@@ -36,6 +44,18 @@ def artifact_entries(bundle: SessionBundle) -> list[ArtifactEntry]:
         ("final_serial_excerpt", run_root / "captured-serial" / "final_excerpt.txt"),
     ]
     return [ArtifactEntry(label=label, path=path) for label, path in candidates if path.exists()]
+
+
+def find_artifact_entry(bundle: SessionBundle, label: str) -> ArtifactEntry | None:
+    for entry in artifact_entries(bundle):
+        if entry.label == label:
+            return entry
+    return None
+
+
+def find_shortcut_entries(bundle: SessionBundle, shortcut: str) -> tuple[ArtifactEntry, ...]:
+    labels = ARTIFACT_SHORTCUT_LABELS.get(shortcut, ())
+    return tuple(entry for label in labels if (entry := find_artifact_entry(bundle, label)) is not None)
 
 
 def preview_text(path: Path, *, max_lines: int = 24, max_chars: int = 5000) -> str:

@@ -10,10 +10,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.status import Status
 from rich.table import Table
+from rich.text import Text
 
 from pyocd_debug_mcp.brain.events import BrainEvent
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution
-from pyocd_debug_mcp.ux.artifacts import artifact_entries, preview_json, preview_text
+from pyocd_debug_mcp.ux.artifacts import ArtifactEntry, artifact_entries, preview_json, preview_text
 from pyocd_debug_mcp.ux.history import HistoryEntry, SessionBundle
 
 RawOutputPolicy = Literal["off", "final", "all"]
@@ -103,13 +104,13 @@ class UXRenderer:
             self.console.print(f"[blue]verification[/blue] {verification}")
             return
         if event.event_kind == "refusal":
-            self.console.print(Panel(event.message, border_style="yellow", title="Refusal"))
+            self.console.print(Panel(Text(event.message), border_style="yellow", title="Refusal"))
             return
         if event.event_kind == "block":
-            self.console.print(Panel(event.message, border_style="red", title="Blocked"))
+            self.console.print(Panel(Text(event.message), border_style="red", title="Blocked"))
             return
         if event.event_kind == "unexpected_failure":
-            self.console.print(Panel(event.message, border_style="red", title="Failure"))
+            self.console.print(Panel(Text(event.message), border_style="red", title="Failure"))
             return
         if event.event_kind == "final_result":
             self.console.print(f"[bold green]{event.message}[/bold green]")
@@ -240,19 +241,22 @@ class UXRenderer:
         if not preview:
             return
         for entry in artifact_entries(bundle):
-            if entry.path.suffix == ".json":
-                self.console.print(Panel(preview_json(entry.path), title=entry.label, border_style="blue"))
-            elif entry.path.suffix in {".txt", ".jsonl", ".diff"}:
-                self.console.print(Panel(preview_text(entry.path), title=entry.label, border_style="blue"))
+            self.render_artifact_entry(entry)
+
+    def render_artifact_entry(self, entry: ArtifactEntry, *, title: str | None = None) -> None:
+        if entry.path.suffix == ".json":
+            self.console.print(Panel(preview_json(entry.path), title=title or entry.label, border_style="blue"))
+        elif entry.path.suffix in {".txt", ".jsonl", ".diff"}:
+            self.console.print(Panel(preview_text(entry.path), title=title or entry.label, border_style="blue"))
 
     def print_info(self, message: str) -> None:
         self.console.print(message)
 
     def print_error(self, message: str) -> None:
-        self.console.print(Panel(message, title="Error", border_style="red"))
+        self.console.print(Panel(Text(message), title="Error", border_style="red"))
 
     def print_refusal(self, message: str) -> None:
-        self.console.print(Panel(message, title="Refused", border_style="yellow"))
+        self.console.print(Panel(Text(message), title="Refused", border_style="yellow"))
 
     def show_last_raw(self) -> None:
         if self._last_provider_output is None:

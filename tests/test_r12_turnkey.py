@@ -20,7 +20,12 @@ from pyocd_debug_mcp.brain.actions import (
     VerificationSnapshot,
 )
 from pyocd_debug_mcp.brain.cli import build_parser as build_turnkey_cli_parser
-from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation, load_provider_config
+from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
+    build_turnkey_invocation,
+    load_provider_config,
+    task_requires_code_fix,
+)
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     _build_claude_command,
@@ -118,6 +123,17 @@ def test_load_provider_config_supports_cli_providers_without_model(
     assert claude.provider == "claude-cli"
     assert claude.api_key is None
     assert claude.model is None
+
+
+def test_task_requires_code_fix_ignores_negated_edit_language() -> None:
+    assert task_requires_code_fix("Fix the wrong UART boot signature.") is True
+    assert task_requires_code_fix("Repair this firmware and explain the change.") is True
+    assert (
+        task_requires_code_fix(
+            "Verify this reference firmware is healthy and explain why. Do not edit source files."
+        )
+        is False
+    )
 
 
 def test_skill_loader_selects_common_and_family_skills_deterministically() -> None:
