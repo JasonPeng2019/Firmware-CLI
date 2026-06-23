@@ -17,6 +17,7 @@ from pyocd_debug_mcp.brain.config import (
     build_turnkey_invocation,
     load_provider_config,
 )
+from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -284,6 +285,7 @@ async def run_case_async(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
 ) -> r11.CaseRunReport:
     case = r11.load_case(case_id)
     if case.scoring_profile != r11.DEFAULT_SCORING_PROFILE:
@@ -314,7 +316,11 @@ async def run_case_async(
         recover_allowed=case.allowed_actions.recover_allowed,
     )
     before_session_dirs = r11._session_dirs()
-    execution = await run_turnkey_with_provider(invocation, provider_config=provider_config)
+    execution = await run_turnkey_with_provider(
+        invocation,
+        provider_config=provider_config,
+        event_sink=event_sink,
+    )
     after_session_dirs = r11._session_dirs()
     new_session_roots = tuple(
         after_session_dirs[name]
@@ -432,6 +438,7 @@ def run_case(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
 ) -> r11.CaseRunReport:
     return anyio.run(
         lambda: run_case_async(
@@ -440,6 +447,7 @@ def run_case(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            event_sink=event_sink,
         )
     )
 
@@ -451,6 +459,7 @@ def run_suite(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
 ) -> list[r11.CaseRunReport]:
     return [
         run_case(
@@ -459,6 +468,7 @@ def run_suite(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            event_sink=event_sink,
         )
         for case in r11.load_suite(suite_name)
     ]

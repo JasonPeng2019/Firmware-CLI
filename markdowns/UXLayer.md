@@ -1,15 +1,21 @@
 # UX Layer
 
-> **Status:** proposal / design note. This document describes a client-facing
-> terminal UX layer over the existing `R12` turnkey brain. It does **not**
-> override `markdowns/firmware_agent_build_plan_concrete (10).md` or
-> `markdowns/curr/r12_turnkey_spec.md`. It is a concrete operator-shell design
-> proposal for the current implementation.
+> **Status:** Pass 1 implemented, Pass 2 pending. This document now records the
+> implemented client-facing terminal UX layer over the existing `R12` turnkey
+> brain. It does **not** override
+> `markdowns/firmware_agent_build_plan_concrete (10).md` or
+> `markdowns/curr/r12_turnkey_spec.md`; it is the concrete UX-layer design note
+> for the current implementation and the follow-up token-streaming pass.
 
 ## Non-Negotiable First Change
 
 Before anything else can be done, add a structured event stream or callback
 hook from the brain loop.
+
+This prerequisite is now implemented in `src/pyocd_debug_mcp/brain/events.py`
+and threaded through the turnkey loop. The new operator shell consumes those
+events directly and the run artifacts now also persist
+`runs/<session_id>/logs/brain_events.jsonl`.
 
 This is the one concrete prerequisite for a serious CLI UX layer. Without it,
 the repo can only produce end-of-run summaries and post-hoc artifacts. That is
@@ -54,9 +60,9 @@ What this first change should provide:
   - `verification_snapshot`
   - `message`
 
-This should be treated as the blocker item ahead of any shell polish. If it is
-not added first, the UX layer will either duplicate orchestration logic or
-become a fragile stdout parser.
+This was the blocker item ahead of shell polish. The implementation now uses
+that event stream as the single live-rendering substrate instead of scraping
+stdout or replaying artifacts after the fact.
 
 ## Purpose
 
@@ -74,6 +80,38 @@ What it does **not** yet have is a strong operator-facing terminal shell.
 The goal of this proposal is to define a pure CLI UX layer that sits on top of
 the existing brain/runtime and makes the product feel closer to Codex CLI or
 Claude Code while preserving the current scriptable surface.
+
+## Implemented Pass 1
+
+The current repo now ships the Pass 1 UX layer with these implemented pieces:
+
+- a separate operator-facing console script:
+  - `pyocd-debug`
+- the headless CLI remains unchanged:
+  - `pyocd-debug-brain`
+- the new UX package under `src/pyocd_debug_mcp/ux/`
+- structured event emission from the turnkey loop
+- Rich + `prompt_toolkit` shell mode with:
+  - interactive REPL feel
+  - live provider/tool/build/green-check status
+  - visible evidence summaries after completed provider turns
+  - raw-output toggling after completed turns
+  - history/show/rerun flows over `runs/<session_id>/...`
+- pretty one-shot wrappers:
+  - `pyocd-debug run ...`
+  - `pyocd-debug benchmark ...`
+  - `pyocd-debug history`
+  - `pyocd-debug show <session_id>`
+  - `pyocd-debug rerun <session_id>`
+
+What is deliberately **not** implemented yet:
+
+- token-by-token provider streaming
+- live reconnection into an already-running session
+- any MCP server API changes
+- any benchmark schema/corpus changes
+
+That remaining streaming work is the explicit Pass 2 follow-up.
 
 ## Current Barebones CLI: Exact Specification
 

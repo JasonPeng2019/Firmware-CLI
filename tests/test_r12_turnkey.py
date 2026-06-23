@@ -292,6 +292,15 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
     assert (execution.run_root / "logs" / "brain_trace.jsonl").exists()
     assert (execution.run_root / "logs" / "model_turns.jsonl").exists()
+    assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
+    event_kinds = [
+        json.loads(line)["event_kind"]
+        for line in (execution.run_root / "logs" / "brain_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "provider_turn_start" in event_kinds
+    assert "provider_turn_complete" in event_kinds
+    assert "tool_complete" in event_kinds
+    assert "final_result" in event_kinds
 
 
 def test_run_turnkey_treats_binary_read_as_workspace_error(
@@ -1028,7 +1037,7 @@ def test_r12_benchmark_records_case_artifacts(
         )(),
     )
     async def fake_run_turnkey_with_provider(
-        _invocation: object, *, provider_config: object
+        _invocation: object, *, provider_config: object, event_sink: object | None = None
     ) -> TurnkeyExecution:
         return TurnkeyExecution(
             invocation=replace(
@@ -1079,6 +1088,7 @@ def test_r12_benchmark_records_case_artifacts(
             selected_skills=(),
             model_turns=(),
             brain_trace=(),
+            brain_events=(),
         )
 
     monkeypatch.setattr(r12_benchmark, "run_turnkey_with_provider", fake_run_turnkey_with_provider)
@@ -1157,7 +1167,7 @@ def test_r12_benchmark_falls_back_to_single_new_session_root(
     )
 
     async def fake_run_turnkey_with_provider(
-        _invocation: object, *, provider_config: object
+        _invocation: object, *, provider_config: object, event_sink: object | None = None
     ) -> TurnkeyExecution:
         return TurnkeyExecution(
             invocation=replace(
@@ -1208,6 +1218,7 @@ def test_r12_benchmark_falls_back_to_single_new_session_root(
             selected_skills=(),
             model_turns=(),
             brain_trace=(),
+            brain_events=(),
         )
 
     monkeypatch.setattr(r12_benchmark, "run_turnkey_with_provider", fake_run_turnkey_with_provider)

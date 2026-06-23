@@ -342,6 +342,10 @@ uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green --model <model>
+uv run pyocd-debug --help
+uv run pyocd-debug
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
 uv run pytest
 uv run ruff check .
 uv run ruff format .
@@ -352,6 +356,14 @@ Turnkey notes:
 
 - `pyocd-debug-brain` launches the local MCP server itself; do not pre-launch
   the server for the normal turnkey path.
+- `pyocd-debug` is the new operator-facing CLI over the same brain/runtime:
+  - no args launches an interactive REPL shell
+  - `run` and `benchmark` reuse the same turnkey logic with prettier live
+    rendering
+  - `history`, `show`, and `rerun` inspect saved `runs/<session_id>/...`
+    artifacts
+  - in non-TTY output contexts it falls back to plain printing instead of
+    requiring Rich live rendering support
 - Valid turnkey providers are:
   - `openai-api`
   - `anthropic-api`
@@ -370,6 +382,11 @@ Turnkey notes:
   - `--build-command`
 - Benchmark mode reuses the frozen 12-case corpus from
   `pilot_v1_plus_b003_b004`.
+- current UX-layer status:
+  - Pass 1 is implemented with structured brain events, live tool/progress
+    rendering, evidence summaries, and raw-output toggling after completed
+    turns
+  - true token-level provider streaming is still the next follow-up
 
 ## Related Docs
 

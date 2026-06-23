@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
+import time
 from typing import cast
 
 from pyocd_debug_mcp.board_config import (
@@ -28,6 +29,7 @@ from pyocd_debug_mcp.brain.actions import (
     VerificationSnapshot,
 )
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
+from pyocd_debug_mcp.brain.events import BrainEvent, EventSink, emit_event, event_timestamp
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
@@ -75,6 +77,7 @@ class TurnkeyExecution:
     selected_skills: tuple[SkillManifest, ...]
     model_turns: tuple[dict[str, object], ...]
     brain_trace: tuple[dict[str, object], ...]
+    brain_events: tuple[dict[str, object], ...]
 
 
 def load_board(board_id: str) -> BoardConfig:
@@ -269,6 +272,56 @@ def _brain_trace_record(
         "payload": payload,
         "result_text": result_text,
     }
+
+
+async def _record_brain_event(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    event_kind: str,
+    message: str,
+    details: dict[str, object] | None = None,
+    session_id: str | None = None,
+    iteration: int | None = None,
+) -> None:
+    event = BrainEvent(
+        event_kind=event_kind,
+        timestamp=event_timestamp(),
+        board_id=state.board_id,
+        iteration=state.iteration if iteration is None else iteration,
+        session_id=session_id if session_id is not None else _result_session_id(state),
+        provider=invocation.provider,
+        model=invocation.model,
+        message=message,
+        details=details or {},
+    )
+    record = event.to_record()
+    records.append(record)
+    await emit_event(sink, event)
+
+
+async def _record_verification_event(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    reason: str,
+) -> None:
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind="verification_state_update",
+        message=f"Verification snapshot updated: {reason}",
+        details={
+            "reason": reason,
+            "verification": state.verification.model_dump(mode="json"),
+        },
+    )
 
 
 def _flash_target_path(invocation: TurnkeyInvocation, board: BoardConfig) -> str:
@@ -938,6 +991,10 @@ def _persist_turnkey_artifacts(
         for record in execution.model_turns:
             handle.write(json.dumps(record, sort_keys=True))
             handle.write("\n")
+    with (run_root / "logs" / "brain_events.jsonl").open("w", encoding="utf-8") as handle:
+        for record in execution.brain_events:
+            handle.write(json.dumps(record, sort_keys=True))
+            handle.write("\n")
     if workspace is not None:
         workspace.write_diff(run_root / "applied-patches" / "turnkey.diff")
 
@@ -947,6 +1004,7 @@ async def run_turnkey(
     *,
     provider: DecisionProvider,
     client_factory: Callable[[], LocalMCPClient] = LocalMCPClient,
+    event_sink: EventSink | None = None,
 ) -> TurnkeyExecution:
     board = load_board(invocation.board_id)
     selected_skills = load_skills_for_context(
@@ -993,26 +1051,116 @@ async def run_turnkey(
     result: TurnkeyRunResult | None = None
     model_turns: list[dict[str, object]] = []
     brain_trace: list[dict[str, object]] = []
+    brain_events: list[dict[str, object]] = []
     run_root: Path | None = None
+
+    await _record_brain_event(
+        sink=event_sink,
+        records=brain_events,
+        invocation=invocation,
+        state=state,
+        event_kind="run_start",
+        message=f"Turnkey run started for {board.board_id}.",
+        details={
+            "run_mode": invocation.mode,
+            "case_id": invocation.case_id,
+            "case_kind": invocation.case_kind,
+            "selected_skill_ids": [skill.skill_id for skill in selected_skills],
+        },
+        iteration=0,
+    )
 
     async with client_factory() as client:
         for iteration in range(1, invocation.max_iters + 1):
             state.iteration = iteration
             turn_prompt = _build_turn_prompt(invocation, board, state, skills_text, workspace)
+            await _record_brain_event(
+                sink=event_sink,
+                records=brain_events,
+                invocation=invocation,
+                state=state,
+                event_kind="provider_turn_start",
+                message=f"Provider turn {iteration} started.",
+                details={"turn_prompt_length": len(turn_prompt)},
+            )
+            provider_started = time.perf_counter()
             provider_turn = await provider.next_decision(
                 instructions=instructions,
                 turn_prompt=turn_prompt,
             )
+            provider_duration_ms = int((time.perf_counter() - provider_started) * 1000)
             model_turns.append(_model_turn_record(iteration, provider_turn))
             decision = provider_turn.decision
+            await _record_brain_event(
+                sink=event_sink,
+                records=brain_events,
+                invocation=invocation,
+                state=state,
+                event_kind="provider_turn_complete",
+                message=f"Provider turn {iteration} completed.",
+                details={
+                    "duration_ms": provider_duration_ms,
+                    "response_id": provider_turn.response_id,
+                    "raw_output": provider_turn.output_text,
+                    "decision": provider_turn.decision.model_dump(mode="json"),
+                },
+            )
 
             try:
                 action = decision.action
+                action_started = time.perf_counter()
                 if isinstance(action, ServerToolAction):
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="tool_start",
+                        message=f"Calling MCP tool `{action.tool_name}`.",
+                        details={
+                            "tool_name": action.tool_name,
+                            "arguments": action.arguments,
+                        },
+                    )
                     action_result = await _execute_server_tool(invocation, board, state, client, action)
+                    duration_ms = int((time.perf_counter() - action_started) * 1000)
                     result_text = action_result.text
                     if state.session_id is not None and run_root is None:
                         run_root = _normalize_session_id(state.session_id)
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="tool_complete",
+                        message=f"MCP tool `{action.tool_name}` completed.",
+                        details={
+                            "tool_name": action.tool_name,
+                            "arguments": action.arguments,
+                            "normalized_action_summary": state.last_action_summary,
+                            "duration_ms": duration_ms,
+                            "result_text": action_result.text,
+                            "refusal_code": action_result.refusal_code,
+                            "blocked_code": action_result.blocked_code,
+                            "probe_uid": action_result.probe_uid,
+                            "route_used": action_result.route_used,
+                        },
+                    )
+                    if state.session_id is not None and run_root is not None:
+                        await _record_brain_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            event_kind="session_state",
+                            message=f"Active session is now {state.session_id}.",
+                            details={
+                                "session_id": state.session_id,
+                                "run_root": str(run_root),
+                                "probe_uid": state.probe_uid,
+                                "route_used": state.route_used,
+                            },
+                        )
                     if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
                         result = _blocked_result(
                             state,
@@ -1028,20 +1176,129 @@ async def run_turnkey(
                                 result_text=result.summary,
                             )
                         )
+                        await _record_brain_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            event_kind="block",
+                            message=result.summary,
+                            details={"action_family": action.tool_name, "code": "benchmark/reconnect-not-allowed"},
+                        )
                         break
+                    if action.tool_name == "flash_firmware" and action_result.text.startswith("Flashed "):
+                        await _record_verification_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            reason="flash succeeded",
+                        )
+                    if action.tool_name == "read_serial":
+                        await _record_verification_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            reason="UART verification attempt completed",
+                        )
                 elif isinstance(action, ReplaceFileAction):
                     result_text = _execute_replace_file(workspace, action, state)
+                    duration_ms = int((time.perf_counter() - action_started) * 1000)
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="file_replace",
+                        message=f"Replaced workspace file `{action.path}`.",
+                        details={
+                            "path": action.path,
+                            "content_length": len(action.content),
+                            "duration_ms": duration_ms,
+                        },
+                    )
                 elif isinstance(action, RunBuildAction):
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="build_start",
+                        message="Starting local build.",
+                        details={"build_command": action.build_command or (workspace.build_command if workspace else None)},
+                    )
                     result_text = _execute_build(workspace, action, state)
+                    duration_ms = int((time.perf_counter() - action_started) * 1000)
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="build_complete",
+                        message="Local build finished.",
+                        details={
+                            "build_command": action.build_command or (workspace.build_command if workspace else None),
+                            "duration_ms": duration_ms,
+                            "result_text": result_text,
+                        },
+                    )
                 elif isinstance(action, RunGreenCheckAction):
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="green_check_start",
+                        message="Running final green verification.",
+                        details={
+                            "flash_artifact": str(_green_check_artifacts(invocation, board)[0]),
+                            "symbol_artifact": str(_green_check_artifacts(invocation, board)[1]),
+                        },
+                    )
                     result_text = await _execute_green_check(
                         invocation,
                         board,
                         state,
                         client,
                     )
+                    duration_ms = int((time.perf_counter() - action_started) * 1000)
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="green_check_complete",
+                        message="Green verification finished.",
+                        details={
+                            "duration_ms": duration_ms,
+                            "result_text": result_text,
+                            "verification": state.verification.model_dump(mode="json"),
+                        },
+                    )
+                    await _record_verification_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        reason="green check completed",
+                    )
                 elif isinstance(action, ReadFileAction):
                     result_text = _execute_read_file(workspace, action.path, state)
+                    duration_ms = int((time.perf_counter() - action_started) * 1000)
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="file_read",
+                        message=f"Read workspace file `{action.path}`.",
+                        details={
+                            "path": action.path,
+                            "duration_ms": duration_ms,
+                            "result_length": len(result_text),
+                        },
+                    )
                 elif isinstance(action, FinalizeAction):
                     result = _final_result_from_action(state, action, workspace)
                     _record_decision_evidence(state, decision, result_text=result.summary)
@@ -1053,6 +1310,15 @@ async def run_turnkey(
                             result_text=result.summary,
                         )
                     )
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="final_result",
+                        message=f"Run finalized as {result.final_status}.",
+                        details={"result": result.model_dump(mode="json")},
+                    )
                     break
                 else:
                     raise TurnkeyLoopError(f"Unhandled action kind: {action.kind}")
@@ -1061,10 +1327,35 @@ async def run_turnkey(
                 state.refused_action_families.add(decision.action.kind)
                 state.last_action_summary = decision.action.kind
                 state.last_result_text = result_text
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="refusal",
+                    message=result_text,
+                    details={
+                        "code": exc.code,
+                        "action_kind": decision.action.kind,
+                    },
+                )
             except (WorkspaceError, MCPClientError, RuntimeError) as exc:
                 result_text = f"{type(exc).__name__}: {exc}"
                 state.last_action_summary = decision.action.kind
                 state.last_result_text = result_text
+                event_kind = "block" if isinstance(exc, RuntimeError) and result_text.startswith("Blocked [") else "unexpected_failure"
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind=event_kind,
+                    message=result_text,
+                    details={
+                        "error_type": type(exc).__name__,
+                        "action_kind": decision.action.kind,
+                    },
+                )
 
             brain_trace.append(
                 _brain_trace_record(
@@ -1079,6 +1370,15 @@ async def run_turnkey(
             blocked = _check_local_convergence(state)
             if blocked is not None:
                 result = blocked
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="block",
+                    message=blocked.summary,
+                    details={"code": blocked.summary.split("]:", 1)[0].replace("Blocked [", "")},
+                )
                 break
 
         if result is None:
@@ -1087,6 +1387,15 @@ async def run_turnkey(
                 classification=state.last_classification or "observability_fault",
                 code="brain/max-iters",
                 message=f"Reached max_iters={invocation.max_iters} without a final answer.",
+            )
+            await _record_brain_event(
+                sink=event_sink,
+                records=brain_events,
+                invocation=invocation,
+                state=state,
+                event_kind="block",
+                message=result.summary,
+                details={"code": "brain/max-iters"},
             )
 
         if state.session_id is not None and run_root is None:
@@ -1100,8 +1409,28 @@ async def run_turnkey(
                     timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
                 )
                 state.register_disconnect()
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="session_state",
+                    message="Disconnected from active session.",
+                    details={"session_ids_seen": list(state.session_ids_seen)},
+                )
             except MCPClientError:
                 pass
+
+    if not brain_events or brain_events[-1].get("event_kind") != "final_result":
+        await _record_brain_event(
+            sink=event_sink,
+            records=brain_events,
+            invocation=invocation,
+            state=state,
+            event_kind="final_result",
+            message=f"Run completed as {result.final_status}.",
+            details={"result": result.model_dump(mode="json")},
+        )
 
     execution = TurnkeyExecution(
         invocation=invocation,
@@ -1114,20 +1443,27 @@ async def run_turnkey(
         selected_skills=selected_skills,
         model_turns=tuple(model_turns),
         brain_trace=tuple(brain_trace),
+        brain_events=tuple(brain_events),
     )
     _persist_turnkey_artifacts(execution, workspace)
     return execution
 
 
-async def run_turnkey_with_openai(invocation: TurnkeyInvocation, *, api_key: str) -> TurnkeyExecution:
+async def run_turnkey_with_openai(
+    invocation: TurnkeyInvocation,
+    *,
+    api_key: str,
+    event_sink: EventSink | None = None,
+) -> TurnkeyExecution:
     config = BrainProviderConfig(provider="openai-api", api_key=api_key, model=invocation.model)
-    return await run_turnkey_with_provider(invocation, provider_config=config)
+    return await run_turnkey_with_provider(invocation, provider_config=config, event_sink=event_sink)
 
 
 async def run_turnkey_with_provider(
     invocation: TurnkeyInvocation,
     *,
     provider_config: BrainProviderConfig,
+    event_sink: EventSink | None = None,
 ) -> TurnkeyExecution:
     provider = create_decision_provider(provider_config)
-    return await run_turnkey(invocation, provider=provider)
+    return await run_turnkey(invocation, provider=provider, event_sink=event_sink)

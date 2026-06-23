@@ -53,12 +53,15 @@ now contains:
 - the top-level `skills/` tree
 - the internal deterministic helper tree under `playbooks/turnkey/`
 - the `pyocd-debug-brain` CLI
+- the additive `pyocd-debug` operator-facing CLI
 - multiple decision-provider backends:
   - native OpenAI API
   - native Anthropic API
   - Codex CLI
   - Claude Code CLI
 - the sibling turnkey benchmark path over the same 12-case corpus
+- the new structured brain-event path that powers the operator shell and
+  persists `runs/<session_id>/logs/brain_events.jsonl`
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
 
 The Ben mainline also now carries the Jason-originated hardening that was
@@ -84,8 +87,9 @@ missing before this merge pass:
 - generic alternate-suite acceptance logic so retained-board turnkey suites no
   longer fail only because the suite is not the scoped pair
 
-What is still missing is full official-pair second-provider proof and
-fresh-machine portability proof needed to call the turnkey layer fully closed.
+What is still missing is full official-pair second-provider proof, live
+operator-shell revalidation on the scoped pair, and fresh-machine portability
+proof needed to call the turnkey layer fully closed.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:
@@ -258,7 +262,15 @@ Code that now exists:
 - `src/pyocd_debug_mcp/brain/loop.py`
 - `src/pyocd_debug_mcp/brain/benchmark.py`
 - `src/pyocd_debug_mcp/brain/cli.py`
+- `src/pyocd_debug_mcp/brain/app.py`
+- `src/pyocd_debug_mcp/brain/events.py`
 - `src/pyocd_debug_mcp/brain/playbooks.py`
+- `src/pyocd_debug_mcp/ux/cli.py`
+- `src/pyocd_debug_mcp/ux/shell.py`
+- `src/pyocd_debug_mcp/ux/renderer.py`
+- `src/pyocd_debug_mcp/ux/history.py`
+- `src/pyocd_debug_mcp/ux/artifacts.py`
+- `src/pyocd_debug_mcp/ux/commands.py`
 - `tests/harness/r12_turnkey_benchmark.py`
 - `skills/common/...`
 - `skills/mcu_families/nrf52833/...`
@@ -286,10 +298,83 @@ What that code does:
 - supports freeform `run` mode and benchmark mode
 - captures turnkey artifacts into the same `runs/<session_id>/...` tree
 - persists typed evidence inside `turnkey_state.json`
+- emits and persists normalized brain events in `brain_events.jsonl`
 - reuses the existing 12-case benchmark corpus instead of inventing a second
   benchmark taxonomy
 - keeps deterministic repair/health-check helper playbooks in a separate
   internal layer rather than overloading the prompt-skill YAMLs
+
+### Operator UX Layer Pass 1
+
+The new operator-facing CLI is now implemented in code as `pyocd-debug`.
+
+What it currently does:
+
+- launches an interactive REPL shell with no args
+- exposes pretty one-shot wrappers:
+  - `pyocd-debug run ...`
+  - `pyocd-debug benchmark ...`
+  - `pyocd-debug history`
+  - `pyocd-debug show <session_id>`
+  - `pyocd-debug rerun <session_id>`
+- renders live status for:
+  - provider turns
+  - MCP tool activity
+  - builds
+  - green-check runs
+- shows evidence summaries after completed provider turns
+- supports raw-provider-output visibility:
+  - `/raw on`
+  - `/raw off`
+  - `/raw last`
+  - one-shot `--raw-output off|final|all`
+- reuses the exact same brain loop and benchmark path as `pyocd-debug-brain`
+  rather than forking any orchestration logic
+
+What is not done yet:
+
+- true token-level provider streaming
+- live reconnection to an already-running historical session
+- fresh scoped-board live proof of the new shell on this exact merged code
+
+### Manual UX Validation To Re-Run
+
+Run these from repo root after the usual scoped substrate preflight:
+
+```bash
+uv run pytest -q
+uv run ruff check .
+uv run mypy src
+uv run pyocd-debug --help
+uv run pyocd-debug-brain --help
+uv run pyocd-debug run --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nucleo_l476rg__k001_reference_green
+uv run pyocd-debug benchmark --case-id nrf52833dk__b001_wrong_boot_text
+uv run pyocd-debug history
+```
+
+Expected outcomes and why:
+
+- `pyocd-debug --help`
+  - should show `run`, `benchmark`, `history`, `show`, and `rerun`
+  - because the new operator shell is an additive CLI layer, not a rewrite of
+    `pyocd-debug-brain`
+- `pyocd-debug run ...`
+  - should create a normal turnkey `session_id`
+  - should write the same `turnkey_request.json`, `turnkey_result.json`,
+    `turnkey_state.json`, and now also `brain_events.jsonl`
+  - should show live tool/progress activity plus a final result summary
+  - because the shell is consuming real brain-loop events instead of replaying
+    post-hoc text
+- `pyocd-debug benchmark --case-id ...`
+  - should reuse the same benchmark result/score path as the headless CLI
+  - because the UX layer wraps the existing turnkey benchmark runner instead of
+    creating a second benchmark implementation
+- `pyocd-debug history`
+  - should list saved turnkey sessions newest-first
+  - because it reads `runs/<session_id>/run-metadata/turnkey_request.json`
+    and `turnkey_result.json` rather than inventing a second state store
 
 ## Live Bench Facts
 
