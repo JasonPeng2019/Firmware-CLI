@@ -11,6 +11,7 @@ again if future support for `nrf52840dk` is desired.
 ## What Exists
 
 - App root: `firmware/nrf52840dk/reference/src/`
+- Button/LED hold app root: `firmware/nrf52840dk/button_led_hold/src/`
 - Canonical symbol-bearing artifact:
   `firmware/nrf52840dk/reference/build/firmware.elf`
 - Preferred flash artifact:
@@ -21,11 +22,29 @@ again if future support for `nrf52840dk` is desired.
   - stays alive
   - exposes the fixed Stage 1 symbol contract
     `stage1_known_value = 0x1234ABCD`
+- Button/LED hold app behavior:
+  - `Button 1 / sw0` drives `LED 1 / led0`
+  - `Button 2 / sw1` drives `LED 2 / led1`
+  - `Button 3 / sw2` drives `LED 3 / led2`
+  - `Button 4 / sw3` drives `LED 4 / led3`
+  - each LED is lit only while its paired button is held
 
 ## Build Recipe
 
 ```bash
 uv run pyocd-zephyr-build --app-dir firmware/nrf52840dk/reference/src --build-dir firmware/nrf52840dk/reference/build --board nrf52840dk/nrf52840
+```
+
+Button/LED hold app:
+
+```bash
+./firmware/nrf52840dk/button_led_hold/build_button_led_hold.sh
+```
+
+Flash the button/LED app after building:
+
+```bash
+uv run pyocd flash -t nrf52840 firmware/nrf52840dk/button_led_hold/build/firmware.hex
 ```
 
 What that script does:
