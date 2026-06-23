@@ -164,6 +164,7 @@ a glance before relying on detail.
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
 | `ROADMAP.md` | Full project plan (R0–R15), dependency tree, gates, rolling-frontier staffing. *Design/plan doc — see status banner.* |
+| `UXLayer.md` | Proposal for a richer operator-facing pure CLI shell over the current R12 turnkey brain; freezes the current barebones CLI contract and the required event-stream-first UX layering plan. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions. *Design/plan doc — see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails). *Design doc — see status banner.* |
 | `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 in-progress validation checklist. |
