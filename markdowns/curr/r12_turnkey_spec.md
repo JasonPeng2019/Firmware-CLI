@@ -49,6 +49,7 @@ The first `R12` implementation must add all of these:
 - `src/pyocd_debug_mcp/brain/`
 - `pyocd-debug-brain` console script
 - top-level `skills/` data tree
+- top-level `playbooks/turnkey/` internal deterministic helper tree
 - turnkey benchmark runner alongside the existing `R11` runner
 - turnkey run artifacts written into `runs/<session_id>/...`
 
@@ -105,6 +106,11 @@ subprocess:
 
 - command: `uv run pyocd-debug-mcp`
 - cwd: repo root
+- the spawned-server contract is wrapped through:
+  - `ServerCommand`
+  - `ToolClientProtocol`
+  - a transport-only stdio client
+  - a higher-level parsed local client wrapper
 
 The turnkey layer must not require:
 
@@ -127,6 +133,11 @@ The brain tracks, at minimum:
 - last mutation result
 - blocked/refused action families
 - workspace/build context when code edits are allowed
+- typed evidence records:
+  - observations
+  - hypotheses
+  - experiments
+  - strategy evaluations
 
 ### Skills
 
@@ -156,6 +167,22 @@ Frozen selection rules:
 - optionally load task/case-kind-specific skills
 - dedupe by `skill_id`
 - render one deterministic ordered prompt bundle
+
+### Internal Playbooks
+
+`R12` also keeps a separate internal deterministic helper layer under:
+
+- `playbooks/turnkey/`
+
+These playbooks are not the primary product interface and do not replace
+`run --board-id ... --task ...`.
+
+Their first uses are:
+
+- reference health-check
+- reference-contract diagnose
+- reference-contract repair
+- Nordic recover/reflash/reverify
 
 Initial skill coverage must match the current 12-case `R11` corpus:
 
@@ -263,6 +290,8 @@ Frozen first brain-level convergence rules:
 - stop after repeated identical build failures with no file change
 - stop after repeated diagnosis-only turns with no new observation
 - stop after repeated edit/build cycles with no verification improvement
+- use shorter MCP read timeouts for lightweight runtime checks and longer
+  budgets for connect/flash/recover/build paths
 - interpret server `Refused [...]` and `Blocked [...]` responses as state
   transitions, not noise
 - refuse edit/build actions in freeform mode unless the user provided
@@ -283,6 +312,13 @@ The turnkey layer must add these artifacts:
 - `logs/model_turns.jsonl`
 - `logs/prompt.txt`
 - `applied-patches/turnkey.diff`
+
+The state artifact must include the typed evidence trail:
+
+- observations
+- hypotheses
+- experiments
+- strategy evaluations
 
 In benchmark mode, also persist:
 

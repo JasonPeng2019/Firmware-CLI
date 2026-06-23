@@ -1,0 +1,64 @@
+skill_id: reference-health-check
+title: Reference runtime health check
+supported_kinds:
+  - all
+workflow_kind: static_mcp_sequence
+requires_workspace: false
+steps:
+  - step_id: connect
+    tool: connect
+    arguments:
+      board_id: "{board_id}"
+    timeout_seconds: 45
+    expected_substrings:
+      - "Connected to board"
+      - "session_id="
+  - step_id: board-info
+    tool: get_board_info
+    arguments: {}
+    timeout_seconds: 15
+  - step_id: flash
+    tool: flash_firmware
+    arguments:
+      path: "{flash_artifact}"
+      halt_after_reset: true
+    timeout_seconds: 120
+    expected_substrings:
+      - "Flashed"
+      - "halted"
+  - step_id: read-pc
+    tool: read_core_register
+    arguments:
+      name: pc
+    timeout_seconds: 15
+    expected_substrings:
+      - "0x"
+  - step_id: read-stage1-symbol
+    tool: read_symbol_u32
+    arguments:
+      elf_path: "{symbol_artifact}"
+      symbol_name: "{stage1_symbol_name}"
+    timeout_seconds: 20
+    expected_substrings:
+      - "{stage1_symbol_name}"
+      - "value_u32={stage1_symbol_value_u32}"
+  - step_id: resume
+    tool: resume
+    arguments: {}
+    timeout_seconds: 15
+  - step_id: uart
+    tool: read_serial
+    arguments:
+      expected_text: "{expected_uart_substring}"
+      read_seconds: 5.0
+      reset_on_open: true
+    timeout_seconds: 20
+    expected_substrings:
+      - "UART matched"
+      - "{expected_uart_substring}"
+  - step_id: disconnect
+    tool: disconnect
+    arguments: {}
+    timeout_seconds: 15
+final_assertions:
+  - all_steps_succeeded

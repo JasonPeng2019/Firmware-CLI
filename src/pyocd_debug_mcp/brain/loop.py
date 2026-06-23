@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+import inspect
 from pathlib import Path
+from typing import cast
 
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
@@ -25,6 +27,7 @@ from pyocd_debug_mcp.brain.actions import (
     TurnkeyRunResult,
     VerificationSnapshot,
 )
+from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
@@ -41,6 +44,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
+DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
+CONNECT_TIMEOUT_SECONDS = 60.0
+FLASH_TIMEOUT_SECONDS = 240.0
+RECOVER_TIMEOUT_SECONDS = 180.0
 
 
 class TurnkeyLoopError(RuntimeError):
@@ -176,6 +183,8 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- Once a session_id exists, do not call connect again unless you intentionally disconnected or attached to the wrong board.\n"
         "- If run_green_check fails, stay on the current session and continue debugging from that same session.\n"
         "- Gather evidence before editing code.\n"
+        "- When you have a concrete suspected root cause, fill in `hypothesis`.\n"
+        "- Use `strategy_evaluation` to explain why the chosen next action is the best current move.\n"
         "- Use unlock_recover only when the symptoms justify it and the task policy allows it.\n"
         "- When code edits are allowed, replace whole files only; do not describe patches in prose.\n"
         "- Use run_green_check when you believe the target is healthy again.\n"
@@ -220,6 +229,10 @@ def _build_turn_prompt(
         f"verification.uart_ok={verification.uart_ok}\n"
         f"verification.symbol_ok={verification.symbol_ok}\n"
         f"verification.green_check_ok={verification.green_check_ok}\n\n"
+        f"observations_recorded={len(state.observations)}\n"
+        f"hypotheses_recorded={len(state.hypotheses)}\n"
+        f"experiments_recorded={len(state.experiments)}\n"
+        f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
         "Selected skills:\n"
         f"{skills_text}\n\n"
         "Available action kinds:\n"
@@ -280,6 +293,99 @@ def _update_observation_state(state: BrainState, decision: TurnDecision, result_
     state.last_observation_text = decision.observation_summary
     if decision.classification is not None:
         state.last_classification = decision.classification
+
+
+def _append_observation(
+    state: BrainState,
+    *,
+    source: str,
+    summary: str,
+    evidence_excerpt: str,
+) -> Observation:
+    observation = Observation(
+        observation_id=f"obs-{len(state.observations) + 1:03d}",
+        source=source,
+        summary=summary,
+        evidence_excerpt=evidence_excerpt,
+    )
+    state.observations.append(observation)
+    return observation
+
+
+def _append_hypothesis(
+    state: BrainState,
+    *,
+    summary: str,
+    status: str,
+    supporting_observation_ids: tuple[str, ...],
+) -> Hypothesis:
+    hypothesis = Hypothesis(
+        hypothesis_id=f"hyp-{len(state.hypotheses) + 1:03d}",
+        summary=summary,
+        status=status,
+        supporting_observation_ids=supporting_observation_ids,
+    )
+    state.hypotheses.append(hypothesis)
+    return hypothesis
+
+
+def _append_experiment(
+    state: BrainState,
+    *,
+    purpose: str,
+    action_summary: str,
+    result: str,
+) -> Experiment:
+    experiment = Experiment(
+        experiment_id=f"exp-{len(state.experiments) + 1:03d}",
+        purpose=purpose,
+        action_summary=action_summary,
+        result=result,
+    )
+    state.experiments.append(experiment)
+    return experiment
+
+
+def _append_strategy_evaluation(
+    state: BrainState,
+    *,
+    outcome: str,
+    next_action: str,
+) -> StrategyEvaluation:
+    evaluation = StrategyEvaluation(
+        strategy_id=f"strat-{len(state.strategy_evaluations) + 1:03d}",
+        outcome=outcome,
+        next_action=next_action,
+    )
+    state.strategy_evaluations.append(evaluation)
+    return evaluation
+
+
+def _record_decision_evidence(
+    state: BrainState,
+    decision: TurnDecision,
+    *,
+    result_text: str,
+) -> None:
+    observation = _append_observation(
+        state,
+        source="turn-decision",
+        summary=decision.observation_summary,
+        evidence_excerpt=result_text,
+    )
+    if decision.hypothesis:
+        _append_hypothesis(
+            state,
+            summary=decision.hypothesis,
+            status="open",
+            supporting_observation_ids=(observation.observation_id,),
+        )
+    if decision.strategy_evaluation:
+        _append_strategy_evaluation(
+            state,
+            outcome=decision.strategy_evaluation,
+            next_action=decision.action.kind,
+        )
 
 
 def _update_build_failure_state(
@@ -372,6 +478,38 @@ def _normalize_flash_path(
     return str((workspace_root / candidate).resolve())
 
 
+async def _call_tool_with_timeout(
+    client: object,
+    tool_name: str,
+    arguments: dict[str, object] | None,
+    *,
+    timeout_seconds: float,
+) -> ToolTextResult:
+    call_tool = getattr(client, "call_tool")
+    try:
+        signature = inspect.signature(call_tool)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is not None and "timeout_seconds" in signature.parameters:
+        return cast(
+            ToolTextResult,
+            await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
+        )
+    return cast(ToolTextResult, await call_tool(tool_name, arguments))
+
+
+def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:
+    if tool_name == "connect":
+        return CONNECT_TIMEOUT_SECONDS
+    if tool_name == "flash_firmware":
+        return FLASH_TIMEOUT_SECONDS
+    if tool_name == "unlock_recover":
+        return RECOVER_TIMEOUT_SECONDS
+    if tool_name == "read_serial":
+        return max(DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0)
+    return DEFAULT_TOOL_TIMEOUT_SECONDS
+
+
 async def _execute_server_tool(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
@@ -438,7 +576,12 @@ async def _execute_server_tool(
             "This task does not allow unlock_recover as a valid intervention.",
         )
 
-    result = await client.call_tool(action.tool_name, arguments=arguments)
+    result = await _call_tool_with_timeout(
+        client,
+        action.tool_name,
+        arguments,
+        timeout_seconds=_tool_timeout_seconds(action.tool_name, invocation),
+    )
     state.register_tool_use(action.tool_name)
     state.actions_taken.append(action.tool_name)
     state.last_action_summary = f"{action.tool_name}({arguments})"
@@ -476,6 +619,13 @@ async def _execute_server_tool(
         )
     if action.tool_name == "unlock_recover" and "Recover completed" in result.text:
         state.recover_used = True
+    if action.tool_name in {"connect", "flash_firmware", "unlock_recover", "reset", "halt", "resume"}:
+        _append_experiment(
+            state,
+            purpose=f"apply MCP tool `{action.tool_name}`",
+            action_summary=state.last_action_summary or action.tool_name,
+            result=result.text,
+        )
     return result
 
 
@@ -488,8 +638,8 @@ def _execute_read_file(workspace: WorkspaceSession | None, path: str, state: Bra
     text = workspace.read_file(path)
     state.actions_taken.append(f"read_file:{path}")
     state.last_action_summary = f"read_file({path})"
-    state.last_result_text = f"Read {path} ({len(text)} chars)."
-    return text
+    state.last_result_text = f"Contents of {path}:\n{text}"
+    return state.last_result_text
 
 
 def _execute_replace_file(
@@ -507,6 +657,12 @@ def _execute_replace_file(
     state.actions_taken.append(f"replace_file:{action.path}")
     state.last_action_summary = f"replace_file({action.path})"
     state.last_result_text = f"Replaced {action.path}."
+    _append_experiment(
+        state,
+        purpose="apply a candidate source edit",
+        action_summary=state.last_action_summary or f"replace_file({action.path})",
+        result=state.last_result_text,
+    )
     return f"Replaced {action.path}."
 
 
@@ -529,6 +685,12 @@ def _execute_build(
         state.last_result_text = "Build succeeded."
         state.repeated_build_failure_count = 0
         state.last_build_failure_signature = None
+        _append_experiment(
+            state,
+            purpose="rebuild the local workspace",
+            action_summary=state.last_action_summary or "run_build",
+            result=f"Build succeeded in {build.duration_seconds:.2f}s.",
+        )
         return "Build succeeded."
     changed_files = workspace.changed_files()
     failure_text = (
@@ -538,6 +700,12 @@ def _execute_build(
     )
     _update_build_failure_state(state, failure_text, changed_files)
     state.last_result_text = failure_text
+    _append_experiment(
+        state,
+        purpose="rebuild the local workspace",
+        action_summary=state.last_action_summary or "run_build",
+        result=f"Build failed in {build.duration_seconds:.2f}s.",
+    )
     return failure_text
 
 
@@ -548,15 +716,22 @@ async def _execute_green_check(
     client: LocalMCPClient,
 ) -> str:
     flash_artifact, symbol_artifact = _green_check_artifacts(invocation, board)
-    flash_result = await client.call_tool(
+    flash_result = await _call_tool_with_timeout(
+        client,
         "flash_firmware",
         {"path": str(flash_artifact), "halt_after_reset": True},
+        timeout_seconds=FLASH_TIMEOUT_SECONDS,
     )
     if flash_result.refusal_code or flash_result.blocked_code:
         state.last_result_text = flash_result.text
         return flash_result.text
 
-    pc_result = await client.call_tool("read_core_register", {"name": "pc"})
+    pc_result = await _call_tool_with_timeout(
+        client,
+        "read_core_register",
+        {"name": "pc"},
+        timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
+    )
     if pc_result.refusal_code or pc_result.blocked_code:
         state.last_result_text = pc_result.text
         return pc_result.text
@@ -568,12 +743,14 @@ async def _execute_green_check(
     resolved_symbol_value: int | None = None
     if symbol_name is not None:
         resolved_symbol = resolve_symbol(symbol_artifact, symbol_name)
-        value_result = await client.call_tool(
+        value_result = await _call_tool_with_timeout(
+            client,
             "read_memory",
             {
                 "address": f"0x{resolved_symbol.address:08X}",
                 "word_size": 32,
             },
+            timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
         )
         if value_result.refusal_code or value_result.blocked_code:
             state.last_result_text = value_result.text
@@ -609,7 +786,12 @@ async def _execute_green_check(
     if invocation.port is not None:
         read_serial_args["port"] = invocation.port
 
-    serial_result = await client.call_tool("read_serial", read_serial_args)
+    serial_result = await _call_tool_with_timeout(
+        client,
+        "read_serial",
+        read_serial_args,
+        timeout_seconds=max(DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0),
+    )
     if serial_result.refusal_code or serial_result.blocked_code:
         state.last_result_text = serial_result.text
         return serial_result.text
@@ -640,6 +822,12 @@ async def _execute_green_check(
     state.last_result_text = (
         f"Green check passed on {board.board_id}: pc=0x{pc:08X}, "
         f"{symbol_fragment}uart_excerpt={_extract_uart_excerpt(serial_result.text)}"
+    )
+    _append_experiment(
+        state,
+        purpose="runner-owned final verification",
+        action_summary="run_green_check()",
+        result=state.last_result_text,
     )
     return state.last_result_text
 
@@ -856,6 +1044,7 @@ async def run_turnkey(
                     result_text = _execute_read_file(workspace, action.path, state)
                 elif isinstance(action, FinalizeAction):
                     result = _final_result_from_action(state, action, workspace)
+                    _record_decision_evidence(state, decision, result_text=result.summary)
                     brain_trace.append(
                         _brain_trace_record(
                             iteration=iteration,
@@ -885,6 +1074,7 @@ async def run_turnkey(
                     result_text=result_text,
                 )
             )
+            _record_decision_evidence(state, decision, result_text=result_text)
             _update_observation_state(state, decision, result_text)
             blocked = _check_local_convergence(state)
             if blocked is not None:
@@ -903,7 +1093,12 @@ async def run_turnkey(
             run_root = _normalize_session_id(state.session_id)
         if state.session_id is not None:
             try:
-                await client.call_tool("disconnect", {})
+                await _call_tool_with_timeout(
+                    client,
+                    "disconnect",
+                    {},
+                    timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
+                )
                 state.register_disconnect()
             except MCPClientError:
                 pass

@@ -29,8 +29,9 @@ Use this skill to mirror `.claude/commands/build.md`.
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add extra commands with `--command` for targeted tests or harnesses
 11. If a check fails, fix the root cause and rerun the relevant commands.
-12. For hardware-only acceptance criteria, stop at an explicit hand-off with the exact command and expected output.
+12. When this build is part of `firmcli-spec-loop`, `firmcli-write-process`, `firmcli-fix-bug`, or `firmcli-test-suite`, do not treat the code edit as done yet. Hand the result straight into `firmcli-review`, and if review or later validation exposes a real bug or must-fix finding, route that failure through `firmcli-fix-bug` rather than patching around it informally.
+13. For hardware-only acceptance criteria, stop at an explicit hand-off with the exact command and expected output.
 
 ## Closeout
 
-End with the three verification buckets, files changed, docs synced, surfaced conflicts, and the single next step: review with `firmcli-review`.
+End with the three verification buckets, files changed, docs synced, surfaced conflicts, and the single next step: either review with `firmcli-review` or return to the caller's bug-fix or suite loop when that workflow is already in progress.

@@ -40,6 +40,8 @@ class CodexCLIDecisionProvider:
                         prompt=_compose_prompt(instructions, current_prompt),
                     ),
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     capture_output=True,
                     check=False,
                 )

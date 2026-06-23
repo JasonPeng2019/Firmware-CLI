@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Protocol
 
 from mcp import types
 from mcp.client.session import ClientSession
@@ -21,6 +23,43 @@ BLOCK_PATTERN = re.compile(r"^Blocked \[([^\]]+)\]: ")
 
 class MCPClientError(RuntimeError):
     """Raised when the turnkey brain's MCP client cannot complete an operation."""
+
+
+class ToolClientProtocol(Protocol):
+    """Transport-level MCP client surface used by the turnkey brain."""
+
+    async def __aenter__(self) -> "ToolClientProtocol":
+        """Enter the underlying session context."""
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Leave the underlying session context."""
+
+    async def list_tool_names(self) -> set[str]:
+        """Return the currently available tool names."""
+
+    async def call_tool_text(
+        self,
+        name: str,
+        arguments: dict[str, object] | None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> "ToolTextResult":
+        """Call one tool and flatten its text result."""
+
+
+@dataclass(frozen=True)
+class ServerCommand:
+    """Spawn parameters for the local stdio MCP child."""
+
+    command: str
+    args: tuple[str, ...]
+    cwd: Path | None = None
+    env: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -69,13 +108,94 @@ def _result_text(result: types.CallToolResult) -> str:
     return ""
 
 
-class LocalMCPClient:
-    """Thin async wrapper over the repo's local stdio MCP server."""
+def default_server_command(repo_root: Path = REPO_ROOT) -> ServerCommand:
+    return ServerCommand(
+        command="uv",
+        args=("run", "pyocd-debug-mcp"),
+        cwd=repo_root,
+    )
 
-    def __init__(self, repo_root: Path = REPO_ROOT) -> None:
-        self._repo_root = repo_root
+
+class StdioToolClient:
+    """Transport-only stdio MCP client."""
+
+    def __init__(self, server_command: ServerCommand) -> None:
+        self._server_command = server_command
         self._stdio_manager: Any = None
         self._session: ClientSession | None = None
+
+    async def __aenter__(self) -> "StdioToolClient":
+        params = StdioServerParameters(
+            command=self._server_command.command,
+            args=list(self._server_command.args),
+            cwd=self._server_command.cwd,
+            env=self._server_command.env,
+        )
+        self._stdio_manager = stdio_client(params)
+        read_stream, write_stream = await self._stdio_manager.__aenter__()
+        session = ClientSession(read_stream, write_stream)
+        await session.__aenter__()
+        await session.initialize()
+        self._session = session
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if self._session is not None:
+            await self._session.__aexit__(exc_type, exc, tb)
+            self._session = None
+        if self._stdio_manager is not None:
+            await self._stdio_manager.__aexit__(exc_type, exc, tb)
+            self._stdio_manager = None
+
+    def _require_session(self) -> ClientSession:
+        if self._session is None:
+            raise MCPClientError("The local MCP client has not been started.")
+        return self._session
+
+    async def list_tool_names(self) -> set[str]:
+        session = self._require_session()
+        tools = await session.list_tools()
+        return {tool.name for tool in tools.tools}
+
+    async def call_tool_text(
+        self,
+        name: str,
+        arguments: dict[str, object] | None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        session = self._require_session()
+        timeout = timedelta(seconds=timeout_seconds) if timeout_seconds is not None else None
+        result = await session.call_tool(
+            name,
+            arguments=arguments,
+            read_timeout_seconds=timeout,
+        )
+        return ToolTextResult(
+            tool_name=name,
+            text=_result_text(result).strip(),
+            is_error=bool(result.isError),
+        )
+
+
+class LocalMCPClient:
+    """Parsed async wrapper over the repo's local stdio MCP server."""
+
+    def __init__(
+        self,
+        repo_root: Path = REPO_ROOT,
+        *,
+        server_command: ServerCommand | None = None,
+    ) -> None:
+        self._repo_root = repo_root
+        self._transport: ToolClientProtocol = StdioToolClient(
+            server_command or default_server_command(repo_root)
+        )
         self.available_tools: tuple[str, ...] = ()
 
     async def __aenter__(self) -> "LocalMCPClient":
@@ -86,40 +206,35 @@ class LocalMCPClient:
         await self.stop()
 
     async def start(self) -> None:
-        if self._session is not None:
+        if self.available_tools:
             return
-        params = StdioServerParameters(
-            command="uv",
-            args=["run", "pyocd-debug-mcp"],
-            cwd=self._repo_root,
-        )
-        self._stdio_manager = stdio_client(params)
-        read_stream, write_stream = await self._stdio_manager.__aenter__()
-        session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
-        await session.initialize()
-        tools = await session.list_tools()
-        self.available_tools = tuple(sorted(tool.name for tool in tools.tools))
-        self._session = session
+        await self._transport.__aenter__()
+        tools = await self._transport.list_tool_names()
+        self.available_tools = tuple(sorted(tools))
 
     async def stop(self) -> None:
-        if self._session is not None:
-            await self._session.__aexit__(None, None, None)
-            self._session = None
-        if self._stdio_manager is not None:
-            await self._stdio_manager.__aexit__(None, None, None)
-            self._stdio_manager = None
+        await self._transport.__aexit__(None, None, None)
+        self.available_tools = ()
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> ToolTextResult:
-        if self._session is None:
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        if not self.available_tools:
             raise MCPClientError("The local MCP client has not been started.")
         if self.available_tools and tool_name not in self.available_tools:
             raise MCPClientError(f"Server does not expose tool '{tool_name}'.")
-        result = await self._session.call_tool(tool_name, arguments=arguments)
-        text = _result_text(result).strip()
-        if result.isError:
-            raise MCPClientError(text or f"Tool call failed: {tool_name}")
-        return ToolTextResult(tool_name=tool_name, text=text, is_error=False)
+        result = await self._transport.call_tool_text(
+            tool_name,
+            arguments,
+            timeout_seconds=timeout_seconds,
+        )
+        if result.is_error:
+            raise MCPClientError(result.text or f"Tool call failed: {tool_name}")
+        return result
 
     async def connect(
         self,

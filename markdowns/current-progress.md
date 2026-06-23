@@ -49,7 +49,9 @@ cleared the full frozen 12-case acceptance corpus on the scoped pair. The repo
 now contains:
 
 - the native Python brain package under `src/pyocd_debug_mcp/brain/`
+- the typed turnkey evidence layer under `src/pyocd_debug_mcp/brain/evidence.py`
 - the top-level `skills/` tree
+- the internal deterministic helper tree under `playbooks/turnkey/`
 - the `pyocd-debug-brain` CLI
 - multiple decision-provider backends:
   - native OpenAI API
@@ -58,6 +60,29 @@ now contains:
   - Claude Code CLI
 - the sibling turnkey benchmark path over the same 12-case corpus
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
+
+The Ben mainline also now carries the Jason-originated hardening that was
+missing before this merge pass:
+
+- a transport seam in `brain/mcp_client.py`:
+  - `ServerCommand`
+  - `ToolClientProtocol`
+  - transport-only stdio client
+  - higher-level parsed client wrapper
+- host-aware local rebuild execution instead of Windows-unsafe `bash`-only
+  shelling
+- typed observations / hypotheses / experiments / strategy-evaluation records
+  in the turnkey state artifact
+- internal deterministic helper playbooks separated from the model-facing
+  prompt-skill tree
+- per-tool timeout discipline in the turnkey loop so short runtime reads fail
+  fast while connect/flash/recover/build paths still get longer budgets
+- real file contents returned through `read_file(...)`, which fixed the live
+  alternate-board repair loop
+- UTF-8-with-replacement subprocess capture for Windows local builds and CLI
+  provider calls
+- generic alternate-suite acceptance logic so retained-board turnkey suites no
+  longer fail only because the suite is not the scoped pair
 
 What is still missing is the second-provider proof needed to call the turnkey
 layer fully closed.
@@ -73,8 +98,10 @@ portability claim is now narrower:
 
 The repo also still contains `nrf52840dk` as a retained alternate Nordic
 profile. It is not the current blocker for the scoped project path, but it is
-now live-proven on this Windows host for Zephyr rebuild, Stage 0, Stage 1, and
-the alternate six-case `R11` suite.
+now live-proven on this Windows host for Zephyr rebuild, Stage 0, Stage 1, a
+freeform healthy Codex turnkey run, the alternate six-case `R11` suite, and
+the alternate six-case Codex-backed `R12` turnkey ladder both as individual
+cases and as a one-command suite rerun.
 
 ## What Has Been Implemented
 
@@ -216,6 +243,7 @@ The first turnkey product layer is now implemented in the repo.
 Code that now exists:
 
 - `src/pyocd_debug_mcp/brain/config.py`
+- `src/pyocd_debug_mcp/brain/evidence.py`
 - `src/pyocd_debug_mcp/brain/mcp_client.py`
 - `src/pyocd_debug_mcp/brain/state.py`
 - `src/pyocd_debug_mcp/brain/provider_factory.py`
@@ -230,10 +258,12 @@ Code that now exists:
 - `src/pyocd_debug_mcp/brain/loop.py`
 - `src/pyocd_debug_mcp/brain/benchmark.py`
 - `src/pyocd_debug_mcp/brain/cli.py`
+- `src/pyocd_debug_mcp/brain/playbooks.py`
 - `tests/harness/r12_turnkey_benchmark.py`
 - `skills/common/...`
 - `skills/mcu_families/nrf52833/...`
 - `skills/mcu_families/stm32l476/...`
+- `playbooks/turnkey/...`
 
 What that code does:
 
@@ -255,8 +285,11 @@ What that code does:
 - keeps local turnkey run state
 - supports freeform `run` mode and benchmark mode
 - captures turnkey artifacts into the same `runs/<session_id>/...` tree
+- persists typed evidence inside `turnkey_state.json`
 - reuses the existing 12-case benchmark corpus instead of inventing a second
   benchmark taxonomy
+- keeps deterministic repair/health-check helper playbooks in a separate
+  internal layer rather than overloading the prompt-skill YAMLs
 
 ## Live Bench Facts
 
@@ -1017,6 +1050,20 @@ path has now been shown to do all of the following:
 - explain healthy reference firmware in board-grounded terms rather than vague
   generic prose
 
+New mainline-hardening proof now also exists on this Windows host:
+
+- the host-aware rebuild path works through the turnkey benchmark on attached
+  `nrf52840dk` without relying on Windows `bash`
+- the turnkey loop now records typed observations / hypotheses / experiments /
+  strategy evaluations in `turnkey_state.json`
+- the alternate-board `nrf52840dk` turnkey cases now accept against the same
+  runner after the alternate-suite acceptance logic was generalized
+- the live `read_file(...)` path now returns source contents instead of only a
+  char-count placeholder, which fixed the previously failing
+  `nrf52840dk__b003_silent_uart` repair loop
+- Windows Codex CLI provider turns and local rebuild captures now tolerate
+  non-ASCII subprocess output through UTF-8-with-replacement decoding
+
 For the six-case pilot and full Codex suite above, the turnkey path has also
 now been shown to:
 
@@ -1188,8 +1235,57 @@ setup notes; the current proven results are:
 - `uv run python host_bootstrap.py --board-id nrf52840dk`
 - `uv run python stage0_check.py --board-id nrf52840dk --reference-firmware nrf52840dk=firmware/nrf52840dk/reference/build/firmware.elf --recover-test nrf52840dk --confirm-shared-usb nrf52840dk`
 - `uv run python -m tests.harness.stage1_smoke --board-id nrf52840dk`
+- `uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52840dk --task "Verify this reference firmware is healthy and explain why."`
 - all six implemented `nrf52840dk` `R11` cases reached `FULL_SUCCESS`:
   `k001`, `b001`, `b002`, `f001`, `b003`, `b004`
+- on June 22, 2026, all six alternate-board Codex-backed `R12` turnkey cases
+  also reached `FULL_SUCCESS` on this Windows host:
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__k001_reference_green`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__b001_wrong_boot_text`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__b002_wrong_known_value`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__f001_halted_target_silent_uart`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__b003_silent_uart`
+  - `uv run pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52840dk__b004_dual_signal_regression`
+- the run roots for those six live `R12` passes are:
+  - `20260623T023010Z-9a4bfde3`
+  - `20260623T025702Z-b71d3ee4`
+  - `20260623T023621Z-8a0e1bb9`
+  - `20260623T023941Z-b3bfc317`
+  - `20260623T022530Z-9ffb99dc`
+  - `20260623T024316Z-a5ce88bb`
+- on June 23, 2026, the retained-board freeform Codex turnkey run also passed:
+  - session root: `20260623T034813Z-4301eb52`
+  - result: `[HEALTHY_CONFIRMED]`
+- on June 23, 2026, the retained-board one-command Codex turnkey suite rerun
+  also passed in the current merged state:
+  - command:
+    `uv run pyocd-debug-brain benchmark --provider codex-cli --suite nrf52840dk_v1_plus_b003_b004`
+  - suite summary:
+    `full_success=6`, `partial_success=0`, `fail=0`, `average_score=100.0`
+  - case run roots:
+    - `20260623T035021Z-e60b20c3`
+    - `20260623T035301Z-18bc10da`
+    - `20260623T035705Z-892b585d`
+    - `20260623T040041Z-47861540`
+    - `20260623T040253Z-7b5f1e56`
+    - `20260623T040728Z-ff4cf87c`
+  - observed runtime was about 20 minutes 43 seconds and continued to make
+    forward case-by-case progress throughout, so this was treated as a valid
+    long-running suite rather than a hang boundary
+
+Important live failure boundaries that were exposed and fixed during that
+alternate-board `R12` pass:
+
+- the alternate-suite acceptance function was incorrectly hardcoded to the
+  official scoped pair and could fail a real retained-board suite even when all
+  retained-board cases were green
+- the turnkey `read_file(...)` action previously returned only a char-count
+  summary instead of the actual file contents, which prevented the model from
+  seeing the source it repeatedly requested during `nrf52840dk__b003_silent_uart`
+- Windows subprocess capture for local rebuilds and CLI-provider calls
+  previously assumed the host code page, which caused `UnicodeDecodeError`
+  noise during successful runs until the capture path was switched to
+  UTF-8-with-replacement decoding
 
 What is still not proven by this alternate-board run:
 

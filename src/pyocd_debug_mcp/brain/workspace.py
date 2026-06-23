@@ -7,10 +7,13 @@ import secrets
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+import sys
+import time
 
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT
 
 SNAPSHOT_ROOT = RUNS_ROOT / "_r12_snapshots"  # PROJECT-DEFINED (turnkey scratch area)
+DEFAULT_BUILD_TIMEOUT_SECONDS = 1800.0  # PROJECT-DEFINED (allow real builds, but not indefinite hangs)
 
 
 class WorkspaceError(RuntimeError):
@@ -23,6 +26,7 @@ class BuildResult:
     exit_code: int
     stdout: str
     stderr: str
+    duration_seconds: float
 
 
 @dataclass
@@ -49,25 +53,19 @@ class WorkspaceSession:
         path.write_text(content, encoding="utf-8")
         return path
 
-    def run_build(self, command: str | None = None) -> BuildResult:
+    def run_build(
+        self,
+        command: str | None = None,
+        *,
+        timeout_seconds: float = DEFAULT_BUILD_TIMEOUT_SECONDS,
+    ) -> BuildResult:
         build_command = (command or self.build_command or "").strip()
         if not build_command:
             raise WorkspaceError("No build command is available for this workspace.")
-        try:
-            result = subprocess.run(
-                ["bash", "-lc", build_command],
-                cwd=self.root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            raise WorkspaceError("`bash` was not found while running the build command.") from exc
-        return BuildResult(
-            command=build_command,
-            exit_code=result.returncode,
-            stdout=result.stdout or "",
-            stderr=result.stderr or "",
+        return _run_local_command(
+            build_command,
+            cwd=self.root,
+            timeout_seconds=timeout_seconds,
         )
 
     def changed_files(self) -> tuple[str, ...]:
@@ -161,6 +159,48 @@ def _decode_diff_text(data: bytes) -> tuple[list[str], bool]:
         return data.decode("utf-8").splitlines(keepends=True), False
     except UnicodeDecodeError:
         return [], True
+
+
+def _shell_command_for_host(command: str) -> list[str]:
+    if sys.platform == "win32":
+        return ["cmd.exe", "/d", "/s", "/c", command]
+    return ["bash", "-lc", command]
+
+
+def _run_local_command(
+    command: str,
+    *,
+    cwd: Path,
+    timeout_seconds: float = DEFAULT_BUILD_TIMEOUT_SECONDS,
+) -> BuildResult:
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            _shell_command_for_host(command),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except FileNotFoundError as exc:
+        shell_name = "cmd.exe" if sys.platform == "win32" else "bash"
+        raise WorkspaceError(
+            f"`{shell_name}` was not found while running the build command."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise WorkspaceError(
+            f"Build command timed out after {timeout_seconds:.0f}s: {command}"
+        ) from exc
+    return BuildResult(
+        command=command,
+        exit_code=result.returncode,
+        stdout=result.stdout or "",
+        stderr=result.stderr or "",
+        duration_seconds=time.monotonic() - started,
+    )
 
 
 def prepare_workspace_session(

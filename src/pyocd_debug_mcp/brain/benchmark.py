@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -233,10 +234,12 @@ def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool
     if average < 85:
         return False
 
+    suite_cases = {case.case_id: case for case in r11.load_suite(suite_name)}
     by_case = {report.case_id: report for report in reports}
     known_good_ids = {
-        "nucleo_l476rg__k001_reference_green",
-        "nrf52833dk__k001_reference_green",
+        case_id
+        for case_id, case in suite_cases.items()
+        if case.kind == "known_good"
     }
     if not all(
         by_case.get(case_id) is not None and by_case[case_id].score_report.outcome_label == "full_success"
@@ -245,8 +248,9 @@ def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool
         return False
 
     observability_ids = {
-        "nucleo_l476rg__f001_halted_target_silent_uart",
-        "nrf52833dk__f001_halted_target_silent_uart",
+        case_id
+        for case_id, case in suite_cases.items()
+        if case.kind == "observability_fault"
     }
     if not all(
         by_case.get(case_id) is not None
@@ -256,12 +260,18 @@ def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool
     ):
         return False
 
+    injected_bug_ids = {
+        case_id
+        for case_id, case in suite_cases.items()
+        if case.kind == "injected_bug"
+    }
     full_success_bugs = sum(
         report.score_report.outcome_label == "full_success"
-        and "__b" in report.case_id
+        and report.case_id in injected_bug_ids
         for report in reports
     )
-    if full_success_bugs < 6:
+    required_bug_successes = max(1, math.ceil(len(injected_bug_ids) * 0.75))
+    if full_success_bugs < required_bug_successes:
         return False
 
     return True

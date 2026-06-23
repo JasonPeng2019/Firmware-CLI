@@ -85,6 +85,8 @@ ActionUnion = Annotated[
 class TurnDecision(_StrictModel):
     observation_summary: str
     classification: Classification | None = None
+    hypothesis: str | None = None
+    strategy_evaluation: str | None = None
     action: ActionUnion
 
 
@@ -206,6 +208,8 @@ def turn_decision_output_schema() -> dict[str, object]:
                 "type": ["string", "null"],
                 "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", None],
             },
+            "hypothesis": {"type": ["string", "null"]},
+            "strategy_evaluation": {"type": ["string", "null"]},
             "action": {"oneOf": action_variants},
         },
     }

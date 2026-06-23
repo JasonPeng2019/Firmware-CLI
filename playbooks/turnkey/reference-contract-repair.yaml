@@ -1,0 +1,8 @@
+skill_id: reference-contract-repair
+title: Restore the tracked reference contract, rebuild, and reverify
+supported_kinds:
+  - all
+workflow_kind: reference_contract_repair
+requires_workspace: true
+steps: []
+final_assertions: []

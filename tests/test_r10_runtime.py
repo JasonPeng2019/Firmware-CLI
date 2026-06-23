@@ -105,8 +105,8 @@ def make_event(
 
 
 def test_runtime_runs_root_points_at_repo_runs_dir() -> None:
-    assert session_runtime.RUNS_ROOT.name == "runs"
-    assert session_runtime.RUNS_ROOT.parent.name == "Firmware-CLI"
+    expected_runs_root = Path(__file__).resolve().parents[1] / "runs"
+    assert session_runtime.RUNS_ROOT == expected_runs_root
 
 
 def test_session_store_writes_jsonl_and_summary(tmp_path: Path) -> None:

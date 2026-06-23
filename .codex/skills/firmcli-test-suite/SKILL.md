@@ -19,11 +19,17 @@ Use this skill to mirror `.claude/commands/test-suite.md`.
 5. Run the suite ladder from the repo root:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset suite`
    - add `--command` entries for chain-specific tests, harnesses, or dry-runs
-6. If the ladder exposes a real bug or a coverage gap that can be fixed without user input, fix it and rerun the relevant checks before reporting back.
-7. If a finding requires a settled-decision change or real hardware proof, surface it and stop at the hand-off.
-8. Produce a matrix with `feature | check run | result | evidence`.
-9. Keep the outcome honest: a suite can be green only up to the hardware boundary, never past it.
+6. If the ladder exposes a real bug or a coverage gap that can be fixed without user input, route that failure through `firmcli-fix-bug`.
+7. During each suite-driven repair pass, keep the workflow disciplined:
+   - update or create the narrowest spec needed for the fix
+   - build the fix
+   - review the fix
+   - rerun the targeted failing checks
+   - rerun the full suite before reporting green
+8. If a finding requires a settled-decision change or real hardware proof, surface it and stop at the hand-off.
+9. Produce a matrix with `feature | check run | result | evidence`.
+10. Keep the outcome honest: a suite can be green only up to the hardware boundary, never past it.
 
 ## Closeout
 
-Report the matrix, the real command output, the ordered hardware hand-off, and the top-line verdict for the agent-verifiable surface.
+Report the matrix, the real command output, the ordered hardware hand-off, the fix loops taken if any, and the top-line verdict for the agent-verifiable surface.

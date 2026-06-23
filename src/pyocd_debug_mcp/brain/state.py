@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from pyocd_debug_mcp.brain.actions import Classification, VerificationSnapshot
+from pyocd_debug_mcp.brain.evidence import (
+    Experiment,
+    Hypothesis,
+    Observation,
+    StrategyEvaluation,
+)
 
 
 @dataclass
@@ -41,6 +47,10 @@ class BrainState:
     last_build_failure_signature: str | None = None
     last_no_progress_signature: str | None = None
     last_verification_signature: tuple[bool, bool, bool, bool] | None = None
+    observations: list[Observation] = field(default_factory=list)
+    hypotheses: list[Hypothesis] = field(default_factory=list)
+    experiments: list[Experiment] = field(default_factory=list)
+    strategy_evaluations: list[StrategyEvaluation] = field(default_factory=list)
 
     def register_connect(
         self,
@@ -110,4 +120,8 @@ class BrainState:
             "repeated_build_failure_count": self.repeated_build_failure_count,
             "stagnant_fix_cycle_count": self.stagnant_fix_cycle_count,
             "pending_fix_evaluation": self.pending_fix_evaluation,
+            "observations": [item.to_dict() for item in self.observations],
+            "hypotheses": [item.to_dict() for item in self.hypotheses],
+            "experiments": [item.to_dict() for item in self.experiments],
+            "strategy_evaluations": [item.to_dict() for item in self.strategy_evaluations],
         }

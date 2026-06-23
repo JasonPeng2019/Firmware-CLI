@@ -33,6 +33,8 @@ class ClaudeCLIDecisionProvider:
                 result = subprocess.run(
                     _build_claude_command(model=self._model, instructions=instructions, prompt=current_prompt),
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     capture_output=True,
                     cwd=tmpdir,
                     check=False,
