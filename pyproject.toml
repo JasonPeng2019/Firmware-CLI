@@ -34,6 +34,10 @@ dev = [
     "mypy>=1.10",                  # type checking
     "debugpy>=1.8",                # optional: remote-attach debugging of the server itself
 ]
+build = [
+    "nuitka>=2.4",                 # compiles pyocd-debug to a native binary for distribution (spike, see markdowns/curr/cli_distribution_spike_spec.md)
+    "ordered-set>=4.1",            # Nuitka's recommended companion for faster builds
+]
 
 [build-system]
 requires = ["hatchling"]
