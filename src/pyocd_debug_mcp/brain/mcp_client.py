@@ -42,8 +42,8 @@ class ToolClientProtocol(Protocol):
     ) -> None:
         """Leave the underlying session context."""
 
-    async def list_tool_names(self) -> set[str]:
-        """Return the currently available tool names."""
+    async def list_tool_descriptors(self) -> tuple["ToolDescriptor", ...]:
+        """Return the currently available tool metadata."""
 
     async def call_tool_text(
         self,
@@ -63,6 +63,20 @@ class ServerCommand:
     args: tuple[str, ...]
     cwd: Path | None = None
     env: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class ToolDescriptor:
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.input_schema,
+        }
 
 
 @dataclass(frozen=True)
@@ -160,10 +174,17 @@ class StdioToolClient:
             raise MCPClientError("The local MCP client has not been started.")
         return self._session
 
-    async def list_tool_names(self) -> set[str]:
+    async def list_tool_descriptors(self) -> tuple[ToolDescriptor, ...]:
         session = self._require_session()
         tools = await session.list_tools()
-        return {tool.name for tool in tools.tools}
+        return tuple(
+            ToolDescriptor(
+                name=tool.name,
+                description=(tool.description or "").strip(),
+                input_schema=dict(tool.inputSchema or {}),
+            )
+            for tool in tools.tools
+        )
 
     async def call_tool_text(
         self,
@@ -200,6 +221,7 @@ class LocalMCPClient:
             server_command or default_server_command(repo_root)
         )
         self.available_tools: tuple[str, ...] = ()
+        self.tool_descriptors: tuple[ToolDescriptor, ...] = ()
 
     async def __aenter__(self) -> "LocalMCPClient":
         await self.start()
@@ -214,17 +236,29 @@ class LocalMCPClient:
         try:
             with anyio.fail_after(MCP_STARTUP_TIMEOUT_SECONDS):
                 await self._transport.__aenter__()
-                tools = await self._transport.list_tool_names()
+                descriptors = await self._transport.list_tool_descriptors()
         except TimeoutError as exc:
             await self._transport.__aexit__(type(exc), exc, exc.__traceback__)
             raise MCPClientError(
                 f"Local MCP server startup timed out after {MCP_STARTUP_TIMEOUT_SECONDS:.0f}s."
             ) from exc
-        self.available_tools = tuple(sorted(tools))
+        self.tool_descriptors = tuple(sorted(descriptors, key=lambda item: item.name))
+        self.available_tools = tuple(descriptor.name for descriptor in self.tool_descriptors)
 
     async def stop(self) -> None:
         await self._transport.__aexit__(None, None, None)
         self.available_tools = ()
+        self.tool_descriptors = ()
+
+    async def list_tool_names(self) -> set[str]:
+        if not self.tool_descriptors:
+            raise MCPClientError("The local MCP client has not been started.")
+        return {descriptor.name for descriptor in self.tool_descriptors}
+
+    async def list_tools(self) -> tuple[ToolDescriptor, ...]:
+        if not self.tool_descriptors:
+            raise MCPClientError("The local MCP client has not been started.")
+        return self.tool_descriptors
 
     async def call_tool(
         self,

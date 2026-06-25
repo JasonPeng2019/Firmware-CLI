@@ -32,6 +32,15 @@ What is already true:
 - the scoped pair is live-proven through the full `R11` benchmark layer
 - the turnkey brain and the additive `pyocd-debug` operator shell are
   implemented in code
+- the turnkey provider/prompt layer now has explicit hybrid session continuity
+  and live tool-schema prompting:
+  - the brain always persists canonical compact local memory across turns
+  - OpenAI uses native Responses API continuation when healthy, with local
+    fallback and periodic safety sync
+  - Anthropic, Codex CLI, and Claude CLI use the same local-memory session
+    model without fake durable remote sessions
+  - the model-facing tool block now comes from live MCP tool metadata filtered
+    to the curated brain tool surface
 - the Codex-backed turnkey path has already cleared the frozen 12-case turnkey
   suite on the scoped pair
 
@@ -104,6 +113,14 @@ The product layer that exists today includes:
   - `anthropic-api`
   - `codex-cli`
   - `claude-cli`
+- a session-aware provider contract with:
+  - declared provider capabilities
+  - loop-owned provider session state
+  - canonical compact memory entries plus compacted summary state
+  - persisted continuation and compaction metadata in turnkey state and
+    model-turn artifacts
+- live MCP tool metadata loading plus a curated tool-schema prompt bundle in
+  `src/pyocd_debug_mcp/brain/tool_schemas.py`
 - the frozen 12-case benchmark corpus:
   - `k001`
   - `b001`
@@ -280,13 +297,28 @@ These are the latest real rerun results that back the current status.
 ### Non-Hardware
 
 - `uv run pytest -q`
-  - passed: `236 passed`
+  - passed: `244 passed`
 - `uv run ruff check .`
   - passed
 - `uv run mypy src`
   - passed
 - `uv build --wheel`
   - passed
+
+### Turnkey Provider/Prompt Refactor
+
+- the Branch A provider-session and tool-schema refactor is green under the
+  current non-hardware ladder
+- direct automated coverage now proves:
+  - provider capability and provider-session serialization
+  - curated MCP tool-schema extraction and stable rendering order
+  - canonical provider memory recording without recursive prompt nesting
+  - deterministic memory compaction and compaction-on-char-overflow
+  - model-summary compaction fallback to deterministic summary
+  - OpenAI native continuation with local fallback and periodic safety sync
+  - Anthropic, Codex CLI, and Claude CLI local-memory continuation semantics
+  - loop-owned provider session state threading across turns
+  - CLI and shell forwarding for `--memory-mode` and `--native-sync-every`
 
 ### Host / Bootstrap
 

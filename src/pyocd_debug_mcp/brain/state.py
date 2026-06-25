@@ -11,6 +11,10 @@ from pyocd_debug_mcp.brain.evidence import (
     Observation,
     StrategyEvaluation,
 )
+from pyocd_debug_mcp.brain.provider_types import (
+    ProviderCapabilities,
+    ProviderSessionState,
+)
 
 
 @dataclass
@@ -24,6 +28,9 @@ class BrainState:
     iteration: int = 0
     session_id: str | None = None
     session_ids_seen: list[str] = field(default_factory=list)
+    provider_session_state: ProviderSessionState | None = None
+    provider_capabilities: ProviderCapabilities | None = None
+    tool_schema_summary: dict[str, object] | None = None
     probe_uid: str | None = None
     route_used: str | None = None
     board_info: str | None = None
@@ -100,6 +107,17 @@ class BrainState:
             "iteration": self.iteration,
             "session_id": self.session_id,
             "session_ids_seen": list(self.session_ids_seen),
+            "provider_session_state": (
+                self.provider_session_state.to_record()
+                if self.provider_session_state is not None
+                else None
+            ),
+            "provider_capabilities": (
+                self.provider_capabilities.to_record()
+                if self.provider_capabilities is not None
+                else None
+            ),
+            "tool_schema_summary": dict(self.tool_schema_summary or {}),
             "probe_uid": self.probe_uid,
             "route_used": self.route_used,
             "board_info": self.board_info,

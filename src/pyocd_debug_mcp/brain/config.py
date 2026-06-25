@@ -12,6 +12,10 @@ from pyocd_debug_mcp.local_env import load_local_env
 
 TurnkeyMode = Literal["freeform", "benchmark"]
 TurnkeyProviderKind = Literal["openai-api", "anthropic-api", "codex-cli", "claude-cli"]
+TurnkeyMemoryMode = Literal["deterministic", "model-summary"]
+
+DEFAULT_TURNKEY_MEMORY_MODE: TurnkeyMemoryMode = "deterministic"
+DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 4
 
 
 class BrainConfigError(RuntimeError):
@@ -34,6 +38,8 @@ class TurnkeyInvocation:
     model: str | None
     max_iters: int
     serial_read_seconds: float
+    memory_mode: TurnkeyMemoryMode
+    native_sync_every: int
     port: str | None = None
     flash_artifact: Path | None = None
     elf: Path | None = None
@@ -122,6 +128,43 @@ def cast_provider(raw_provider: str) -> TurnkeyProviderKind:
     )
 
 
+def cast_memory_mode(raw_mode: str) -> TurnkeyMemoryMode:
+    candidate = raw_mode.strip().lower()
+    if candidate in {"deterministic", "model-summary"}:
+        return cast(TurnkeyMemoryMode, candidate)
+    raise BrainConfigError(
+        "Unsupported memory mode. Use one of: deterministic, model-summary."
+    )
+
+
+def resolve_memory_mode(memory_mode_override: str | None = None) -> TurnkeyMemoryMode:
+    raw_value = memory_mode_override
+    if raw_value is None:
+        raw_value = os.environ.get("PYOCD_TURNKEY_MEMORY_MODE")
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_TURNKEY_MEMORY_MODE
+    return cast_memory_mode(raw_value)
+
+
+def resolve_native_sync_every(native_sync_every_override: int | None = None) -> int:
+    if native_sync_every_override is not None:
+        if native_sync_every_override < 0:
+            raise BrainConfigError("native sync cadence must be 0 or a positive integer.")
+        return native_sync_every_override
+    raw_value = (os.environ.get("PYOCD_TURNKEY_NATIVE_SYNC_EVERY") or "").strip()
+    if not raw_value:
+        return DEFAULT_TURNKEY_NATIVE_SYNC_EVERY
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise BrainConfigError(
+            "PYOCD_TURNKEY_NATIVE_SYNC_EVERY must be an integer >= 0."
+        ) from exc
+    if value < 0:
+        raise BrainConfigError("PYOCD_TURNKEY_NATIVE_SYNC_EVERY must be >= 0.")
+    return value
+
+
 def build_turnkey_invocation(
     *,
     mode: TurnkeyMode,
@@ -131,6 +174,8 @@ def build_turnkey_invocation(
     model: str | None,
     max_iters: int,
     serial_read_seconds: float,
+    memory_mode: TurnkeyMemoryMode | None = None,
+    native_sync_every: int | None = None,
     port: str | None = None,
     flash_artifact: str | Path | None = None,
     elf: str | Path | None = None,
@@ -154,6 +199,8 @@ def build_turnkey_invocation(
         model=normalized_model,
         max_iters=max_iters,
         serial_read_seconds=serial_read_seconds,
+        memory_mode=resolve_memory_mode(memory_mode),
+        native_sync_every=resolve_native_sync_every(native_sync_every),
         port=(port or None),
         flash_artifact=_normalize_optional_path(flash_artifact),
         elf=_normalize_optional_path(elf),
