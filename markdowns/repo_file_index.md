@@ -163,11 +163,14 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
-| `ROADMAP.md` | Full project plan (R0–R15), dependency tree, gates, rolling-frontier staffing. *Design/plan doc — see status banner.* |
-| `UXLayer.md` | Proposal for a richer operator-facing pure CLI shell over the current R12 turnkey brain; freezes the current barebones CLI contract and the required event-stream-first UX layering plan. |
-| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions. *Design/plan doc — see status banner.* |
-| `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails). *Design doc — see status banner.* |
-| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 in-progress validation checklist. |
+| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype packet split: P0 foundation, module ownership, shared-file rules, and merge order for parallel branches. |
+| `things-to-change.md` | Active product/design backlog for the R12 capability prototype; contains detailed notes behind the roadmap/build-plan summaries. |
+| `UXLayer.md` | Proposal for a richer operator-facing pure CLI shell over the current R12 turnkey brain, including event streams, progress output, inspector mode, and checkpoint rendering. |
+| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
+| `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
+| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 status/prototype caveats. |
+| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
 | `repo_file_index.md` | This file. |
 
 ### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
@@ -176,7 +179,7 @@ a glance before relying on detail.
 |---|---|
 | `r10_contract.md` | Implementation source of truth for the R10 runtime-safety contract; still referenced because R11 builds on it. |
 | `r11_benchmark_spec.md` | Implementation source of truth for the active R11 benchmark slice. |
-| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice. |
+| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 

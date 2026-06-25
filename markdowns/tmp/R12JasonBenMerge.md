@@ -1,5 +1,12 @@
 # R12 Jason/Ben Merge Notes
 
+> Current status: this is a historical merge/rationale memo. The current R12
+> prototype implementation plan is now governed by
+> `markdowns/firmware_agent_build_plan_concrete (10).md`,
+> `markdowns/curr/r12_turnkey_spec.md`, and `markdowns/ROADMAP.md`. Where this
+> memo describes the older narrow R12 product shape, treat it as background
+> unless it has been reconciled into those current docs.
+
 ## Purpose
 
 This document captures how to merge the strongest parts of the current `R12`

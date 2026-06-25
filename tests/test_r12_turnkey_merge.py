@@ -1,20 +1,29 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
+import pytest
 
 from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
+from pyocd_debug_mcp.brain import mcp_client as mcp_client_mod
 from pyocd_debug_mcp.brain.config import build_turnkey_invocation
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.loop import run_turnkey
-from pyocd_debug_mcp.brain.mcp_client import ToolTextResult, default_server_command
-from pyocd_debug_mcp.brain.provider_claude_cli import ClaudeCLIDecisionProvider
-from pyocd_debug_mcp.brain.provider_codex_cli import CodexCLIDecisionProvider
+from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult, default_server_command
+from pyocd_debug_mcp.brain.provider_claude_cli import (
+    ClaudeCLIDecisionProvider,
+    ProviderResponseError as ClaudeProviderResponseError,
+)
+from pyocd_debug_mcp.brain.provider_codex_cli import (
+    CodexCLIDecisionProvider,
+    ProviderResponseError as CodexProviderResponseError,
+)
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain import loop as loop_mod
@@ -57,6 +66,35 @@ def test_default_server_command_uses_uv_run_repo_entrypoint() -> None:
     assert command.command == "uv"
     assert command.args == ("run", "pyocd-debug-mcp")
     assert command.cwd is not None
+
+
+def test_local_mcp_client_start_times_out(monkeypatch) -> None:
+    class SlowStartupTransport:
+        async def __aenter__(self) -> "SlowStartupTransport":
+            return self
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        async def list_tool_names(self) -> set[str]:
+            await anyio.sleep(1.0)
+            return {"connect"}
+
+        async def call_tool_text(
+            self,
+            name: str,
+            arguments: dict[str, object] | None,
+            *,
+            timeout_seconds: float | None = None,
+        ) -> ToolTextResult:
+            return ToolTextResult(tool_name=name, text="ok")
+
+    monkeypatch.setattr(mcp_client_mod, "MCP_STARTUP_TIMEOUT_SECONDS", 0.01)
+    client = LocalMCPClient()
+    client._transport = SlowStartupTransport()  # type: ignore[assignment]
+
+    with pytest.raises(MCPClientError, match="startup timed out after 0s"):
+        anyio.run(client.start)
 
 
 def test_run_local_command_uses_windows_shell_on_windows(
@@ -279,6 +317,7 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
         captured["encoding"] = kwargs.get("encoding")
         captured["errors"] = kwargs.get("errors")
         captured["input"] = kwargs.get("input")
+        captured["timeout"] = kwargs.get("timeout")
         (output_dir / "turn_decision.json").write_text(
             json.dumps(
                 {
@@ -307,6 +346,29 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
     assert captured["input"] == "sys\n\nprompt\n"
+    assert captured["timeout"] == 300.0
+
+
+def test_codex_cli_provider_surfaces_subprocess_timeout(
+    monkeypatch,
+) -> None:
+    class _TempDir:
+        def __enter__(self) -> str:
+            return "."
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
+
+    provider = CodexCLIDecisionProvider(model=None, timeout_seconds=1.0)
+
+    with pytest.raises(CodexProviderResponseError, match="Codex CLI timed out after 1s"):
+        provider._next_decision_sync("sys", "prompt")
 
 
 def test_claude_cli_provider_uses_utf8_subprocess_capture(
@@ -324,6 +386,7 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     def fake_run(command: list[str], **kwargs: object) -> object:
         captured["encoding"] = kwargs.get("encoding")
         captured["errors"] = kwargs.get("errors")
+        captured["timeout"] = kwargs.get("timeout")
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -356,3 +419,26 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
+    assert captured["timeout"] == 300.0
+
+
+def test_claude_cli_provider_surfaces_subprocess_timeout(
+    monkeypatch,
+) -> None:
+    class _TempDir:
+        def __enter__(self) -> str:
+            return "."
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
+
+    provider = ClaudeCLIDecisionProvider(model=None, timeout_seconds=1.0)
+
+    with pytest.raises(ClaudeProviderResponseError, match="Claude CLI timed out after 1s"):
+        provider._next_decision_sync("sys", "prompt")

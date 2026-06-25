@@ -27,17 +27,44 @@ from pyocd_debug_mcp.target_errors import (
     TargetConnectionError,
     UnsupportedArtifactError,
 )
+from pyocd_debug_mcp.timeouts import (
+    DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
+    PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
+    PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
+    PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
+    PYOCD_RESET_HALT_TIMEOUT_SECONDS,
+    PYOCD_STEP_TIMEOUT_SECONDS,
+    subprocess_timeout_stream_text,
+)
 
 ROUTE_PYOCD_NATIVE = "pyocd-native"
 SUPPORTED_FLASH_SUFFIXES = frozenset({".elf", ".hex"})
 
 
-def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
+def _run_cmd(
+    cmd: list[str],
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+) -> tuple[int, str, str]:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after {timeout_seconds:.0f}s: {' '.join(cmd)}",
+        )
     return result.returncode, result.stdout or "", result.stderr or ""
 
 
@@ -131,6 +158,19 @@ def build_session_options(
     options: dict[str, object] = {}
     if target:
         options["target_override"] = target
+    options.update(
+        {
+            "cpu.step.instruction.timeout": PYOCD_STEP_TIMEOUT_SECONDS,
+            "reset.halt_timeout": PYOCD_RESET_HALT_TIMEOUT_SECONDS,
+            "reset.dap_recover.timeout": PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
+            "reset.core_recover.timeout": PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
+            "flash.timeout.init": PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
+            "flash.timeout.program": PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
+            "flash.timeout.erase_sector": PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
+            "flash.timeout.erase_all": PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
+            "flash.timeout.analyzer": PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
+        }
+    )
     if board and board.probe_family == "jlink":
         # Match the Stage 0/J-Link open-by-serial workaround proven on hardware.
         options["jlink.non_interactive"] = False

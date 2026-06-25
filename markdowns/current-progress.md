@@ -77,6 +77,14 @@ missing before this merge pass:
   prompt-skill tree
 - per-tool timeout discipline in the turnkey loop so short runtime reads fail
   fast while connect/flash/recover/build paths still get longer budgets
+- bounded runtime startup/provider/helper paths: local MCP startup, Codex/Claude
+  CLI providers, OpenAI/Anthropic API providers, server probe helper commands,
+  Stage 0/test-harness helper commands, and pyserial write windows now carry
+  explicit project-defined timeout ceilings
+- pyOCD flash/reset/step timeout options are passed explicitly through the
+  shared session option builder; pyOCD connect remains a documented in-process
+  vendor-call boundary because this installed pyOCD version has no direct
+  connect-timeout option
 - real file contents returned through `read_file(...)`, which fixed the live
   alternate-board repair loop
 - UTF-8-with-replacement subprocess capture for Windows local builds and CLI
@@ -86,6 +94,16 @@ missing before this merge pass:
 
 What is still missing is full official-pair second-provider proof and
 fresh-machine portability proof needed to call the turnkey layer fully closed.
+
+The active prototype direction has also moved beyond the original narrow R12
+acceptance layer. The current docs now track a capability prototype that adds
+persistent provider sessions, free host-side model work with a final governed
+board-decision boundary, real tool schemas, batched actions with `wait` and
+UART write, live progress/inspector output, timeout hardening with
+model-refined budgets, session-scoped client actions, scoped green approval via
+model-made flipped tests, and stream checkpoints for UART/build/client-action
+flows. Those items are planned prototype work unless a later status entry says
+they have been implemented and verified.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower:

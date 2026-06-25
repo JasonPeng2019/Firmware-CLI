@@ -72,6 +72,10 @@ from pyocd_debug_mcp.target_errors import (
     TargetConnectionError,
     UnsupportedArtifactError,
 )
+from pyocd_debug_mcp.timeouts import (
+    DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    subprocess_timeout_stream_text,
+)
 
 load_local_env()
 
@@ -208,12 +212,26 @@ def _parse_int(text: str) -> int:
     return int(text, 0)
 
 
-def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
+def _run_cmd(
+    cmd: list[str],
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+) -> tuple[int, str, str]:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after {timeout_seconds:.0f}s: {' '.join(cmd)}",
+        )
     return result.returncode, result.stdout or "", result.stderr or ""
 
 

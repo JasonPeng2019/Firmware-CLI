@@ -33,6 +33,10 @@ from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
 from pyocd_debug_mcp.services import target_control  # noqa: E402
 from pyocd_debug_mcp.services.symbols import ResolvedSymbol, read_symbol_u32  # noqa: E402
 from pyocd_debug_mcp.services.uart_capture import capture_uart_output  # noqa: E402
+from pyocd_debug_mcp.timeouts import (  # noqa: E402
+    DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    subprocess_timeout_stream_text,
+)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -86,12 +90,26 @@ def header(text: str) -> None:
     print(f"\n{'=' * 60}\n  {text}\n{'=' * 60}")
 
 
-def run_cmd(cmd: list[str]) -> tuple[int, str, str]:
+def run_cmd(
+    cmd: list[str],
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+) -> tuple[int, str, str]:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after {timeout_seconds:.0f}s: {' '.join(cmd)}",
+        )
     return result.returncode, result.stdout or "", result.stderr or ""
 
 

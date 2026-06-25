@@ -28,6 +28,7 @@ from pyocd_debug_mcp.board_config import (  # noqa: E402
 from pyocd_debug_mcp.probe_inventory import resolve_probe_for_board  # noqa: E402
 from pyocd_debug_mcp.services import target_control  # noqa: E402
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT  # noqa: E402
+from pyocd_debug_mcp.timeouts import DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS  # noqa: E402
 from tests.harness.stage1_smoke import run_stage1_smoke  # noqa: E402
 
 CASES_ROOT = REPO_ROOT / "tests" / "cases"
@@ -36,6 +37,7 @@ RESULT_SCHEMA_PATH = CASES_ROOT / "r11_result_schema.json"
 WORKSPACES_ROOT = RUNS_ROOT / "_r11_workspaces"
 DEFAULT_SERIAL_READ_SECONDS = 3.0
 DEFAULT_CODEX_TIMEOUT_SECONDS = 180.0
+DEFAULT_CASE_BUILD_TIMEOUT_SECONDS = 1800.0
 DEFAULT_SCORING_PROFILE = "r11_default_v1"
 FULL_MCP_TOOL_SURFACE = (
     "connect",
@@ -228,7 +230,7 @@ def _run_cmd(
     cmd: list[str],
     *,
     cwd: Path | None = None,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
 ) -> tuple[int, str, str]:
     try:
         result = subprocess.run(
@@ -493,7 +495,11 @@ def _run_build_command(command: str, workspace_root: Path) -> None:
         cmd = ["cmd.exe", "/d", "/s", "/c", command]
     else:
         cmd = ["bash", "-lc", command]
-    exit_code, stdout, stderr = _run_cmd(cmd, cwd=workspace_root)
+    exit_code, stdout, stderr = _run_cmd(
+        cmd,
+        cwd=workspace_root,
+        timeout_seconds=DEFAULT_CASE_BUILD_TIMEOUT_SECONDS,
+    )
     if exit_code != 0:
         raise RuntimeError(
             f"Build command failed in {workspace_root}: {command}\nstdout:\n{stdout}\nstderr:\n{stderr}"

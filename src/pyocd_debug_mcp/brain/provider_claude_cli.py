@@ -10,6 +10,7 @@ import anyio
 
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
 
 class ProviderResponseError(RuntimeError):
@@ -19,8 +20,14 @@ class ProviderResponseError(RuntimeError):
 class ClaudeCLIDecisionProvider:
     """Decision provider that shells out to `claude --print`."""
 
-    def __init__(self, *, model: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        model: str | None,
+        timeout_seconds: float = PROVIDER_REQUEST_TIMEOUT_SECONDS,
+    ) -> None:
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
         return await anyio.to_thread.run_sync(self._next_decision_sync, instructions, turn_prompt)
@@ -30,15 +37,21 @@ class ClaudeCLIDecisionProvider:
         current_prompt = turn_prompt
         for _attempt in range(2):
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-") as tmpdir:
-                result = subprocess.run(
-                    _build_claude_command(model=self._model, instructions=instructions, prompt=current_prompt),
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
-                    cwd=tmpdir,
-                    check=False,
-                )
+                try:
+                    result = subprocess.run(
+                        _build_claude_command(model=self._model, instructions=instructions, prompt=current_prompt),
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        cwd=tmpdir,
+                        check=False,
+                        timeout=self._timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise ProviderResponseError(
+                        f"Claude CLI timed out after {self._timeout_seconds:.0f}s."
+                    ) from exc
                 output_text, command_error = _extract_claude_output_text(result)
                 if command_error is not None:
                     last_error = command_error

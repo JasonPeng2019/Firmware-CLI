@@ -578,8 +578,14 @@ config and uses the same tools for either. Prove the server against both boards.
 ### Step 2.4 — Long-running operations: BLOCKING for v1
 - **Decision (settled):** v1 uses **blocking** tool calls, not the async/ticket pattern — the debug
   loop is inherently sequential on a single board, so there's no independent work to parallelize.
-- **But:** hardware work runs in a **background worker** so the server stays responsive (honors cancel,
-  no freeze, no transport timeout). Blocking ≠ frozen server.
+- **But:** blocking calls are **bounded** at every layer that can be bounded in-process: external
+  helper CLIs, local MCP startup, model-provider subprocess/API calls, serial read/write windows, and
+  MCP tool calls all carry explicit project-defined timeouts. pyOCD flash/reset/step paths also pass
+  explicit pyOCD session timeout options. Blocking != unbounded waiting.
+- **Known implementation boundary:** pyOCD session open and some vendor DLL calls run in-process. The
+  installed pyOCD version exposes flash/reset/step timeout options, but not a direct connect timeout;
+  if a vendor DLL blocks inside native code, Python cannot safely kill just that call. The future
+  ticket/worker-process hook is the path to a hard kill guarantee for those calls.
 - **Forward-compat hook (cheap, do now):** isolate "run a slow op" behind one internal interface, so a
   later move to the ticket pattern / MCP Tasks extension reimplements *one* module. Don't build the
   ticket pattern yet.
@@ -739,7 +745,8 @@ Frozen implementation choices for the first pass:
    - `skills/common/`
    - `skills/mcu_families/nrf52833/`
    - `skills/mcu_families/stm32l476/`
-5. **Keep the model-facing action surface smaller than the server surface.** The first turnkey pass uses:
+5. **Keep the model-facing action surface smaller than the server surface.** The first turnkey acceptance
+   path used:
    - MCP-backed actions: `connect`, `disconnect`, `get_board_info`, `get_state`, `halt`, `resume`,
      `reset`, `read_core_register`, `read_memory`, `flash_firmware`, `read_serial`, `unlock_recover`
    - local actions: read one file, replace one file, run the case build command, diff the workspace,
@@ -754,9 +761,47 @@ Frozen implementation choices for the first pass:
 7. **Benchmark against the same 12-case corpus already frozen in R11.** The first product claim is
    parity on that corpus plus lower operator burden, not a harder corpus or a new benchmark taxonomy.
 
-**Exit criteria:** `pyocd-debug-brain` runs the full loop turnkey on the scoped pair (`nrf52833dk` +
-`nucleo_l476rg`), reuses the 12-case benchmark corpus, avoids required Codex/MCP-registration setup, and
-proves parity + lower operator burden against the BYO-agent path.
+Current prototype capability target on top of that first pass:
+
+1. **Use persistent provider sessions where available.** API providers should continue the same model
+   conversation through native session/conversation handles. CLI providers may keep using the best
+   available local mechanism until a true persistent CLI session exists, but the brain contract should be
+   written around session continuity instead of one-shot reopening.
+2. **Split host freedom from board governance.** The model can do host-only code/file/process work as
+   model-native actions. It emits a final governed decision only when it needs server-native board tools
+   or needs to return a final answer.
+3. **Forward real tool schemas.** The turnkey prompt includes actual MCP tool descriptions and JSON
+   schemas so the model is not reasoning from stale hand-written summaries.
+4. **Support batched board decisions.** A decision may contain an ordered batch of actions. Add `wait`
+   and UART write to the basic action surface. Keep write-memory/register and breakpoint mutation out of
+   this prototype unless a later spec explicitly adds them.
+5. **Make progress visible.** Add normalized progress events from the brain loop, stream them in the CLI,
+   and add a developer inspector mode that records prompt turns, provider stream text, parsed decisions,
+   tool calls, state snapshots, and server observations.
+6. **Harden blocking paths before expanding autonomy.** Every provider, MCP startup, server helper,
+   subprocess, UART, and hardware-adjacent path must have a bounded failure mode. In-process pyOCD/vendor
+   calls that cannot be interrupted directly must be documented and wrapped by the strongest feasible
+   outer bound until a killable worker is introduced.
+7. **Let the model refine budgets inside hard caps.** Prompt the model to estimate per-action timeouts and
+   iteration needs. The brain clamps those values, adds fixed safety cushions where appropriate, enforces
+   an unattended-duration cap, and syncs allowed timeout changes to the server as partial updates for
+   subsequent operations.
+8. **Add client actions.** Model-authored scripts are saved in a session-scoped client-action store and
+   run by name with inputs. Host-only scripts are model-native; scripts that call server-native tools are
+   governed and route every server call through the brain.
+9. **Scope green approval to proof value.** For the prototype, use manual/human-confirmed model-made tests
+   or one narrow automated flipped-value gate for a benchmark type. The model supplies the script,
+   parameters, correct values, and flipped values; the brain runs both and accepts only pass-correct /
+   fail-flipped.
+10. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
+    UART reads, builds/external commands, and long client actions. Do not broaden this prototype into the
+    pyOCD worker/job layer.
+
+**Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +
+`nucleo_l476rg`) and reuses the 12-case benchmark corpus, but the prototype is now judged by whether it can
+show a substantially more agentic loop: persistent work context, free host-side code work, governed board
+decisions, visible progress, bounded waits, model-tuned budgets inside hard caps, client actions, and a
+scoped green-test story. Shipped-product polish and broad UI completeness are explicitly later work.
 
 ---
 

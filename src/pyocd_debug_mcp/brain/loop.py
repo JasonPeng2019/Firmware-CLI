@@ -9,6 +9,8 @@ import inspect
 from pathlib import Path
 from typing import cast
 
+import anyio
+
 from pyocd_debug_mcp.board_config import (
     DEFAULT_BOARD_CONFIG_DIR,
     BoardConfig,
@@ -490,12 +492,18 @@ async def _call_tool_with_timeout(
         signature = inspect.signature(call_tool)
     except (TypeError, ValueError):
         signature = None
-    if signature is not None and "timeout_seconds" in signature.parameters:
-        return cast(
-            ToolTextResult,
-            await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
-        )
-    return cast(ToolTextResult, await call_tool(tool_name, arguments))
+    try:
+        with anyio.fail_after(timeout_seconds):
+            if signature is not None and "timeout_seconds" in signature.parameters:
+                return cast(
+                    ToolTextResult,
+                    await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
+                )
+            return cast(ToolTextResult, await call_tool(tool_name, arguments))
+    except TimeoutError as exc:
+        raise MCPClientError(
+            f"Tool '{tool_name}' timed out after {timeout_seconds:.0f}s."
+        ) from exc
 
 
 def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:

@@ -10,6 +10,7 @@ from openai import OpenAI
 from pyocd_debug_mcp.brain.actions import TurnDecision
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
 
 class ProviderResponseError(RuntimeError):
@@ -19,8 +20,14 @@ class ProviderResponseError(RuntimeError):
 class OpenAIDecisionProvider:
     """Thin wrapper over the OpenAI Responses API."""
 
-    def __init__(self, *, api_key: str, model: str) -> None:
-        self._client = OpenAI(api_key=api_key)
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float = PROVIDER_REQUEST_TIMEOUT_SECONDS,
+    ) -> None:
+        self._client = OpenAI(api_key=api_key, timeout=timeout_seconds)
         self._model = model
 
     async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:

@@ -1144,18 +1144,37 @@ This item builds the premium product tier on top of the proven substrate.
 
 ### Included work
 
-- implement the turnkey brain as an MCP client of the server
-- define prompt/orchestration loop structure
+- keep the turnkey brain as a native MCP client of the server
+- make provider sessions persistent where the provider supports it
+- define the free-host-work / final-board-decision boundary
+- forward real MCP tool descriptions and schemas into the model prompt
+- support model-composed batches of governed actions
+- add `wait` and UART write as basic model-facing capabilities
 - implement skills loading and selection
-- implement brain-level convergence/self-evaluation logic
-- build the CLI
-- define the acceptance benchmark for product #2
+- implement brain-level convergence/self-evaluation logic, including
+  model-estimated iteration budgets plus brain hard caps
+- harden blocking calls and expose bounded failures instead of silent waiting
+- let the model propose per-action timeout budgets, with brain/server clamps and
+  dynamic timeout sync
+- add live progress output and a developer inspector stream
+- add session-scoped client actions for model-authored scripts that can call
+  gated server tools only through the brain
+- add scoped green approval through manual/human-confirmed model-made tests or
+  one narrow automated flipped-value gate
+- define the acceptance benchmark for product #2 without expanding the frozen
+  `R11` corpus
 
 ### Concrete outputs
 
 - brain implementation
 - skills data shape and initial skill sets
 - CLI frontend
+- event/progress stream and inspector artifacts
+- model-facing tool schema bundle
+- batch action executor with `wait` and UART write
+- bounded timeout policy with dynamic refinement
+- client-action store and governed execution path
+- scoped green-test script flow
 - product #2 benchmark results
 
 ### Questions this item must answer
@@ -1164,10 +1183,15 @@ This item builds the premium product tier on top of the proven substrate.
 - How are skills selected?
 - What does the CLI expose?
 - In what way is the turnkey product better than the BYO-agent product?
+- Which work is safe as model-native host work, and which work must become a
+  governed board decision?
+- How does the operator see progress before a long run finishes?
+- What timeout or iteration budget did the model request, and what did the
+  brain clamp it to?
 
 ### Definition of done
 
-`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage.
+`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context, do substantial host-side work, request governed board actions only when needed, avoid unbounded waits, stream progress, and validate fixes with scoped evidence.
 
 ### What it does not include
 
@@ -1379,6 +1403,43 @@ That gives the team both lower idle time and less long-term architectural damage
 - Large items such as `R7`, `R9`, and `R10` should be split internally into smaller parallel sub-parts.
 
 This gives the team continuous motion without encouraging random speculative work.
+
+### Current `R12` Prototype Parallel Frontier
+
+The current `R12` prototype should be split into parallel packets instead of
+treated as one serial feature. These packets share the same governing contract:
+the model may work freely on host-only tasks, but server-native board actions
+remain gated by the brain.
+
+The conflict-safe module split is defined in
+`markdowns/R12_P_SPLIT.md`. That file is the working agreement for branch
+ownership during the prototype. It deliberately uses normal concrete modules
+and data shapes, not unusual abstraction layers.
+
+Simple branch schedule:
+
+- serial first: `P0` foundation shared shapes and hook points
+- parallel Wave 1:
+  - Branch A: provider session + tool schema prompt
+  - Branch B: action boundary + batches + client actions
+  - Branch C: event spine + timeout policy
+- parallel Wave 2:
+  - Branch D: progress UI + inspector
+  - Branch E: stream checkpoints
+  - Branch F: scoped green approval
+- serial last: `G` final integration + acceptance cleanup
+
+Parallelization rule:
+
+- work inside a branch is serial
+- branches inside the same wave are parallel
+- cross-branch dependencies are called out in `markdowns/R12_P_SPLIT.md`
+- `P0` lands before the long-lived parallel branches
+- `G` lands after Wave 2 and contains only final wiring/acceptance cleanup
+- Long-lived branches should not broadly edit `brain/loop.py`,
+  `brain/actions.py`, `brain/cli.py`, or `server.py`; use the ownership matrix
+  in `markdowns/R12_P_SPLIT.md` and keep shared-file edits as tiny integration
+  patches.
 
 ### Phase A: Foundation Setup
 
