@@ -16,6 +16,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderCapabilities,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
+    ProviderProgressUpdate,
     ProviderPromptBundle,
     ProviderSessionState,
     ProviderTurn,
@@ -82,8 +83,16 @@ class CodexCLIDecisionProvider:
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
         last_error: Exception | None = None
+        retry_count = 0
         base_prompt = prompt_bundle.full_prompt_text(include_memory=True)
         current_prompt = base_prompt
+        progress_updates: list[ProviderProgressUpdate] = [
+            ProviderProgressUpdate(
+                stage="provider_request",
+                message="Dispatching ephemeral Codex CLI turn from canonical local memory.",
+                details={"continuation_path": "transcript-memory", "cli_mode": "ephemeral"},
+            )
+        ]
         for _attempt in range(2):
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-codex-") as tmpdir:
                 tmp_path = Path(tmpdir)
@@ -115,18 +124,32 @@ class CodexCLIDecisionProvider:
                 )
                 if result.returncode != 0 and not output_text:
                     last_error = ProviderResponseError(result.stderr.strip() or result.stdout.strip())
-                    current_prompt = (
-                        f"{base_prompt}\n\n"
+                    retry_count += 1
+                    current_prompt = prompt_bundle.full_prompt_text(include_memory=True) + "\n\n" + (
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Codex CLI did not yield valid structured output; retrying with a schema-correction prompt.",
+                            details={"retry_count": retry_count},
+                        )
                     )
                     continue
                 try:
                     decision = parse_turn_decision_json(output_text)
                 except Exception as exc:  # noqa: BLE001 - preserve parse failures
                     last_error = exc
-                    current_prompt = (
-                        f"{base_prompt}\n\n"
+                    retry_count += 1
+                    current_prompt = prompt_bundle.full_prompt_text(include_memory=True) + "\n\n" + (
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Codex CLI returned invalid JSON; retrying with a schema-correction prompt.",
+                            details={"retry_count": retry_count},
+                        )
                     )
                     continue
                 return ProviderTurn(
@@ -147,7 +170,12 @@ class CodexCLIDecisionProvider:
                         "continuation_path": "transcript-memory",
                         "memory_injected": True,
                         "cli_mode": "ephemeral",
+                        "prompt_render_mode": "bootstrap/full",
+                        "static_tool_schema_injected": True,
+                        "decision_schema_injected": True,
+                        "retry_count": retry_count,
                     },
+                    progress_updates=tuple(progress_updates),
                 )
 
         raise ProviderResponseError(

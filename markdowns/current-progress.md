@@ -40,7 +40,10 @@ What is already true:
   - Anthropic, Codex CLI, and Claude CLI use the same local-memory session
     model without fake durable remote sessions
   - the model-facing tool block now comes from live MCP tool metadata filtered
-    to the curated brain tool surface
+    to the curated brain tool surface, with the stable public response/refusal
+    semantics the brain relies on layered in explicitly
+  - coarse provider progress checkpoints now flow through the brain event
+    stream instead of existing only as a dormant contract seam
 - the Codex-backed turnkey path has already cleared the frozen 12-case turnkey
   suite on the scoped pair
 - the serial `P0` foundation slice for the R12 prototype is now implemented and

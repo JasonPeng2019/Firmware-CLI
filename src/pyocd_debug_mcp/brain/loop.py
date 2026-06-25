@@ -46,6 +46,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderContinuationMode,
     ProviderMemoryEntry,
     ProviderPromptBundle,
+    ProviderProgressUpdate,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
@@ -59,7 +60,6 @@ from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, pr
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
-from pyocd_debug_mcp.timeouts import TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -386,6 +386,29 @@ async def _record_verification_event(
     )
 
 
+async def _record_provider_progress_updates(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    updates: tuple[ProviderProgressUpdate, ...],
+) -> None:
+    for update in updates:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind="provider_progress",
+            message=update.message,
+            details={
+                "stage": update.stage,
+                **dict(update.details),
+            },
+        )
+
+
 def _flash_target_path(invocation: TurnkeyInvocation, board: BoardConfig) -> str:
     flash_artifact, _ = _default_artifacts(invocation, board)
     return str(flash_artifact)
@@ -568,6 +591,19 @@ async def _commit_provider_memory(
     if compaction_plan is not None:
         if updated_session.memory_mode == "model-summary":
             try:
+                await _record_brain_event(
+                    sink=sink,
+                    records=records,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="provider_progress",
+                    message="Starting provider-backed memory summary compaction.",
+                    details={
+                        "stage": "memory_summary",
+                        "memory_mode": updated_session.memory_mode,
+                        "evicted_turn_count": len(compaction_plan.evicted_entries),
+                    },
+                )
                 prior_summary_text = (
                     updated_session.memory_summary.summary_text
                     if updated_session.memory_summary is not None
@@ -588,6 +624,18 @@ async def _commit_provider_memory(
             except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
                 model_summary_fallback = True
                 fallback_reason = f"{type(exc).__name__}: {exc}"
+                await _record_brain_event(
+                    sink=sink,
+                    records=records,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="provider_progress",
+                    message="Provider-backed memory summary failed; falling back to deterministic compaction.",
+                    details={
+                        "stage": "memory_summary_fallback",
+                        "fallback_reason": fallback_reason,
+                    },
+                )
                 updated_session = apply_deterministic_compaction(
                     updated_session,
                     compaction_plan,
@@ -1513,6 +1561,13 @@ async def run_turnkey(
                 provider_duration_ms = int((time.perf_counter() - provider_started) * 1000)
                 state.provider_session_state = provider_turn.session_state
                 decision = provider_turn.decision
+                await _record_provider_progress_updates(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    updates=provider_turn.progress_updates,
+                )
                 await _record_brain_event(
                     sink=event_sink,
                     records=brain_events,
@@ -1848,7 +1903,7 @@ async def run_turnkey(
                         client,
                         "disconnect",
                         {},
-                        timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+                        timeout_seconds=invocation.timeout_config.default_tool_seconds,
                     )
                     state.register_disconnect()
                     await _record_brain_event(

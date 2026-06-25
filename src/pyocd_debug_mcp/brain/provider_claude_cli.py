@@ -16,6 +16,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderCapabilities,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
+    ProviderProgressUpdate,
     ProviderPromptBundle,
     ProviderSessionState,
     ProviderTurn,
@@ -82,8 +83,16 @@ class ClaudeCLIDecisionProvider:
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
         last_error: Exception | None = None
-        base_prompt = prompt_bundle.user_prompt_text(include_memory=True)
+        retry_count = 0
+        base_prompt = prompt_bundle.render_bootstrap_text(include_memory=True)
         current_prompt = base_prompt
+        progress_updates: list[ProviderProgressUpdate] = [
+            ProviderProgressUpdate(
+                stage="provider_request",
+                message="Dispatching Claude CLI turn from canonical local memory.",
+                details={"continuation_path": "transcript-memory", "cli_mode": "print"},
+            )
+        ]
         for _attempt in range(2):
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-") as tmpdir:
                 try:
@@ -108,18 +117,32 @@ class ClaudeCLIDecisionProvider:
                 output_text, command_error = _extract_claude_output_text(result)
                 if command_error is not None:
                     last_error = command_error
-                    current_prompt = (
-                        f"{base_prompt}\n\n"
+                    retry_count += 1
+                    current_prompt = prompt_bundle.render_retry_text(
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Claude CLI did not yield valid structured output; retrying with a schema-correction prompt.",
+                            details={"retry_count": retry_count},
+                        )
                     )
                     continue
                 try:
                     decision = parse_turn_decision_json(output_text)
                 except Exception as exc:  # noqa: BLE001 - preserve parse failures
                     last_error = exc
-                    current_prompt = (
-                        f"{base_prompt}\n\n"
+                    retry_count += 1
+                    current_prompt = prompt_bundle.render_retry_text(
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Claude CLI returned invalid JSON; retrying with a schema-correction prompt.",
+                            details={"retry_count": retry_count},
+                        )
                     )
                     continue
                 return ProviderTurn(
@@ -140,7 +163,12 @@ class ClaudeCLIDecisionProvider:
                         "continuation_path": "transcript-memory",
                         "memory_injected": True,
                         "cli_mode": "print",
+                        "prompt_render_mode": "bootstrap/full",
+                        "static_tool_schema_injected": True,
+                        "decision_schema_injected": True,
+                        "retry_count": retry_count,
                     },
+                    progress_updates=tuple(progress_updates),
                 )
 
         raise ProviderResponseError(

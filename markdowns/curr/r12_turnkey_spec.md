@@ -80,11 +80,12 @@ The current implemented prototype increment adds or tightens:
 - canonical local-memory continuation for Anthropic, Codex CLI, and Claude CLI
 - deterministic compaction by default, with optional `model-summary`
   compaction and deterministic fallback on summarizer failure
-- real MCP tool descriptions and JSON schemas in the turnkey prompt
+- real MCP tool descriptions and JSON schemas in the turnkey prompt, plus a
+  brain-owned overlay for stable public response/refusal semantics
 - a dedicated `tool_schemas.py` module so the loop no longer owns
   hand-maintained server-tool prompt text
 - persisted provider/session metadata in turnkey state, events, and model-turn
-  artifacts
+  artifacts, including coarse provider progress checkpoints
 
 Later prototype waves remain open for:
 
