@@ -188,6 +188,28 @@ def _format_block(blocked: WatcherBlocked, *, session_id: str | None) -> str:
     return f"Blocked [{blocked.code}]: {blocked.message} session_id={session_id or '(none)'}"
 
 
+def _refuse_invalid_argument(
+    tool_name: str,
+    normalized_args: Mapping[str, object],
+    *,
+    code: str,
+    message: str,
+    started: float,
+    session: SessionRecord | None,
+) -> str:
+    refusal = PolicyRefusal(code, message)
+    _record_event(
+        tool_name,
+        normalized_args,
+        outcome_kind=ToolOutcome.REFUSED,
+        error_code=refusal.code,
+        duration_ms=_duration_ms(started),
+        details={"message": refusal.message},
+        session=session,
+    )
+    return _format_refusal(refusal, session_id=_active_session_id())
+
+
 def _record_blocked_event(
     tool_name: str,
     normalized_args: Mapping[str, object],
@@ -210,6 +232,10 @@ def _record_blocked_event(
 def _parse_int(text: str) -> int:
     """Parse an int from a string, accepting hex (0x...), binary, or decimal."""
     return int(text, 0)
+
+
+def _word_size_is_valid(word_size: int) -> bool:
+    return word_size in {8, 16, 32}
 
 
 def _run_cmd(
@@ -291,17 +317,6 @@ def build_session_options(board: BoardConfig | None, target: str | None) -> dict
     return target_control.build_session_options(board, target)
 
 
-def _should_bypass_jlink_probe_resolution(
-    board: BoardConfig | None,
-    *,
-    platform_name: str | None = None,
-) -> bool:
-    if board is None or board.probe_family != "jlink":
-        return False
-    current_platform = platform_name or sys.platform
-    return current_platform.startswith("win")
-
-
 def _resolve_probe_uid_for_connect(
     board: BoardConfig | None,
     unique_id: str | None,
@@ -312,12 +327,6 @@ def _resolve_probe_uid_for_connect(
     if env_uid is not None:
         return env_uid
     if board is None:
-        return None
-    if _should_bypass_jlink_probe_resolution(board):
-        # On this Windows host, pre-running `pyocd list --probes` to auto-resolve
-        # a J-Link UID can poison the subsequent attach when the server itself is
-        # running over MCP stdio pipes. Let the shared backend choose the single
-        # attached J-Link unless the operator explicitly provided a UID.
         return None
 
     resolution = resolve_probe_for_board(
@@ -689,13 +698,25 @@ def read_memory(address: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
+        started = time.monotonic()
+        normalized_args = {"address": address, "word_size": word_size}
+        if not _word_size_is_valid(word_size):
+            return _refuse_invalid_argument(
+                "read_memory",
+                normalized_args,
+                code="memory/invalid-word-size",
+                message="word_size must be one of: 8, 16, 32.",
+                started=started,
+                session=_runtime_session,
+            )
+
         def operation() -> str:
             value = target_control.read_memory(_handle(), _parse_int(address), word_size)
             return f"0x{value:0{word_size // 4}X}"
 
         return _run_logged_tool(
             "read_memory",
-            {"address": address, "word_size": word_size},
+            normalized_args,
             operation,
         )
 
@@ -707,11 +728,23 @@ def read_memory_block(address: str, length: int) -> str:
     Returns the bytes as a space-separated hex string.
     """
     with _lock:
+        started = time.monotonic()
+        normalized_args = {"address": address, "length": length}
+        if length <= 0:
+            return _refuse_invalid_argument(
+                "read_memory_block",
+                normalized_args,
+                code="memory/invalid-length",
+                message="length must be > 0.",
+                started=started,
+                session=_runtime_session,
+            )
+
         def operation() -> str:
             values = target_control.read_memory_block(_handle(), _parse_int(address), length)
             return " ".join(f"{byte:02X}" for byte in values)
 
-        return _run_logged_tool("read_memory_block", {"address": address, "length": length}, operation)
+        return _run_logged_tool("read_memory_block", normalized_args, operation)
 
 
 @mcp.tool()
@@ -744,6 +777,18 @@ def write_memory(address: str, value: str, word_size: int = 32) -> str:
         word_size: Transfer size in bits: 8, 16, or 32.
     """
     with _lock:
+        started = time.monotonic()
+        normalized_args = {"address": address, "value": value, "word_size": word_size}
+        if not _word_size_is_valid(word_size):
+            return _refuse_invalid_argument(
+                "write_memory",
+                normalized_args,
+                code="memory/invalid-word-size",
+                message="word_size must be one of: 8, 16, 32.",
+                started=started,
+                session=_runtime_session,
+            )
+
         def operation() -> str:
             return _complete_effect(
                 lambda: target_control.write_memory(
@@ -757,7 +802,7 @@ def write_memory(address: str, value: str, word_size: int = 32) -> str:
 
         return _run_logged_tool(
             "write_memory",
-            {"address": address, "value": value, "word_size": word_size},
+            normalized_args,
             operation,
         )
 
@@ -897,20 +942,44 @@ def read_serial(
     with _lock:
         started = time.monotonic()
         runtime = _runtime_session
+        normalized_args: dict[str, object] = {
+            "port": port,
+            "baudrate": baudrate,
+            "expected_text": expected_text,
+            "read_seconds": read_seconds,
+            "reset_on_open": reset_on_open,
+        }
+        if read_seconds <= 0:
+            refusal = PolicyRefusal("uart/invalid-read-seconds", "read_seconds must be > 0.")
+            _record_event(
+                "read_serial",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=refusal.code,
+                duration_ms=_duration_ms(started),
+                details={"message": refusal.message},
+                session=runtime,
+            )
+            return _format_refusal(refusal, session_id=_active_session_id())
+        if baudrate is not None and baudrate <= 0:
+            refusal = PolicyRefusal("uart/invalid-baudrate", "baudrate must be > 0.")
+            _record_event(
+                "read_serial",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=refusal.code,
+                duration_ms=_duration_ms(started),
+                details={"message": refusal.message},
+                session=runtime,
+            )
+            return _format_refusal(refusal, session_id=_active_session_id())
         if runtime is not None:
             try:
                 _watcher.ensure_allowed(runtime, UART_TOOL)
             except WatcherBlocked as blocked:
-                blocked_args: dict[str, object] = {
-                    "port": port,
-                    "baudrate": baudrate,
-                    "expected_text": expected_text,
-                    "read_seconds": read_seconds,
-                    "reset_on_open": reset_on_open,
-                }
                 _record_blocked_event(
                     "read_serial",
-                    blocked_args,
+                    normalized_args,
                     blocked,
                     started=started,
                     session=runtime,
@@ -925,7 +994,7 @@ def read_serial(
         resolved_port = _resolve_serial_port_for_session(handle, override=port)
         resolved_baudrate = baudrate or board.default_baudrate
         resolved_expected_text = expected_text
-        normalized_args: dict[str, object] = {
+        normalized_args = {
             "port": resolved_port.device,
             "baudrate": resolved_baudrate,
             "expected_text": resolved_expected_text,

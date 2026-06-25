@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import re
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ import anyio
 from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.shared.exceptions import McpError
 
 from pyocd_debug_mcp.timeouts import MCP_STARTUP_TIMEOUT_SECONDS
 
@@ -111,6 +113,28 @@ def _result_text(result: types.CallToolResult) -> str:
     return ""
 
 
+def _is_mcp_timeout_error(exc: BaseException) -> bool:
+    if not isinstance(exc, McpError):
+        return False
+    if getattr(exc, "error", None) is not None and getattr(exc.error, "code", None) == 408:
+        return True
+    return "timed out while waiting for response" in str(exc).lower()
+
+
+def _is_expected_stdio_cleanup_error(exc: BaseException) -> bool:
+    grouped = getattr(exc, "exceptions", None)
+    if grouped is not None:
+        return all(_is_expected_stdio_cleanup_error(item) for item in grouped)
+    if isinstance(exc, (anyio.BrokenResourceError, anyio.ClosedResourceError, ProcessLookupError)):
+        return True
+    if isinstance(exc, RuntimeError):
+        lowered = str(exc).lower()
+        return "cancel scope" in lowered or "this cancel scope is not active" in lowered
+    if isinstance(exc, AttributeError):
+        return "_exceptions" in str(exc)
+    return False
+
+
 def default_server_command(repo_root: Path = REPO_ROOT) -> ServerCommand:
     return ServerCommand(
         command="uv",
@@ -127,6 +151,21 @@ class StdioToolClient:
         self._stdio_manager: Any = None
         self._session: ClientSession | None = None
 
+    @staticmethod
+    async def _safe_close(
+        closer: Any,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if closer is None:
+            return
+        try:
+            await closer.__aexit__(exc_type, exc, tb)
+        except BaseException as cleanup_exc:
+            if not _is_expected_stdio_cleanup_error(cleanup_exc):
+                raise
+
     async def __aenter__(self) -> "StdioToolClient":
         params = StdioServerParameters(
             command=self._server_command.command,
@@ -134,11 +173,19 @@ class StdioToolClient:
             cwd=self._server_command.cwd,
             env=self._server_command.env,
         )
-        self._stdio_manager = stdio_client(params)
-        read_stream, write_stream = await self._stdio_manager.__aenter__()
-        session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
-        await session.initialize()
+        manager = stdio_client(params)
+        session: ClientSession | None = None
+        try:
+            read_stream, write_stream = await manager.__aenter__()
+            session = ClientSession(read_stream, write_stream)
+            await session.__aenter__()
+            await session.initialize()
+        except BaseException as exc:
+            if session is not None:
+                await self._safe_close(session, type(exc), exc, exc.__traceback__)
+            await self._safe_close(manager, type(exc), exc, exc.__traceback__)
+            raise
+        self._stdio_manager = manager
         self._session = session
         return self
 
@@ -149,10 +196,10 @@ class StdioToolClient:
         tb: TracebackType | None,
     ) -> None:
         if self._session is not None:
-            await self._session.__aexit__(exc_type, exc, tb)
+            await self._safe_close(self._session, exc_type, exc, tb)
             self._session = None
         if self._stdio_manager is not None:
-            await self._stdio_manager.__aexit__(exc_type, exc, tb)
+            await self._safe_close(self._stdio_manager, exc_type, exc, tb)
             self._stdio_manager = None
 
     def _require_session(self) -> ClientSession:
@@ -174,11 +221,18 @@ class StdioToolClient:
     ) -> ToolTextResult:
         session = self._require_session()
         timeout = timedelta(seconds=timeout_seconds) if timeout_seconds is not None else None
-        result = await session.call_tool(
-            name,
-            arguments=arguments,
-            read_timeout_seconds=timeout,
-        )
+        try:
+            result = await session.call_tool(
+                name,
+                arguments=arguments,
+                read_timeout_seconds=timeout,
+            )
+        except McpError as exc:
+            if _is_mcp_timeout_error(exc):
+                raise MCPClientError(
+                    f"Tool '{name}' timed out after {(timeout_seconds or 0.0):.0f}s."
+                ) from exc
+            raise MCPClientError(str(exc)) from exc
         return ToolTextResult(
             tool_name=name,
             text=_result_text(result).strip(),
@@ -211,15 +265,21 @@ class LocalMCPClient:
     async def start(self) -> None:
         if self.available_tools:
             return
+
+        async def _startup() -> set[str]:
+            await self._transport.__aenter__()
+            return await self._transport.list_tool_names()
+
         try:
-            with anyio.fail_after(MCP_STARTUP_TIMEOUT_SECONDS):
-                await self._transport.__aenter__()
-                tools = await self._transport.list_tool_names()
+            tools = await asyncio.wait_for(_startup(), timeout=MCP_STARTUP_TIMEOUT_SECONDS)
         except TimeoutError as exc:
             await self._transport.__aexit__(type(exc), exc, exc.__traceback__)
             raise MCPClientError(
                 f"Local MCP server startup timed out after {MCP_STARTUP_TIMEOUT_SECONDS:.0f}s."
             ) from exc
+        except Exception as exc:
+            await self._transport.__aexit__(type(exc), exc, exc.__traceback__)
+            raise
         self.available_tools = tuple(sorted(tools))
 
     async def stop(self) -> None:

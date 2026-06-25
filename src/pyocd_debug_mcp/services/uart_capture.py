@@ -54,6 +54,17 @@ def capture_uart_output(
     match can span chunk boundaries or a reopen boundary.
     """
 
+    if baudrate <= 0:
+        raise ValueError("baudrate must be > 0")
+    if read_seconds <= 0:
+        raise ValueError("read_seconds must be > 0")
+    if reopen_attempts < 0:
+        raise ValueError("reopen_attempts must be >= 0")
+    if reopen_delay_seconds < 0:
+        raise ValueError("reopen_delay_seconds must be >= 0")
+    if per_open_window_seconds <= 0:
+        raise ValueError("per_open_window_seconds must be > 0")
+
     backend = adapter or _BACKEND
     started = time.monotonic()
     deadline = started + read_seconds

@@ -13,6 +13,12 @@
 > gaps are narrower and live in `current-progress.md`: re-run Nordic in the
 > current post-fix state, plus true fresh-machine Windows/macOS managed
 > Zephyr/no-NCS deployment validation.
+>
+> **Prototype execution note:** the current prototype branch plan uses a
+> narrower Wave 0 gate than full `R12` closure. Wave 0 must re-prove the current
+> Codex-backed turnkey baseline on the currently validated host and scoped pair.
+> Full second-provider reproof and true fresh-machine portability proof are
+> deferred, unverified prototype risk unless later restored as hard gates.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
@@ -1418,10 +1424,12 @@ and data shapes, not unusual abstraction layers.
 
 Simple branch schedule:
 
-- serial first: Wave 0 clean slate
+- serial first: Wave 0 clean slate / `P0.0` validation
   - fix current dirty repo issues
   - self-diagnose with extensive tests
   - validate against the real scoped STM32 and Nordic boards
+  - execute `markdowns/curr/p0_0_layered_validation_plan.md` and record the
+    results in `markdowns/curr/p0_0_validation_report.md`
 - serial next: `P0` foundation shared shapes and hook points
 - parallel Wave 1:
   - Branch A: provider session + tool schema prompt
@@ -1438,9 +1446,13 @@ Simple branch schedule:
 Parallelization rule:
 
 - Wave 0 is the continuing integration branch/trunk for the prototype
-- no prototype feature branch starts until Wave 0 is clean and either real-board
-  proof on `nucleo_l476rg` and `nrf52833dk` is recorded or the missing hardware
-  proof is explicitly treated as blocking
+- no prototype feature branch starts until Wave 0 has cleared `P0.0`, the
+  current Codex-backed turnkey baseline has been re-proved on the current host,
+  and real-board proof on `nucleo_l476rg` and `nrf52833dk` is recorded or the
+  missing hardware proof is explicitly treated as blocking
+- second-provider full reproof and fresh-machine portability proof are deferred
+  prototype risk for this phase unless the team explicitly promotes them back to
+  hard blockers
 - work inside a branch is serial
 - branches inside the same wave are parallel
 - cross-branch dependencies are called out in `markdowns/R12_P_SPLIT.md`
@@ -1686,3 +1698,19 @@ If you want the shortest useful mental model, the roadmap is this:
 9. Only then add scale, alternate probe backends, and higher-autonomy experiments.
 
 That is the entire project, translated from stage language into execution language.
+
+## Verified
+
+- This document now references the Wave 0 / `P0.0` layered validation gate before
+  prototype feature branches start.
+- The current `R12` prototype parallel frontier points to
+  `markdowns/curr/p0_0_layered_validation_plan.md` for clean-slate validation.
+
+## Pending Verification
+
+- The `P0.0` validation plan has not been executed as part of this documentation
+  edit.
+- Real `nucleo_l476rg` and `nrf52833dk` proof remains required before Wave 0 can
+  be treated as clean for `P0`.
+- Second-provider parity and fresh-machine portability are intentionally
+  deferred outside the Wave 0 prototype gate and remain unverified.

@@ -19,8 +19,7 @@ The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
 12-case Codex benchmark corpus. `R12` is now implemented in the repo as a
-turnkey product layer with one live-proven provider path and one still-open
-provider proof gap:
+turnkey product layer:
 
 - native Python brain package
 - multi-provider decision backends
@@ -35,12 +34,15 @@ The current live status is:
   `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
 - the normal turnkey path worked from `connect(board_id=...)` with no
   hard-coded probe UID or serial-port override
+- for the current prototype boundary, this Codex-backed path is the required
+  proven baseline
 - `claude-cli --model sonnet` is still failing on this host before any board
   interaction with:
   `API Error: 404 ... model: claude-sonnet-4-20250514`
 
-So `R12` remains open, but only because the required second-provider proof is
-not yet green on this machine.
+For the current prototype branch plan, second-provider parity and true
+fresh-machine Windows/macOS portability are explicit deferred risks, not the
+current Wave 0 gate.
 
 ## What The Repo Currently Delivers
 
@@ -60,7 +62,7 @@ Today that means:
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
 - a Codex-proven turnkey brain and turnkey benchmark path over the same corpus
-- an open second-provider validation gap for Claude CLI on this host
+- deferred second-provider and fresh-machine portability proof work
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -177,8 +179,8 @@ Firmware-CLI/
     |-- current-progress.md
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
-    |   |-- r10_contract.md
-    |   |-- r11_benchmark_spec.md
+    |   |-- p0-0-static-audit-fix_spec.md
+    |   |-- p0_0_layered_validation_plan.md
     |   `-- r12_turnkey_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
@@ -435,9 +437,10 @@ Current limitation:
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
-- `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
-- `R11` benchmark contract: [markdowns/curr/r11_benchmark_spec.md](./markdowns/curr/r11_benchmark_spec.md)
+- Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
+- `P0.0` layered validation plan: [markdowns/curr/p0_0_layered_validation_plan.md](./markdowns/curr/p0_0_layered_validation_plan.md)
+- `P0.0` static audit fix spec: [markdowns/curr/p0-0-static-audit-fix_spec.md](./markdowns/curr/p0-0-static-audit-fix_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
@@ -527,7 +530,6 @@ Latest turnkey verification:
 - the retained alternate Nordic profile `nrf52840dk` is now live-proven on
   this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
   alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
-- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof
 
 - `R12` is now live-proven through the full frozen 12-case corpus with the
   `codex-cli` provider on `nrf52833dk + nucleo_l476rg`:
@@ -538,12 +540,12 @@ Latest turnkey verification:
     serial-port tuning
   - no forbidden recover usage occurred on non-recover cases
   - no case watcher-blocked due to turnkey thrash
-- `R12` is still not closed because the required second-provider proof is red
-  on this host:
+- deferred prototype risk that is not yet re-proved:
+  - full official-pair second-provider closure
+  - true fresh-machine Windows/macOS portability proof
+- current observed second-provider blocker on this host:
   - `uv run pyocd-debug-brain run --provider claude-cli --model sonnet ...`
     failed before any board action with
     `API Error: 404 ... model: claude-sonnet-4-20250514`
   - the Claude six-case pilot and full 12-case suite were therefore not run in
-    this pass
-- the broader self-contained no-`NCS` portability claim still needs true fresh
-  Windows and macOS host validation
+    that pass

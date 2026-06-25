@@ -172,6 +172,40 @@ def test_capture_uart_output_decodes_non_utf8_with_replacement() -> None:
     assert "\ufffd" in result.text
 
 
+def test_capture_uart_output_rejects_nonpositive_read_seconds() -> None:
+    adapter = FakeUARTAdapter([[b"boot ok\r\n"]])
+
+    try:
+        uart_capture.capture_uart_output(
+            "COM1",
+            115200,
+            0.0,
+            "boot ok",
+            adapter=adapter,
+        )
+    except ValueError as exc:
+        assert "read_seconds must be > 0" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_capture_uart_output_rejects_nonpositive_baudrate() -> None:
+    adapter = FakeUARTAdapter([[b"boot ok\r\n"]])
+
+    try:
+        uart_capture.capture_uart_output(
+            "COM1",
+            0,
+            0.05,
+            "boot ok",
+            adapter=adapter,
+        )
+    except ValueError as exc:
+        assert "baudrate must be > 0" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_pyserial_open_sets_read_and_write_timeouts(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

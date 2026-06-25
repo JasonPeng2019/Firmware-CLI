@@ -492,13 +492,13 @@ async def _call_tool_with_timeout(
         signature = inspect.signature(call_tool)
     except (TypeError, ValueError):
         signature = None
+    if signature is not None and "timeout_seconds" in signature.parameters:
+        return cast(
+            ToolTextResult,
+            await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
+        )
     try:
         with anyio.fail_after(timeout_seconds):
-            if signature is not None and "timeout_seconds" in signature.parameters:
-                return cast(
-                    ToolTextResult,
-                    await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
-                )
             return cast(ToolTextResult, await call_tool(tool_name, arguments))
     except TimeoutError as exc:
         raise MCPClientError(

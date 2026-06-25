@@ -92,8 +92,19 @@ missing before this merge pass:
 - generic alternate-suite acceptance logic so retained-board turnkey suites no
   longer fail only because the suite is not the scoped pair
 
-What is still missing is full official-pair second-provider proof and
-fresh-machine portability proof needed to call the turnkey layer fully closed.
+What is still missing for broad turnkey closure is full official-pair
+second-provider proof and fresh-machine portability proof.
+
+For the current prototype branch plan, those items are intentionally deferred.
+The active execution boundary is narrower:
+
+- treated as the current required baseline: Codex-backed turnkey proof on the
+  currently validated host and scoped pair
+- treated as deferred, unverified prototype risk: second-provider full reproof
+  and true fresh-machine Windows/macOS portability proof
+
+They should not be claimed as working, but they also are not immediate blockers
+for Wave 0 / `P0.0` unless the team explicitly restores them as hard gates.
 
 The active prototype direction has also moved beyond the original narrow R12
 acceptance layer. The current docs now track a capability prototype that adds
@@ -106,7 +117,7 @@ flows. Those items are planned prototype work unless a later status entry says
 they have been implemented and verified.
 
 The remaining proof work before making the broader "fresh customer machine"
-portability claim is now narrower:
+portability claim is now narrower and currently deferred for the prototype:
 
 - extend the now-working second live provider path across the full official
   scoped pair and full turnkey ladder without changing the scoped corpus or the
@@ -727,7 +738,7 @@ current mixed-board Mac host.
 
 What is already tracked:
 
-- benchmark spec in `markdowns/curr/r11_benchmark_spec.md`
+- benchmark runner and score contract in `tests/harness/r11_benchmark.py`
 - case format under `tests/cases/<case_id>/case.yaml`
 - Codex result schema under `tests/cases/r11_result_schema.json`
 - pilot suite ordering under `tests/cases/suites.yaml`
@@ -1382,10 +1393,10 @@ If resuming later:
 > frozen 12-case Codex benchmark corpus. `R12` is now implemented in code as
 > a native Python turnkey brain plus `pyocd-debug-brain`, and the Codex-backed
 > turnkey path has now passed the full frozen 12-case suite on the scoped
-> pair. `R12` is still open because the full official-pair second-provider
-> closure ladder and the fresh-machine no-`NCS` portability proof are not done
-> yet, even though the Claude CLI path is now live-proven on the attached
-> Windows STM32 host.
+> pair. For the current prototype boundary, that Codex-backed path is the
+> required proven baseline. Full official-pair second-provider closure and the
+> fresh-machine no-`NCS` portability proof are explicit deferred prototype
+> risks, not the current Wave 0 gate.
 Current Windows STM32 retest status on this host:
 
 - the attached `nucleo_l476rg` is green again through Stage 0, Stage 1, and the

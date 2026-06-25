@@ -24,7 +24,7 @@ Rule of thumb:
 
 ```text
 SERIAL:
-  Wave 0 clean slate:
+  Wave 0 clean slate / P0.0 validation:
     fix current dirty repo issues
     self-diagnose current repo with extensive tests
     prove on real STM32 + Nordic boards
@@ -52,7 +52,7 @@ SERIAL:
   G final integration + acceptance cleanup
 ```
 
-## Wave 0 Clean Slate - Serial First
+## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
 Wave 0 is the integration trunk for this prototype. It must be made clean before
 `P0` starts.
@@ -62,8 +62,20 @@ do not build the new prototype on top of unknown dirty-state failures. First fix
 the issues currently present in the repo, then self-diagnose the resulting state
 with extensive non-hardware and hardware testing.
 
+For this prototype, Wave 0 uses a narrower proof boundary:
+
+- required now: current validated host + Codex-backed turnkey baseline on the
+  scoped pair;
+- deferred accepted risk: second-provider full reproof and true fresh-machine
+  portability proof.
+
 Wave 0 owns:
 
+0. `P0.0` layered validation
+   - use `markdowns/curr/p0_0_layered_validation_plan.md` as the execution
+     checklist for Wave 0 cleanup and proof
+   - write the resulting pass/fail matrix to
+     `markdowns/curr/p0_0_validation_report.md`
 1. Current dirty-code cleanup
    - reconcile existing uncommitted/code changes against the build plan and docs
    - fix known broken tests or runtime regressions before adding new prototype
@@ -81,15 +93,24 @@ Wave 0 owns:
    - validate the clean baseline against the scoped Nordic board
      (`nrf52833dk`)
    - record exact commands, outputs, and remaining hardware caveats
+4. Deferred-proof bookkeeping
+   - explicitly record second-provider and fresh-machine portability as
+     unverified accepted prototype risk
+   - do not block `P0` on those deferred items unless the team later chooses to
+     restore them as hard gates
 
 Wave 0 exit criteria:
 
 - the worktree baseline for prototype work is intentionally clean or has only
   documented, non-blocking changes
+- `markdowns/curr/p0_0_validation_report.md` exists and records the executed
+  layers, elapsed times, artifacts, and remaining risks
 - non-hardware checks have been run and recorded
 - real STM32 and Nordic board checks have been run by a human/operator and
   recorded, or the missing hardware proof is explicitly marked as blocking
 - the team agrees this is the branch all later prototype branches start from
+- deferred second-provider and fresh-machine portability items are recorded as
+  unverified accepted prototype risk, not silently assumed working
 
 Wave 0 is not a feature branch. It is the baseline that later branches merge
 back into.
@@ -416,8 +437,11 @@ into the other branch, or into final integration.
 
 ## Pending Verification
 
-- Wave 0 still needs real STM32 and Nordic board proof before prototype feature
-  work starts.
+- Wave 0 still needs the `P0.0` layered validation plan executed, including real
+  STM32 and Nordic board proof plus Codex-baseline reproof, before prototype
+  feature work starts.
+- Second-provider and fresh-machine portability proof remain intentionally
+  deferred outside the Wave 0 gate and must not be claimed as verified.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.
