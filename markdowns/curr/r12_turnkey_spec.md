@@ -54,6 +54,10 @@ The first `R12` implementation must add all of these:
 - top-level `playbooks/turnkey/` internal deterministic helper tree
 - turnkey benchmark runner alongside the existing `R11` runner
 - turnkey run artifacts written into `runs/<session_id>/...`
+- package-owned bundled runtime data for:
+  - benchmark cases/prompts/schema
+  - turnkey skill manifests
+  - turnkey playbooks
 
 ## Architecture
 
@@ -272,8 +276,13 @@ Freeform mode rules:
 
 - If `--workspace-root` and `--build-command` are absent, the brain is
   diagnose/verify only.
-- If the task obviously requires a code fix but there is no editable workspace
-  and build command, the CLI returns a deterministic refusal.
+- Generic freeform `run --task "fix ..."` does not pre-refuse based only on
+  wording.
+- Explicit repair-oriented shell flows such as `/repair` still require repair
+  context and refuse shell-side until `/workspace` and `/build-command` are
+  set.
+- When freeform repair context is present, editable paths are constrained by
+  workspace containment rather than a hardcoded `src/` root.
 - The CLI owns server startup and teardown.
 
 ### Operator shell mode
@@ -337,7 +346,18 @@ Frozen first brain-level convergence rules:
 
 ## Turnkey Run Capture
 
-The MCP server session root under `runs/<session_id>/...` remains canonical.
+The MCP server session root under `runs/<session_id>/...` remains canonical
+whenever a real board session is created.
+
+The turnkey layer now creates a provisional run root before provider creation
+or MCP startup. That provisional run root is renamed to the real
+`runs/<session_id>/...` path the first time a session is created.
+
+If no board session is ever created, the provisional run root remains in place
+with `session_id=null` and a turnkey result that uses:
+
+- `final_status=blocked`
+- `classification=tooling_failure`
 
 The turnkey layer must add these artifacts:
 

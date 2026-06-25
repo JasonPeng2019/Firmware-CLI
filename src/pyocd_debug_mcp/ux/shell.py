@@ -417,8 +417,8 @@ class OperatorShell:
         if self.context.last_session_id:
             return self.context.last_session_id
         history = list_history(limit=1)
-        if history:
-            return history[0].session_id
+        if history.entries:
+            return history.entries[0].session_id
         return None
 
     def rerun_session(self, session_id: str) -> bool:

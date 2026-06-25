@@ -15,6 +15,12 @@ class UXHistoryError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class HistoryWarning:
+    session_id: str
+    message: str
+
+
+@dataclass(frozen=True)
 class HistoryEntry:
     session_id: str
     run_root: Path
@@ -42,10 +48,19 @@ class SessionBundle:
     firmware_identity: dict[str, Any] | None
 
 
+@dataclass(frozen=True)
+class HistoryListing:
+    entries: tuple[HistoryEntry, ...]
+    warnings: tuple[HistoryWarning, ...]
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise UXHistoryError(f"{path}: {exc}") from exc
     if not isinstance(payload, dict):
         raise UXHistoryError(f"{path} must contain a JSON object.")
     return payload
@@ -87,15 +102,20 @@ def load_session_bundle(session_id: str, *, runs_root: Path = RUNS_ROOT) -> Sess
     )
 
 
-def list_history(*, runs_root: Path = RUNS_ROOT, limit: int | None = 20) -> list[HistoryEntry]:
+def list_history(*, runs_root: Path = RUNS_ROOT, limit: int | None = 20) -> HistoryListing:
     entries: list[HistoryEntry] = []
+    warnings: list[HistoryWarning] = []
     for child in runs_root.iterdir() if runs_root.exists() else ():
         if not child.is_dir():
             continue
         metadata = child / "run-metadata"
         if not (metadata / "turnkey_request.json").exists():
             continue
-        bundle = load_session_bundle(child.name, runs_root=runs_root)
+        try:
+            bundle = load_session_bundle(child.name, runs_root=runs_root)
+        except UXHistoryError as exc:
+            warnings.append(HistoryWarning(session_id=child.name, message=str(exc)))
+            continue
         request = bundle.request
         result = bundle.result
         session = bundle.session
@@ -118,4 +138,5 @@ def list_history(*, runs_root: Path = RUNS_ROOT, limit: int | None = 20) -> list
         key=lambda entry: (entry.created_at or entry.session_id, entry.session_id),
         reverse=True,
     )
-    return entries[:limit] if limit is not None else entries
+    trimmed = entries[:limit] if limit is not None else entries
+    return HistoryListing(entries=tuple(trimmed), warnings=tuple(warnings))

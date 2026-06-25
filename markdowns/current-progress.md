@@ -385,20 +385,40 @@ What was re-proven before the shell work:
 - `uv run pyocd-debug-brain --help`
   - passed
 
-Additional code fix required during this live pass:
+Current turnkey/runtime stabilization fixes now in code:
 
-- the shell-guided `/verify` task initially failed incorrectly with
-  `Refused [turnkey/missing-workspace-context]`
-- root cause:
-  - `task_requires_code_fix(...)` treated the phrase
-    `Do not edit source files.` as a positive repair signal because it matched
-    the raw token `edit`
-- fix applied:
-  - the code-fix heuristic now ignores common negated edit phrases before
-    looking for real repair verbs
-- verification after the fix:
-  - targeted UX/turnkey tests passed
-  - full repo checks still passed
+- product runtime no longer imports `tests.*`
+  - the shared Stage 1 verifier now lives under
+    `src/pyocd_debug_mcp/reference_smoke.py`
+  - the shared benchmark contract/helpers now live under
+    `src/pyocd_debug_mcp/benchmark_support.py`
+  - `tests/harness/stage1_smoke.py` and `tests/harness/r11_benchmark.py` are
+    now thin wrappers over those product modules
+- packaged installs no longer depend on a checkout-local `tests/` tree just to
+  import the turnkey runtime
+  - the wheel now bundles the benchmark corpus, turnkey skills, and turnkey
+    playbooks under package-owned runtime-data paths
+  - live repo checkouts still remain the editing source of truth
+- generic freeform `run` is now diagnose-first
+  - the runtime no longer pre-refuses solely because a task string contains
+    words such as `fix` or `repair`
+  - explicit guided shell repair still refuses without `/workspace` plus
+    `/build-command`
+  - when freeform repair context is present, editable paths are constrained by
+    workspace containment rather than a hardcoded `src/` root
+- provider/runtime failures before any board session now become saved turnkey
+  outcomes instead of tracebacks
+  - expected classification: `tooling_failure`
+  - expected final status: `blocked`
+  - expected artifact shape: a provisional run root with request/result/state,
+    prompt, brain trace, model turns, and brain events even when
+    `session_id=null`
+- saved-run history is now best-effort over malformed run directories
+  - `/history` skips bad run entries and reports warnings
+  - explicit `show`/artifact lookup for a selected malformed run still fails
+    clearly
+  - fallback session selection now uses the newest valid run rather than
+    letting one malformed newer run break the shell
 
 Disposable repair workspaces prepared for this pass:
 

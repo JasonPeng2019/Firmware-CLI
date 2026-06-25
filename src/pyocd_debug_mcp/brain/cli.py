@@ -6,6 +6,7 @@ import argparse
 
 import anyio
 
+from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
 from pyocd_debug_mcp.brain.config import BrainConfigError
@@ -94,9 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_iters=args.max_iters,
                 serial_read_seconds=args.serial_read_seconds,
             )
-            from tests.harness import r11_benchmark as r11  # local import to keep product path light
-
-            r11.print_case_summary(report)
+            benchmark_support.print_case_summary(report)
             return 0 if report.score_report.outcome_label == "full_success" else 1
 
         reports = run_benchmark_suite(
@@ -106,11 +105,9 @@ def main(argv: list[str] | None = None) -> int:
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
         )
-        from tests.harness import r11_benchmark as r11  # local import to keep product path light
-
         for report in reports:
-            r11.print_case_summary(report)
-        r11.print_suite_summary(args.suite, reports)
+            benchmark_support.print_case_summary(report)
+        benchmark_support.print_suite_summary(args.suite, reports)
         return 0 if r12_benchmark._suite_acceptance(args.suite, reports) else 1
     except BrainConfigError as exc:
         print(str(exc))

@@ -47,6 +47,12 @@ The current live status is:
 - `claude-cli --model sonnet` is still failing on this host before any board
   interaction with:
   `API Error: 404 ... model: claude-sonnet-4-20250514`
+- the turnkey/runtime surface is now product-owned rather than test-owned:
+  - shared Stage 1 and benchmark helpers live under `src/pyocd_debug_mcp/`
+  - packaged installs bundle the benchmark cases, skill manifests, and
+    turnkey playbooks the runtime depends on
+  - provider/runtime failures now persist inspectable turnkey run artifacts
+    even when no board session is ever created
 
 So `R12` remains open, but only because the required second-provider proof is
 not yet green on this machine.
@@ -123,6 +129,8 @@ Firmware-CLI/
 |   |-- README.md
 |   |-- common/
 |   `-- mcu_families/
+|-- playbooks/
+|   `-- turnkey/
 |-- tests/
 |   |-- README.md
 |   |-- fixtures/
@@ -179,10 +187,13 @@ Firmware-CLI/
 |       |-- __init__.py
 |       |-- board_config.py
 |       |-- board_config_cli.py
+|       |-- benchmark_support.py
 |       |-- local_env.py
 |       |-- pack_index_repair.py
 |       |-- probe_inventory.py
 |       |-- reference_artifacts.py
+|       |-- reference_smoke.py
+|       |-- runtime_resources.py
 |       |-- serial_resolver.py
 |       |-- server.py
 |       |-- zephyr_build.py
@@ -359,6 +370,11 @@ Operator-shell note:
   falls back to plain non-live printing when stdout is not interactive
 - the REPL now defaults to summary-first output; use `/raw on` to show full
   completed provider turns live
+- generic freeform `run --task "fix ..."` is now diagnose-first and no
+  longer pre-refuses based only on wording
+- explicit `/repair` still requires `/workspace` and `/build-command`, and
+  freeform repair context is constrained by workspace containment rather than a
+  hardcoded `src/` root
 - the REPL now supports persistent repair/artifact context and guided commands:
   - `/workspace`, `/build-command`, `/flash-artifact`, `/elf`
   - `/verify`, `/diagnose`, `/repair`

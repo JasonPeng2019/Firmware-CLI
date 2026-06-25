@@ -13,7 +13,7 @@ from pyocd_debug_mcp.ux import cli as ux_cli
 from pyocd_debug_mcp.ux import shell as ux_shell
 from pyocd_debug_mcp.ux.artifacts import artifact_entries
 from pyocd_debug_mcp.ux.commands import SlashCommand, TaskInput, parse_shell_input
-from pyocd_debug_mcp.ux.history import load_session_bundle, list_history
+from pyocd_debug_mcp.ux.history import HistoryListing, UXHistoryError, load_session_bundle, list_history
 from pyocd_debug_mcp.ux.renderer import UXRenderer
 
 
@@ -84,14 +84,36 @@ def test_list_history_reads_saved_turnkey_runs_newest_first(tmp_path: Path) -> N
         task="Newer task",
     )
 
-    entries = list_history(runs_root=tmp_path, limit=None)
+    listing = list_history(runs_root=tmp_path, limit=None)
 
-    assert [entry.session_id for entry in entries] == [
+    assert [entry.session_id for entry in listing.entries] == [
         "20260623T010000Z-bbbb2222",
         "20260623T000000Z-aaaa1111",
     ]
-    assert entries[0].board_id == "nrf52833dk"
-    assert entries[0].provider == "claude-cli"
+    assert listing.entries[0].board_id == "nrf52833dk"
+    assert listing.entries[0].provider == "claude-cli"
+    assert listing.warnings == ()
+
+
+def test_list_history_skips_malformed_runs_and_collects_warnings(tmp_path: Path) -> None:
+    _seed_run(
+        tmp_path,
+        "20260623T000000Z-valid111",
+        board_id="nucleo_l476rg",
+        provider="codex-cli",
+        task="Healthy run",
+    )
+    bad_run = tmp_path / "20260623T020000Z-badjson"
+    bad_run.mkdir(parents=True)
+    (bad_run / "run-metadata").mkdir(parents=True)
+    (bad_run / "run-metadata" / "turnkey_request.json").write_text("{not json}\n", encoding="utf-8")
+
+    listing = list_history(runs_root=tmp_path, limit=None)
+
+    assert [entry.session_id for entry in listing.entries] == ["20260623T000000Z-valid111"]
+    assert len(listing.warnings) == 1
+    assert listing.warnings[0].session_id == "20260623T020000Z-badjson"
+    assert "Expecting property name enclosed in double quotes" in listing.warnings[0].message
 
 
 def test_load_session_bundle_and_artifact_entries(tmp_path: Path) -> None:
@@ -114,24 +136,36 @@ def test_load_session_bundle_and_artifact_entries(tmp_path: Path) -> None:
     assert "score" in labels
 
 
+def test_load_session_bundle_raises_on_malformed_selected_run(tmp_path: Path) -> None:
+    bad_run = tmp_path / "20260623T070000Z-badselected"
+    (bad_run / "run-metadata").mkdir(parents=True)
+    (bad_run / "run-metadata" / "turnkey_request.json").write_text("{bad json}\n", encoding="utf-8")
+
+    with pytest.raises(UXHistoryError, match="Expecting property name enclosed in double quotes"):
+        load_session_bundle("20260623T070000Z-badselected", runs_root=tmp_path)
+
+
 def test_renderer_renders_history_table() -> None:
     stream = io.StringIO()
     renderer = UXRenderer(console=Console(file=stream, force_terminal=False, color_system=None))
     renderer.render_history(
-        [
-            type(
-                "Entry",
-                (),
-                {
-                    "session_id": "20260623T030000Z-dddd4444",
-                    "board_id": "nrf52833dk",
-                    "provider": "codex-cli",
-                    "run_mode": "freeform",
-                    "final_status": "healthy_confirmed",
-                    "task_summary": "Verify this reference firmware is healthy.",
-                },
-            )()
-        ]
+        HistoryListing(
+            entries=(
+                type(
+                    "Entry",
+                    (),
+                    {
+                        "session_id": "20260623T030000Z-dddd4444",
+                        "board_id": "nrf52833dk",
+                        "provider": "codex-cli",
+                        "run_mode": "freeform",
+                        "final_status": "healthy_confirmed",
+                        "task_summary": "Verify this reference firmware is healthy.",
+                    },
+                )(),
+            ),
+            warnings=(),
+        )
     )
     output = stream.getvalue()
     assert "Recent Sessions" in output
@@ -374,9 +408,10 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(tmp_path: Path, mo
     monkeypatch.setattr(
         ux_shell,
         "list_history",
-        lambda limit=1: [
-            type("Entry", (), {"session_id": "20260623T060000Z-shortcuts"})()
-        ],
+        lambda limit=1: HistoryListing(
+            entries=(type("Entry", (), {"session_id": "20260623T060000Z-shortcuts"})(),),
+            warnings=(),
+        ),
     )
     shell.renderer.render_artifact_entry = lambda entry, title=None: rendered.append(title or entry.label)  # type: ignore[method-assign]
 
@@ -386,3 +421,37 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(tmp_path: Path, mo
     rendered.clear()
     assert shell._dispatch_command(parse_shell_input("/events")) is True
     assert rendered == ["events: brain_events", "events: server_events"]
+
+
+def test_shell_fallback_session_selection_skips_malformed_newest_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid_run = _seed_run(
+        tmp_path,
+        "20260623T060000Z-valid",
+        board_id="nrf52833dk",
+        provider="codex-cli",
+        task="Healthy run",
+    )
+    bad_run = tmp_path / "20260623T070000Z-bad"
+    (bad_run / "run-metadata").mkdir(parents=True)
+    (bad_run / "run-metadata" / "turnkey_request.json").write_text("{bad json}\n", encoding="utf-8")
+
+    shell = _make_shell()
+    bundle = load_session_bundle("20260623T060000Z-valid", runs_root=tmp_path)
+
+    monkeypatch.setattr(
+        ux_shell,
+        "list_history",
+        lambda limit=1: list_history(runs_root=tmp_path, limit=limit),
+    )
+    monkeypatch.setattr(
+        ux_shell,
+        "load_session_bundle",
+        lambda session_id: load_session_bundle(session_id, runs_root=tmp_path),
+    )
+    selected = shell._load_selected_bundle(None)
+
+    assert selected == bundle
+    assert valid_run.name == "20260623T060000Z-valid"

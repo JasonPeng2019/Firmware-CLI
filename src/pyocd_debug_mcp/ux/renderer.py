@@ -15,7 +15,7 @@ from rich.text import Text
 from pyocd_debug_mcp.brain.events import BrainEvent
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution
 from pyocd_debug_mcp.ux.artifacts import ArtifactEntry, artifact_entries, preview_json, preview_text
-from pyocd_debug_mcp.ux.history import HistoryEntry, SessionBundle
+from pyocd_debug_mcp.ux.history import HistoryListing, SessionBundle
 
 RawOutputPolicy = Literal["off", "final", "all"]
 
@@ -194,7 +194,7 @@ class UXRenderer:
             )
         )
 
-    def render_history(self, entries: list[HistoryEntry]) -> None:
+    def render_history(self, listing: HistoryListing) -> None:
         table = Table(title="Recent Sessions")
         table.add_column("session_id", style="cyan")
         table.add_column("board")
@@ -202,7 +202,7 @@ class UXRenderer:
         table.add_column("mode")
         table.add_column("status")
         table.add_column("summary")
-        for entry in entries:
+        for entry in listing.entries:
             table.add_row(
                 entry.session_id,
                 entry.board_id or "(unknown)",
@@ -212,6 +212,10 @@ class UXRenderer:
                 entry.task_summary or "(none)",
             )
         self.console.print(table)
+        for warning in listing.warnings:
+            self.console.print(
+                f"[yellow]warning[/yellow] skipped session {warning.session_id}: {warning.message}"
+            )
 
     def render_session_bundle(self, bundle: SessionBundle) -> None:
         request = bundle.request or {}

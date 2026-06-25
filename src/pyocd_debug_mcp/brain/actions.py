@@ -23,7 +23,7 @@ AllowedServerToolName = Literal[
 ]
 
 FinalStatus = Literal["fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"]
-Classification = Literal["healthy", "code_bug", "observability_fault", "physical_fault"]
+Classification = Literal["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"]
 
 
 class _StrictModel(BaseModel):
@@ -189,7 +189,7 @@ def turn_decision_output_schema() -> dict[str, object]:
                 },
                 "classification": {
                     "type": "string",
-                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault"],
+                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"],
                 },
                 "root_cause": {"type": "string", "minLength": 1},
                 "summary": {"type": "string", "minLength": 1},
@@ -206,7 +206,7 @@ def turn_decision_output_schema() -> dict[str, object]:
             "observation_summary": {"type": "string", "minLength": 1},
             "classification": {
                 "type": ["string", "null"],
-                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", None],
+                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure", None],
             },
             "hypothesis": {"type": ["string", "null"]},
             "strategy_evaluation": {"type": ["string", "null"]},

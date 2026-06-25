@@ -11,6 +11,9 @@ from typing import Any, cast
 import anyio
 import pytest
 
+from pyocd_debug_mcp import benchmark_support as r11
+from pyocd_debug_mcp import reference_smoke
+from pyocd_debug_mcp.brain import app as brain_app
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.actions import (
     FinalizeAction,
@@ -21,23 +24,23 @@ from pyocd_debug_mcp.brain.actions import (
 )
 from pyocd_debug_mcp.brain.cli import build_parser as build_turnkey_cli_parser
 from pyocd_debug_mcp.brain.config import (
+    BrainProviderConfig,
     BrainConfigError,
     build_turnkey_invocation,
     load_provider_config,
     task_requires_code_fix,
 )
-from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey
+from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey, run_turnkey_with_provider
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     _build_claude_command,
     _extract_claude_output_text,
 )
 from pyocd_debug_mcp.brain.provider_codex_cli import _build_codex_command
-from pyocd_debug_mcp.brain.mcp_client import ToolTextResult
+from pyocd_debug_mcp.brain.mcp_client import MCPClientError, ToolTextResult
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
-from tests.harness import r11_benchmark as r11
 
 
 class FakeProvider:
@@ -134,6 +137,77 @@ def test_task_requires_code_fix_ignores_negated_edit_language() -> None:
         )
         is False
     )
+
+
+def test_product_runtime_modules_do_not_import_tests_or_mutate_sys_path() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    product_files = (
+        repo_root / "src" / "pyocd_debug_mcp" / "brain" / "app.py",
+        repo_root / "src" / "pyocd_debug_mcp" / "brain" / "benchmark.py",
+        repo_root / "src" / "pyocd_debug_mcp" / "brain" / "cli.py",
+        repo_root / "src" / "pyocd_debug_mcp" / "benchmark_support.py",
+        repo_root / "src" / "pyocd_debug_mcp" / "reference_smoke.py",
+    )
+
+    for path in product_files:
+        text = path.read_text(encoding="utf-8")
+        assert "tests.harness" not in text, path
+        assert "tests." not in text, path
+        assert "sys.path.insert" not in text, path
+
+
+def test_stage1_harness_wrapper_reexports_shared_smoke_module() -> None:
+    from tests.harness import stage1_smoke as harness_smoke
+
+    assert harness_smoke.run_stage1_smoke is reference_smoke.run_stage1_smoke
+    assert harness_smoke.main is reference_smoke.main
+
+
+def test_r11_harness_wrapper_reexports_shared_benchmark_module() -> None:
+    from tests.harness import r11_benchmark as harness_benchmark
+
+    assert harness_benchmark.run_case is r11.run_case
+    assert harness_benchmark.run_suite is r11.run_suite
+    assert harness_benchmark.main is r11.main
+
+
+def test_run_freeform_task_does_not_refuse_fix_wording_without_repair_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_run_turnkey_with_provider(
+        invocation: object,
+        *,
+        provider_config: object,
+        event_sink: object = None,
+    ) -> SimpleNamespace:
+        captured["invocation"] = invocation
+        captured["provider_config"] = provider_config
+        captured["event_sink"] = event_sink
+        return SimpleNamespace(result=SimpleNamespace(final_status="diagnosed_only"))
+
+    monkeypatch.setattr(
+        brain_app,
+        "load_provider_config",
+        lambda model, provider=None: BrainProviderConfig(provider="codex-cli", model=model),
+    )
+    monkeypatch.setattr(brain_app, "run_turnkey_with_provider", _fake_run_turnkey_with_provider)
+
+    execution = anyio.run(
+        lambda: brain_app.run_freeform_task(
+            board_id="nucleo_l476rg",
+            task="Fix the wrong UART boot signature, but start by diagnosing it carefully.",
+            provider="codex-cli",
+            model=None,
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    invocation = captured["invocation"]
+    assert getattr(invocation, "task").startswith("Fix the wrong UART boot signature")
+    assert getattr(invocation, "workspace_root") is None
+    assert getattr(invocation, "allowed_edit_roots") == ()
 
 
 def test_skill_loader_selects_common_and_family_skills_deterministically() -> None:
@@ -317,6 +391,127 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert "provider_turn_complete" in event_kinds
     assert "tool_complete" in event_kinds
     assert "final_result" in event_kinds
+
+
+def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FailingProvider:
+        async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+            raise RuntimeError("provider exploded")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Verify this reference firmware is healthy and explain why.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, FailingProvider()),
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert execution.result.classification == "tooling_failure"
+    assert execution.result.session_id is None
+    assert execution.run_root is not None
+    assert execution.run_root.name.startswith("turnkey-")
+    assert (execution.run_root / "run-metadata" / "turnkey_request.json").exists()
+    assert (execution.run_root / "run-metadata" / "turnkey_result.json").exists()
+    assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
+    assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
+    assert "provider exploded" in execution.result.summary
+
+
+def test_run_turnkey_returns_structured_tooling_failure_for_mcp_startup_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class StartupFailureClient:
+        async def __aenter__(self) -> "StartupFailureClient":
+            raise MCPClientError("startup failed")
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to connect first.",
+                classification="healthy",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            )
+        ]
+    )
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Verify this reference firmware is healthy and explain why.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: StartupFailureClient()),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert execution.result.classification == "tooling_failure"
+    assert execution.result.session_id is None
+    assert execution.run_root is not None
+    assert execution.run_root.name.startswith("turnkey-")
+    assert (execution.run_root / "run-metadata" / "turnkey_result.json").exists()
+    assert "mcp-startup-failed" in execution.result.summary
+
+
+def test_run_turnkey_with_provider_normalizes_provider_setup_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.loop.create_decision_provider",
+        lambda _config: (_ for _ in ()).throw(RuntimeError("provider setup failed")),
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify this reference firmware is healthy and explain why.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey_with_provider(
+            invocation,
+            provider_config=BrainProviderConfig(provider="codex-cli", model=None),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert execution.result.classification == "tooling_failure"
+    assert execution.result.session_id is None
+    assert execution.run_root is not None
+    assert (execution.run_root / "run-metadata" / "turnkey_result.json").exists()
+    assert "provider-setup-failed" in execution.result.summary
 
 
 def test_run_turnkey_treats_binary_read_as_workspace_error(

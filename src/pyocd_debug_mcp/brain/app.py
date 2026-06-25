@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from tests.harness import r11_benchmark as r11
-
+from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.config import (
-    BrainConfigError,
     TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
-    task_requires_code_fix,
 )
 from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
@@ -34,11 +31,6 @@ async def run_freeform_task(
     event_sink: EventSink | None = None,
 ) -> TurnkeyExecution:
     provider_config = load_provider_config(model, provider)
-    if task_requires_code_fix(task) and not (workspace_root and build_command):
-        raise BrainConfigError(
-            "Refused [turnkey/missing-workspace-context]: this task appears to require a code fix, "
-            "but no --workspace-root and --build-command were supplied."
-        )
     invocation = build_turnkey_invocation(
         mode="freeform",
         provider=provider_config.provider,
@@ -53,7 +45,7 @@ async def run_freeform_task(
         workspace_root=workspace_root,
         build_command=build_command,
         code_edits_allowed=bool(workspace_root and build_command),
-        allowed_edit_roots=("src",) if workspace_root and build_command else (),
+        allowed_edit_roots=(),
         recover_allowed=True,
     )
     return await run_turnkey_with_provider(
@@ -69,9 +61,9 @@ def run_benchmark_case(
     provider: TurnkeyProviderKind | None = None,
     model: str | None = None,
     max_iters: int = r12_benchmark.DEFAULT_MAX_ITERS,
-    serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
+    serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
-) -> r11.CaseRunReport:
+) -> benchmark_support.CaseRunReport:
     provider_config = load_provider_config(model, provider)
     return r12_benchmark.run_case(
         case_id,
@@ -89,12 +81,12 @@ def run_benchmark_suite(
     provider: TurnkeyProviderKind | None = None,
     model: str | None = None,
     max_iters: int = r12_benchmark.DEFAULT_MAX_ITERS,
-    serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
+    serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
-) -> list[r11.CaseRunReport]:
+) -> list[benchmark_support.CaseRunReport]:
     provider_config = load_provider_config(model, provider)
-    reports: list[r11.CaseRunReport] = []
-    for case in r11.load_suite(suite_name):
+    reports: list[benchmark_support.CaseRunReport] = []
+    for case in benchmark_support.load_suite(suite_name):
         reports.append(
             r12_benchmark.run_case(
                 case.case_id,
@@ -109,4 +101,4 @@ def run_benchmark_suite(
 
 
 def benchmark_case_ids(suite_name: str) -> Sequence[str]:
-    return tuple(case.case_id for case in r11.load_suite(suite_name))
+    return tuple(case.case_id for case in benchmark_support.load_suite(suite_name))

@@ -48,6 +48,9 @@ a glance before relying on detail.
 | `serial_resolver.py` | Serial/VCP discovery, vendor-assisted detection, and `--port`/override resolution with interactive/non-interactive fallback. |
 | `probe_inventory.py` | Parses `pyocd list --probes`, models `ProbeInfo`, and does board-aware probe selection (preserves real UIDs for J-Link and ST-Link). |
 | `reference_artifacts.py` | Resolves the canonical per-board reference `.elf`/`.hex` pair from the repo `firmware/<board>/reference/build/` layout. |
+| `reference_smoke.py` | Product-owned shared Stage 1 smoke verifier used by the harness wrapper and turnkey benchmark final verification. |
+| `runtime_resources.py` | Resolves runtime data roots from a live repo checkout when present, else from packaged bundled data inside the installed wheel. |
+| `benchmark_support.py` | Product-owned shared benchmark contracts/helpers: case loading, workspace prep, session reconciliation, scoring, and benchmark artifact writing. |
 | `pack_provision.py` | Pinned, deterministic CMSIS-Pack provisioning: `ensure_all` (fetch+sha256-verify from `packs/manifest.yaml`) and `discover_local_packs` (network-free runtime lookup for pyOCD's `pack` option). Replaces dependence on the live `pyocd pack` index. |
 | `target_errors.py` | Typed error taxonomy: `TargetControlError` base + `ProbeNotFound`, `TargetConnection`, `LockedTarget`, `UnsupportedArtifact`, `SymbolLookup`, `ReferenceArtifact`. |
 
@@ -63,6 +66,7 @@ a glance before relying on detail.
 | `brain/events.py` | Structured event model + sink contract for live UX rendering and persisted `brain_events.jsonl` artifacts. |
 | `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
 | `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
+| `brain/playbooks.py` | Loader for the internal deterministic turnkey helper playbooks stored under `playbooks/turnkey/`, resolved from repo roots in checkout mode or from bundled package data in wheel installs. |
 | `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation. |
 | `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`. |
 | `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`. |
@@ -70,7 +74,7 @@ a glance before relying on detail.
 | `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
 | `brain/provider_types.py` | Shared provider contracts: `ProviderTurn` and `DecisionProvider`. |
-| `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering. |
+| `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering; resolves skills from the live repo when present or from bundled package data when installed. |
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
 
@@ -81,7 +85,7 @@ a glance before relying on detail.
 | `ux/cli.py` | `pyocd-debug` entrypoint; launches the REPL shell with no args and also exposes pretty `run`, `benchmark`, `history`, `show`, and `rerun` subcommands. |
 | `ux/shell.py` | Interactive Rich + `prompt_toolkit` shell controller and slash-command dispatch. |
 | `ux/renderer.py` | Rich renderer for live provider/tool activity, evidence summaries, raw-output display, and benchmark/history summaries. |
-| `ux/history.py` | Saved-run discovery and `turnkey_request`/`turnkey_result` loading from `runs/<session_id>/...`. |
+| `ux/history.py` | Saved-run discovery and `turnkey_request`/`turnkey_result` loading from `runs/<session_id>/...`, with best-effort listing that skips malformed runs and returns warnings. |
 | `ux/artifacts.py` | Artifact discovery and safe text/JSON preview helpers for saved runs. |
 | `ux/commands.py` | Slash-command parsing and help text for the interactive shell. |
 
@@ -118,8 +122,8 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `harness/stage1_smoke.py` | Stage 1 end-to-end smoke harness (config → artifacts → serial → session → flash → reset/halt → PC → symbol → memory readback → UART `boot ok`); passes on both scoped boards. |
-| `harness/r11_benchmark.py` | R11 Codex-driven benchmark runner (single-case + suite). |
+| `harness/stage1_smoke.py` | Thin CLI wrapper over `src/pyocd_debug_mcp/reference_smoke.py`. |
+| `harness/r11_benchmark.py` | Thin CLI wrapper over `src/pyocd_debug_mcp/benchmark_support.py`. |
 | `harness/r12_turnkey_benchmark.py` | Thin CLI wrapper for the R12 turnkey benchmark path. |
 | `test_board_configs.py` | Board-config loader/schema tests. `(by name)` |
 | `test_serial_resolver.py` | Serial resolution tests. `(by name)` |

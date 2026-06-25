@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import r11_benchmark as r11
+from pyocd_debug_mcp import benchmark_support as r11
 
 
 def load_fixture_result(name: str) -> r11.ParsedAgentResult:

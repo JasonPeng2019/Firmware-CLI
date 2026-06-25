@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyocd_debug_mcp.board_config import BoardConfig
+from pyocd_debug_mcp.runtime_resources import resolve_skills_root
 
-SKILLS_ROOT = Path(__file__).resolve().parents[3] / "skills"  # PROJECT-DEFINED (repo layout)
+SKILLS_ROOT = resolve_skills_root()  # PROJECT-DEFINED (repo checkout preferred, bundled fallback)
 
 
 class SkillConfigError(RuntimeError):

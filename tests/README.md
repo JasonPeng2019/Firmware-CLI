@@ -12,11 +12,21 @@ Current layout:
 Tracked harnesses:
 
 - `tests/harness/stage1_smoke.py`: the current canonical Stage 1 smoke-harness
-  entrypoint over the shared SWD and UART services
+  entrypoint over the shared SWD and UART services; now a thin wrapper over
+  `src/pyocd_debug_mcp/reference_smoke.py`
 - `tests/harness/r11_benchmark.py`: the `R11` benchmark runner over the current
-  MCP server and scripted `codex exec`
+  MCP server and scripted `codex exec`; now a thin wrapper over
+  `src/pyocd_debug_mcp/benchmark_support.py`
 - `tests/harness/r12_turnkey_benchmark.py`: the `R12` turnkey benchmark
   entrypoint over `pyocd-debug-brain`
+
+Product/runtime note:
+
+- the shipped product CLIs no longer import implementation code from `tests/`
+- the shared Stage 1 verifier and shared benchmark helpers now live under
+  `src/pyocd_debug_mcp/`
+- the wheel bundles the benchmark cases, turnkey skills, and turnkey
+  playbooks the runtime depends on
 
 Tracked benchmark metadata:
 
