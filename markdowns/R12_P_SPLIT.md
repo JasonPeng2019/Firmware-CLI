@@ -11,8 +11,11 @@ rewriting the same orchestration files.
 
 Rule of thumb:
 
+- Wave 0 is the clean integration trunk for this prototype
 - steps inside one branch are serial
 - branches inside one wave are parallel
+- every branch starts from the current Wave 0 branch
+- every finished wave merges back into Wave 0 before the next wave starts
 - the next wave starts only after the prior wave's required dependencies land
 - broad edits to `brain/loop.py`, `brain/actions.py`, `brain/cli.py`, and
   `server.py` are serialized integration work
@@ -21,6 +24,12 @@ Rule of thumb:
 
 ```text
 SERIAL:
+  Wave 0 clean slate:
+    fix current dirty repo issues
+    self-diagnose current repo with extensive tests
+    prove on real STM32 + Nordic boards
+
+SERIAL:
   P0 foundation
 
 PARALLEL WAVE 1:
@@ -28,18 +37,67 @@ PARALLEL WAVE 1:
   Branch B: action boundary + batches + client actions
   Branch C: event spine + timeout policy
 
+SERIAL:
+  merge A + B + C back into Wave 0
+
 PARALLEL WAVE 2:
   Branch D: progress UI + inspector
   Branch E: stream checkpoints
   Branch F: scoped green approval
 
 SERIAL:
+  merge D + E + F back into Wave 0
+
+SERIAL:
   G final integration + acceptance cleanup
 ```
 
+## Wave 0 Clean Slate - Serial First
+
+Wave 0 is the integration trunk for this prototype. It must be made clean before
+`P0` starts.
+
+Purpose:
+do not build the new prototype on top of unknown dirty-state failures. First fix
+the issues currently present in the repo, then self-diagnose the resulting state
+with extensive non-hardware and hardware testing.
+
+Wave 0 owns:
+
+1. Current dirty-code cleanup
+   - reconcile existing uncommitted/code changes against the build plan and docs
+   - fix known broken tests or runtime regressions before adding new prototype
+     features
+   - remove or finish half-landed changes so the next branches start from a
+     coherent baseline
+2. Non-hardware self-diagnosis
+   - run the unit/type/lint/benchmark checks appropriate for the current repo
+     state
+   - investigate failures until they are understood, fixed, or explicitly
+     documented as pending hardware
+3. Real-board validation
+   - validate the clean baseline against the scoped STM32 board
+     (`nucleo_l476rg`)
+   - validate the clean baseline against the scoped Nordic board
+     (`nrf52833dk`)
+   - record exact commands, outputs, and remaining hardware caveats
+
+Wave 0 exit criteria:
+
+- the worktree baseline for prototype work is intentionally clean or has only
+  documented, non-blocking changes
+- non-hardware checks have been run and recorded
+- real STM32 and Nordic board checks have been run by a human/operator and
+  recorded, or the missing hardware proof is explicitly marked as blocking
+- the team agrees this is the branch all later prototype branches start from
+
+Wave 0 is not a feature branch. It is the baseline that later branches merge
+back into.
+
 ## P0 Foundation - Serial First
 
-`P0` lands before any long-lived parallel branch starts.
+`P0` starts from the clean Wave 0 branch and lands back into Wave 0 before any
+long-lived parallel branch starts.
 
 Purpose:
 create the smallest concrete shared shapes and hook points so later branches do
@@ -76,7 +134,8 @@ and add tests for parsing/serialization and no-op hooks.
 
 ## Wave 1 - Three Parallel Branches
 
-After `P0` lands, Branch A, Branch B, and Branch C can run in parallel.
+After `P0` lands back into Wave 0, Branch A, Branch B, and Branch C branch from
+Wave 0 and run in parallel.
 
 ### Branch A - Provider Session + Tool Schema Prompt
 
@@ -184,7 +243,11 @@ Should not own:
 
 ## Wave 2 - Three Parallel Branches
 
-Wave 2 starts after Wave 1 dependencies are available:
+Wave 2 starts only after Branch A, Branch B, and Branch C have each merged back
+into Wave 0 and the merged Wave 0 branch has passed the agreed checks.
+
+Branch D, Branch E, and Branch F then branch from the updated Wave 0 branch and
+run in parallel.
 
 - Branch D needs Branch C module 1.
 - Branch E needs Branch B module 5 and Branch C module 1/module 2.
@@ -273,7 +336,9 @@ Should not own:
 
 ## G Final Integration - Serial Last
 
-After Wave 2 lands, do one short serial integration branch.
+After Branch D, Branch E, and Branch F have each merged back into Wave 0 and the
+merged Wave 0 branch has passed the agreed checks, do one short serial
+integration branch.
 
 Owns:
 
@@ -302,6 +367,27 @@ During Wave 1 and Wave 2, a branch may touch those files only for a small hook
 to its owned module. Broad edits to these files happen in `P0` or `G`, not in
 parallel branches.
 
+## Merge-Back Rule
+
+Wave 0 is the only branch that continues across the whole prototype.
+
+Merge sequence:
+
+1. Clean/fix/test current repo state on Wave 0.
+2. Branch `P0` from Wave 0.
+3. Merge `P0` back into Wave 0.
+4. Branch A, B, and C from Wave 0.
+5. Merge A, B, and C back into Wave 0 one at a time, running checks after each
+   merge.
+6. Branch D, E, and F from the updated Wave 0.
+7. Merge D, E, and F back into Wave 0 one at a time, running checks after each
+   merge.
+8. Branch `G` from Wave 0.
+9. Merge `G` back into Wave 0 after final acceptance cleanup.
+
+This lets the people or branch slots used for A/B/C be repurposed for D/E/F
+without carrying stale branch state forward.
+
 ## Conflict Escalation Rule
 
 If a branch cannot proceed without broad edits to another branch's owned module
@@ -317,6 +403,8 @@ into the other branch, or into final integration.
 
 ## Pending Verification
 
+- Wave 0 still needs real STM32 and Nordic board proof before prototype feature
+  work starts.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.

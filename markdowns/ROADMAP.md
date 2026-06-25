@@ -1418,24 +1418,39 @@ and data shapes, not unusual abstraction layers.
 
 Simple branch schedule:
 
-- serial first: `P0` foundation shared shapes and hook points
+- serial first: Wave 0 clean slate
+  - fix current dirty repo issues
+  - self-diagnose with extensive tests
+  - validate against the real scoped STM32 and Nordic boards
+- serial next: `P0` foundation shared shapes and hook points
 - parallel Wave 1:
   - Branch A: provider session + tool schema prompt
   - Branch B: action boundary + batches + client actions
   - Branch C: event spine + timeout policy
+- serial merge-back: A, B, and C merge into Wave 0 one at a time
 - parallel Wave 2:
   - Branch D: progress UI + inspector
   - Branch E: stream checkpoints
   - Branch F: scoped green approval
+- serial merge-back: D, E, and F merge into Wave 0 one at a time
 - serial last: `G` final integration + acceptance cleanup
 
 Parallelization rule:
 
+- Wave 0 is the continuing integration branch/trunk for the prototype
+- no prototype feature branch starts until Wave 0 is clean and either real-board
+  proof on `nucleo_l476rg` and `nrf52833dk` is recorded or the missing hardware
+  proof is explicitly treated as blocking
 - work inside a branch is serial
 - branches inside the same wave are parallel
 - cross-branch dependencies are called out in `markdowns/R12_P_SPLIT.md`
-- `P0` lands before the long-lived parallel branches
-- `G` lands after Wave 2 and contains only final wiring/acceptance cleanup
+- `P0` branches from Wave 0 and merges back before Wave 1 starts
+- Branches A/B/C branch from Wave 0 and merge back into Wave 0 before D/E/F
+  start
+- Branches D/E/F branch from the updated Wave 0 and merge back into Wave 0
+  before `G` starts
+- `G` branches from Wave 0 after Wave 2 and contains only final wiring /
+  acceptance cleanup
 - Long-lived branches should not broadly edit `brain/loop.py`,
   `brain/actions.py`, `brain/cli.py`, or `server.py`; use the ownership matrix
   in `markdowns/R12_P_SPLIT.md` and keep shared-file edits as tiny integration
