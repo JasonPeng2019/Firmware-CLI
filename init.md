@@ -326,7 +326,9 @@ Use these override layers:
   needs no raw target; the `get_board_info` tool reports the loaded facts).
   The same file also carries the turnkey brain's provider settings:
   `PYOCD_TURNKEY_PROVIDER`, optional `PYOCD_TURNKEY_MODEL`, and provider
-  credentials such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+  credentials such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, plus the
+  optional hybrid-session controls:
+  `PYOCD_TURNKEY_MEMORY_MODE` and `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`.
 - `pyocd.local.yaml`
   Optional, gitignored, for per-developer pyOCD tweaks once needed.
 - `pyocd.yaml`
@@ -353,6 +355,7 @@ uv run pyocd-debug-brain --help
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Diagnose the current state." --memory-mode model-summary --native-sync-every 0
 uv run pyocd-debug-brain benchmark --case-id nrf52833dk__k001_reference_green --model <model>
 uv run pyocd-debug --help
 uv run pyocd-debug
@@ -368,6 +371,12 @@ Turnkey notes:
 
 - `pyocd-debug-brain` launches the local MCP server itself; do not pre-launch
   the server for the normal turnkey path.
+- turnkey provider continuity is hybrid and brain-owned:
+  - canonical compact local memory is always persisted
+  - OpenAI uses native continuation when healthy and falls back to local
+    memory when needed
+  - Anthropic, Codex CLI, and Claude CLI always use the local memory block
+  - deterministic compaction is the default; `model-summary` is optional
 - `pyocd-debug` is the new operator-facing CLI over the same brain/runtime:
   - no args launches an interactive REPL shell
   - `run` and `benchmark` reuse the same turnkey logic with prettier live
@@ -391,6 +400,9 @@ Turnkey notes:
     - `/serial`
     - `/score`
     - `/events`
+  - the REPL now supports provider-memory controls:
+    - `/memory-mode`
+    - `/native-sync-every`
   - in non-TTY output contexts it falls back to plain printing instead of
     requiring Rich live rendering support
 - Valid turnkey providers are:
@@ -409,6 +421,9 @@ Turnkey notes:
 - Freeform `run` mode is diagnose/verify only unless you also supply both:
   - `--workspace-root`
   - `--build-command`
+- Optional turnkey memory controls:
+  - `--memory-mode deterministic|model-summary`
+  - `--native-sync-every N`
 - Benchmark mode reuses the frozen 12-case corpus from
   `pilot_v1_plus_b003_b004`.
 - current UX-layer status:

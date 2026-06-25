@@ -11,7 +11,15 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
-from pyocd_debug_mcp.brain.config import BrainConfigError, TurnkeyProviderKind, cast_provider
+from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
+    TurnkeyMemoryMode,
+    TurnkeyProviderKind,
+    cast_provider,
+    cast_memory_mode,
+    resolve_memory_mode,
+    resolve_native_sync_every,
+)
 from pyocd_debug_mcp.ux.artifacts import find_shortcut_entries
 from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashCommand, TaskInput, parse_shell_input
 from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
@@ -100,6 +108,8 @@ class ShellContext:
     model: str | None = None
     last_session_id: str | None = None
     raw_output: RawOutputPolicy = "off"
+    memory_mode: TurnkeyMemoryMode = "deterministic"
+    native_sync_every: int = 4
     workspace_root: str | None = None
     build_command: str | None = None
     flash_artifact: str | None = None
@@ -116,7 +126,11 @@ class ShellContext:
 class OperatorShell:
     def __init__(self, renderer: UXRenderer | None = None) -> None:
         self.renderer = renderer or UXRenderer(raw_output="off")
-        self.context = ShellContext(raw_output=self.renderer.raw_output)
+        self.context = ShellContext(
+            raw_output=self.renderer.raw_output,
+            memory_mode=resolve_memory_mode(),
+            native_sync_every=resolve_native_sync_every(),
+        )
         self._session: PromptSession[str] = self._build_prompt_session()
 
     @staticmethod
@@ -180,6 +194,36 @@ class OperatorShell:
                 return True
             self.context.model = None if command.args[0] == "default" else command.args[0]
             self.renderer.print_info(f"Model set to {self.context.model or 'default'}.")
+            return True
+        if command.name == "memory-mode":
+            if len(command.args) != 1:
+                self.renderer.print_error("Usage: /memory-mode <deterministic|model-summary>")
+                return True
+            try:
+                self.context.memory_mode = cast_memory_mode(command.args[0])
+            except BrainConfigError as exc:
+                self.renderer.print_error(str(exc))
+                return True
+            self.renderer.print_info(f"Memory mode set to {self.context.memory_mode}.")
+            return True
+        if command.name == "native-sync-every":
+            if len(command.args) != 1:
+                self.renderer.print_error("Usage: /native-sync-every <0|N>")
+                return True
+            try:
+                value = int(command.args[0])
+            except ValueError:
+                self.renderer.print_refusal(
+                    "Refused [ux/invalid-native-sync]: native sync cadence must be 0 or a positive integer."
+                )
+                return True
+            if value < 0:
+                self.renderer.print_refusal(
+                    "Refused [ux/invalid-native-sync]: native sync cadence must be 0 or a positive integer."
+                )
+                return True
+            self.context.native_sync_every = value
+            self.renderer.print_info(f"Native sync cadence set to {self.context.native_sync_every}.")
             return True
         if command.name == "workspace":
             return self._handle_workspace_command(command)
@@ -333,6 +377,8 @@ class OperatorShell:
                     task=task,
                     provider=self.context.provider,
                     model=self.context.model,
+                    memory_mode=self.context.memory_mode,
+                    native_sync_every=self.context.native_sync_every,
                     flash_artifact=self.context.flash_artifact,
                     elf=self.context.symbol_artifact,
                     workspace_root=workspace_root,
@@ -353,6 +399,8 @@ class OperatorShell:
                 case_id=case_id,
                 provider=self.context.provider,
                 model=self.context.model,
+                memory_mode=self.context.memory_mode,
+                native_sync_every=self.context.native_sync_every,
                 event_sink=self.renderer.emit,
             )
         except BrainConfigError as exc:
@@ -368,6 +416,8 @@ class OperatorShell:
                 suite_name=suite_name,
                 provider=self.context.provider,
                 model=self.context.model,
+                memory_mode=self.context.memory_mode,
+                native_sync_every=self.context.native_sync_every,
                 event_sink=self.renderer.emit,
             )
         except BrainConfigError as exc:
@@ -465,6 +515,7 @@ class OperatorShell:
         if mode == "freeform":
             task = request.get("task")
             board_id = request.get("board_id")
+            native_sync_every = request.get("native_sync_every")
             if not isinstance(task, str) or not isinstance(board_id, str):
                 self.renderer.print_refusal(
                     f"Refused [ux/invalid-request]: session `{session_id}` is missing freeform request fields."
@@ -477,6 +528,12 @@ class OperatorShell:
                         task=task,
                         provider=request_provider,
                         model=model if isinstance(model, str) else None,
+                        memory_mode=(
+                            cast_memory_mode(str(request.get("memory_mode")))
+                            if isinstance(request.get("memory_mode"), str)
+                            else None
+                        ),
+                        native_sync_every=native_sync_every if isinstance(native_sync_every, int) else None,
                         port=request.get("port_override") if isinstance(request.get("port_override"), str) else None,
                         flash_artifact=request.get("flash_artifact") if isinstance(request.get("flash_artifact"), str) else None,
                         elf=request.get("symbol_artifact") if isinstance(request.get("symbol_artifact"), str) else None,
@@ -495,6 +552,7 @@ class OperatorShell:
             return True
         if mode == "benchmark":
             case_id = request.get("case_id")
+            native_sync_every = request.get("native_sync_every")
             if not isinstance(case_id, str) or not case_id:
                 self.renderer.print_refusal(
                     f"Refused [ux/invalid-request]: benchmark session `{session_id}` has no case_id."
@@ -505,6 +563,12 @@ class OperatorShell:
                     case_id=case_id,
                     provider=request_provider,
                     model=model if isinstance(model, str) else None,
+                    memory_mode=(
+                        cast_memory_mode(str(request.get("memory_mode")))
+                        if isinstance(request.get("memory_mode"), str)
+                        else None
+                    ),
+                    native_sync_every=native_sync_every if isinstance(native_sync_every, int) else None,
                     event_sink=self.renderer.emit,
                 )
             except BrainConfigError as exc:

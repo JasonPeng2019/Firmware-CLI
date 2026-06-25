@@ -13,6 +13,7 @@ import anyio
 from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain.actions import TurnkeyRunResult
 from pyocd_debug_mcp.brain.config import (
+    TurnkeyMemoryMode,
     TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
@@ -284,6 +285,8 @@ async def run_case_async(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    memory_mode: TurnkeyMemoryMode | None = None,
+    native_sync_every: int | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -311,6 +314,8 @@ async def run_case_async(
         model=provider_config.model,
         max_iters=max_iters,
         serial_read_seconds=serial_read_seconds,
+        memory_mode=memory_mode,
+        native_sync_every=native_sync_every,
         flash_artifact=prepared.flash_artifact,
         elf=prepared.symbol_artifact,
         workspace_root=prepared.workspace.workspace_root,
@@ -450,6 +455,8 @@ def run_case(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    memory_mode: TurnkeyMemoryMode | None = None,
+    native_sync_every: int | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -462,6 +469,8 @@ def run_case(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            memory_mode=memory_mode,
+            native_sync_every=native_sync_every,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -477,6 +486,8 @@ def run_suite(
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    memory_mode: TurnkeyMemoryMode | None = None,
+    native_sync_every: int | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -489,6 +500,8 @@ def run_suite(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            memory_mode=memory_mode,
+            native_sync_every=native_sync_every,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -507,6 +520,8 @@ def build_parser() -> argparse.ArgumentParser:
     case_parser.add_argument("--provider", required=False)
     case_parser.add_argument("--model", required=False)
     case_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
+    case_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    case_parser.add_argument("--native-sync-every", type=int)
     case_parser.add_argument(
         "--serial-read-seconds",
         type=float,
@@ -518,6 +533,8 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument("--provider", required=False)
     suite_parser.add_argument("--model", required=False)
     suite_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
+    suite_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    suite_parser.add_argument("--native-sync-every", type=int)
     suite_parser.add_argument(
         "--serial-read-seconds",
         type=float,
@@ -537,6 +554,8 @@ def main(argv: list[str] | None = None) -> int:
             provider=provider,
             model=model,
             max_iters=args.max_iters,
+            memory_mode=args.memory_mode,
+            native_sync_every=args.native_sync_every,
             serial_read_seconds=args.serial_read_seconds,
         )
         benchmark_support.print_case_summary(report)
@@ -547,6 +566,8 @@ def main(argv: list[str] | None = None) -> int:
         provider=provider,
         model=model,
         max_iters=args.max_iters,
+        memory_mode=args.memory_mode,
+        native_sync_every=args.native_sync_every,
         serial_read_seconds=args.serial_read_seconds,
     )
     for report in reports:

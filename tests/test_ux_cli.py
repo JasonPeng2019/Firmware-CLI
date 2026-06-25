@@ -224,6 +224,25 @@ def test_operator_cli_parser_supports_raw_output_flags() -> None:
     assert args.raw_output == "all"
 
 
+def test_operator_cli_parser_supports_memory_controls() -> None:
+    parser = ux_cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "benchmark",
+            "--case-id",
+            "nrf52833dk__k001_reference_green",
+            "--memory-mode",
+            "model-summary",
+            "--native-sync-every",
+            "6",
+        ]
+    )
+
+    assert args.memory_mode == "model-summary"
+    assert args.native_sync_every == 6
+
+
 def _make_renderer(stream: io.StringIO | None = None) -> UXRenderer:
     return UXRenderer(raw_output="off", console=Console(file=stream or io.StringIO(), force_terminal=False, color_system=None))
 
@@ -320,6 +339,20 @@ def test_shell_raw_command_toggles_modes_and_supports_last() -> None:
 
     assert shell._dispatch_command(parse_shell_input("/raw last")) is True
     assert shown["called"] is True
+
+
+def test_shell_memory_commands_update_context_and_reject_invalid_values() -> None:
+    stream = io.StringIO()
+    shell = _make_shell(_make_renderer(stream))
+
+    assert shell._dispatch_command(parse_shell_input("/memory-mode model-summary")) is True
+    assert shell.context.memory_mode == "model-summary"
+
+    assert shell._dispatch_command(parse_shell_input("/native-sync-every 0")) is True
+    assert shell.context.native_sync_every == 0
+
+    assert shell._dispatch_command(parse_shell_input("/native-sync-every -1")) is True
+    assert "ux/invalid-native-sync" in stream.getvalue()
 
 
 def test_guided_verify_ignores_workspace_context_but_keeps_artifact_context(

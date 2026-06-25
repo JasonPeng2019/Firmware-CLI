@@ -71,22 +71,29 @@ The first `R12` implementation must add all of these:
   - turnkey skill manifests
   - turnkey playbooks
 
-The current prototype increment must add or tighten:
+The current implemented prototype increment adds or tightens:
 
-- persistent provider sessions where the provider supports them
-- a final board-decision boundary: host-only work is model-native, while
-  board/server-native work is still gated by the brain
+- explicit provider capabilities and loop-owned provider session state
+- one canonical brain-owned provider memory model for every backend
+- native Responses continuation for OpenAI as an accelerator, with local
+  fallback and optional periodic safety sync
+- canonical local-memory continuation for Anthropic, Codex CLI, and Claude CLI
+- deterministic compaction by default, with optional `model-summary`
+  compaction and deterministic fallback on summarizer failure
 - real MCP tool descriptions and JSON schemas in the turnkey prompt
-- model-composed action batches, plus `wait` and UART write capability
-- live CLI progress output and a developer inspector stream
-- basic timeout hardening for every blocking layer still missing a bound
-- dynamically refined timeout budgets proposed by the model, clamped by the
-  brain, and mirrored into the server for subsequent operations
-- client actions: model-authored scripts that persist for the client session
-  and can call gated server tools only through the brain-approved API
-- scoped green approval with model-made tests, including a narrow flipped-value
-  check for the first benchmark/prototype surface
-- chunked stream checkpoints for UART reads, builds, and long client actions
+- a dedicated `tool_schemas.py` module so the loop no longer owns
+  hand-maintained server-tool prompt text
+- persisted provider/session metadata in turnkey state, events, and model-turn
+  artifacts
+
+Later prototype waves remain open for:
+
+- model-composed action batches
+- `wait`
+- UART write capability
+- additional timeout policy/clamp work
+- client-action registration/execution
+- chunked long-running progress checkpoints beyond the current event stream
 
 ## Architecture
 
@@ -103,11 +110,10 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 - local workspace editing/build support
 - deterministic outer-loop control
 - turnkey benchmark orchestration helpers
-- provider-session state and conversation continuation
-- model-native host action dispatch
-- governed client-action registration/execution
-- live event emission for the operator CLI and inspector
-- timeout-budget clamping and server timeout synchronization
+- provider-session state, compact local memory, and memory compaction
+- model-facing prompt-bundle assembly
+- live tool-schema prompt rendering from MCP metadata
+- live event emission for the operator CLI and persisted run artifacts
 
 ### Provider
 
@@ -137,6 +143,12 @@ Frozen provider rules:
   - may use `--model` / `PYOCD_TURNKEY_MODEL` when explicitly supplied
 - the provider wrapper stays isolated from the orchestration loop
 - every provider must return the same structured next-action shape
+- all providers participate in the same hybrid provider-session model:
+  - canonical compact local memory is always persisted by the brain
+  - provider-native handles are optional accelerators, not the source of truth
+  - memory compaction defaults to deterministic mode
+  - `model-summary` compaction is optional and falls back to deterministic
+    compaction on summarizer failure
 - subscription-vs-API billing is owned by the chosen provider surface, not by
   the R12 loop
 
@@ -174,6 +186,9 @@ The brain tracks, at minimum:
 - last mutation result
 - blocked/refused action families
 - workspace/build context when code edits are allowed
+- provider-native handle state when a backend supports it
+- recent compact memory entries plus compacted memory summary
+- memory compaction mode and native safety-sync cadence
 - typed evidence records:
   - observations
   - hypotheses
@@ -253,8 +268,6 @@ The model-facing action surface is smaller than the full server surface.
 - `read_memory`
 - `flash_firmware`
 - `read_serial`
-- `write_serial`
-- `wait`
 - `unlock_recover`
 
 ### Model-native host actions
@@ -273,21 +286,11 @@ friction than board operations.
 - diff against the original workspace snapshot
 - run final green verification
 
-### Client actions
+### Deferred prototype work
 
-Client actions are model-authored scripts saved into a client-session action
-store. They are not pasted inline into a decision. The model must create or
-update the named script, then choose to run it through a structured action with
-inputs.
-
-Rules:
-
-- host-only client actions run as model-native host work
-- client actions that call server-native tools are governed actions
-- every server-native call inside a client action goes through the same brain
-  gate as a direct tool call
-- client actions persist for one client session, not globally, in this
-  prototype
+The current implementation does not yet include model-authored client actions,
+action batches, `wait`, or UART-write support. Those remain later prototype
+wave work and are intentionally outside the current Branch A scope.
 
 ### Actions intentionally withheld in v1
 
@@ -324,6 +327,8 @@ Optional:
 
 - `--provider`
 - `--model`
+- `--memory-mode`
+- `--native-sync-every`
 - `--port`
 - `--flash-artifact`
 - `--elf`
@@ -344,6 +349,12 @@ Freeform mode rules:
 - When freeform repair context is present, editable paths are constrained by
   workspace containment rather than a hardcoded `src/` root.
 - The CLI owns server startup and teardown.
+- Both one-shot CLIs also accept optional provider-memory controls:
+  - `--memory-mode deterministic|model-summary`
+  - `--native-sync-every N`
+- The same settings can come from environment variables:
+  - `PYOCD_TURNKEY_MEMORY_MODE`
+  - `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
 
 ### Operator shell mode
 
@@ -364,6 +375,9 @@ Frozen Pass 1 UX decisions:
   benchmark path.
 - the shell is implemented with `rich` + `prompt_toolkit`
 - the shell consumes a structured event sink from the brain loop
+- the shell exposes the same provider-memory controls as the one-shot CLIs:
+  - `/memory-mode <deterministic|model-summary>`
+  - `/native-sync-every <0|N>`
 - raw output policy is summary-first:
   - REPL `/raw on` prints the full raw provider reply after each completed turn
   - REPL `/raw off` hides raw output but still stores it in artifacts
@@ -391,27 +405,12 @@ The server watcher remains the authoritative destructive-action guardrail.
 
 Frozen first brain-level convergence rules:
 
-- ask the model for an iteration estimate broken down by board calls,
-  debugging headroom, likely false stops, and a fixed brain-added cushion
-- clamp the final iteration budget to a brain-owned hard maximum
+- stop after `max_iters`
 - stop after repeated identical build failures with no file change
 - stop after repeated diagnosis-only turns with no new observation
 - stop after repeated edit/build cycles with no verification improvement
-- prompt the model to propose per-action timeout budgets instead of always
-  using maximum defaults
-- clamp model-proposed timeouts in the brain and mirror allowed updates to the
-  server through a partial `set_timeouts` style update; the setter changes only
-  named fields and never rewrites a config file
-- apply timeout changes to subsequent operations, not in-flight operations
-- use chunked checkpoints for UART reads, builds, and long client actions so
-  the brain can detect progress, summarize it, and cancel when progress stalls
 - interpret server `Refused [...]` and `Blocked [...]` responses as state
   transitions, not noise
-- use gated early exits for `infeasible` and `needs_intervention`
-- require user permission before an automated action whose estimated duration
-  exceeds the unattended-duration cap
-- incentivize targeted print/log instrumentation when debugging unexpected
-  behavior or bug reproduction failures
 
 `R12` does not replace `R10` guardrails. It consumes them.
 
@@ -439,11 +438,6 @@ The turnkey layer must add these artifacts:
 - `logs/brain_trace.jsonl`
 - `logs/model_turns.jsonl`
 - `logs/prompt.txt`
-- `logs/provider_stream.jsonl`
-- `logs/parsed_decisions.jsonl`
-- `logs/tool_calls.jsonl`
-- `logs/stream_checkpoints.jsonl`
-- `logs/inspector_events.jsonl`
 - `applied-patches/turnkey.diff`
 
 The state artifact must include the typed evidence trail:
@@ -452,9 +446,16 @@ The state artifact must include the typed evidence trail:
 - hypotheses
 - experiments
 - strategy evaluations
-- timeout budget proposals and clamped values
-- client actions created and invoked
-- scoped green-test scripts and flipped-value results
+- provider capabilities
+- provider session summary
+- tool-schema bundle summary
+- memory mode
+- continuation mode
+- native handle summary when present
+- recent-memory entry count
+- memory-summary coverage/source/char count
+- native safety-sync cadence and counter
+- last continuation path
 
 In benchmark mode, also persist:
 
@@ -495,13 +496,10 @@ The prototype capability increment additionally proves:
   turn
 - the model can do substantial host-side code work without asking the board gate
   for every step
-- board interactions remain explicit final decisions, batched when useful, and
-  visible to the operator
+- board interactions remain explicit structured decisions and visible to the
+  operator
 - the operator can see progress and inspect brain/provider/server traffic while
   long work is still running
-- timeout choices become task-sensitive instead of hardcoded maximum waits
-- scoped green approval can be driven by model-made scripts and a narrow
-  flipped-value check
 
 Prototype proof boundary for the next phase:
 
@@ -568,8 +566,8 @@ uv run pyocd-debug history
 ## Out Of Scope For This Pass
 
 - no `nrf52840dk` critical-path work
-- no broad MCP server expansion beyond the prototype's required UART write,
-  wait, timeout-sync, and stream/progress plumbing
+- no broad MCP server expansion beyond the currently implemented curated tool
+  surface
 - no additional provider surfaces beyond the four frozen backends above
 - no reconnect-tolerant benchmark accounting
 - no token-level provider streaming in Pass 1; that is the deliberate next UX

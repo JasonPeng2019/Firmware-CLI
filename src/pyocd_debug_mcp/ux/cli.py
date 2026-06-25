@@ -28,6 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--elf")
     run_parser.add_argument("--max-iters", type=int, default=12)
     run_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
+    run_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--workspace-root")
     run_parser.add_argument("--build-command")
     run_parser.add_argument("--raw-output", choices=["off", "final", "all"], default="final")
@@ -40,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--model")
     benchmark_parser.add_argument("--max-iters", type=int, default=18)
     benchmark_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
+    benchmark_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    benchmark_parser.add_argument("--native-sync-every", type=int)
     benchmark_parser.add_argument("--raw-output", choices=["off", "final", "all"], default="final")
 
     history_parser = subparsers.add_parser("history", help="List recent turnkey sessions.")
@@ -69,6 +73,8 @@ def _render_run(args: argparse.Namespace) -> int:
                 elf=args.elf,
                 max_iters=args.max_iters,
                 serial_read_seconds=args.serial_read_seconds,
+                memory_mode=args.memory_mode,
+                native_sync_every=args.native_sync_every,
                 workspace_root=args.workspace_root,
                 build_command=args.build_command,
                 event_sink=renderer.emit,
@@ -91,6 +97,8 @@ def _render_benchmark(args: argparse.Namespace) -> int:
                 model=args.model,
                 max_iters=args.max_iters,
                 serial_read_seconds=args.serial_read_seconds,
+                memory_mode=args.memory_mode,
+                native_sync_every=args.native_sync_every,
                 event_sink=renderer.emit,
             )
             renderer.render_case_report(report)
@@ -101,6 +109,8 @@ def _render_benchmark(args: argparse.Namespace) -> int:
             model=args.model,
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
+            memory_mode=args.memory_mode,
+            native_sync_every=args.native_sync_every,
             event_sink=renderer.emit,
         )
         for report in reports:

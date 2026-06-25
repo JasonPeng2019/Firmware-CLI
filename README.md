@@ -29,11 +29,12 @@ provider proof gap, and a new additive Pass 1 operator shell over the same
 brain/runtime:
 
 - native Python brain package
-- multi-provider decision backends
+- hybrid-session multi-provider decision backends
 - stable headless turnkey CLI
 - operator-facing `pyocd-debug` CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
+- live MCP tool-schema prompting sourced from the local server metadata
 
 The current live status is:
 
@@ -65,6 +66,14 @@ The current live status is:
     turnkey playbooks the runtime depends on
   - provider/runtime failures now persist inspectable turnkey run artifacts
     even when no board session is ever created
+- turnkey provider continuity is now brain-owned and memory-first:
+  - canonical compact local memory is persisted for every provider
+  - OpenAI uses native continuation when healthy, with local fallback and
+    periodic safety-sync injection
+  - Anthropic, Codex CLI, and Claude CLI use the same canonical local memory
+    model without pretending they have durable remote sessions
+  - deterministic compaction is the default; `model-summary` compaction is
+    available as an explicit option
 
 For the current prototype branch plan, second-provider parity and true
 fresh-machine Windows/macOS portability are explicit deferred risks, not the
@@ -186,6 +195,7 @@ Firmware-CLI/
 |       |   |-- provider_types.py
 |       |   |-- skills.py
 |       |   |-- state.py
+|       |   |-- tool_schemas.py
 |       |   `-- workspace.py
 |       |-- ux/
 |       |   |-- artifacts.py
@@ -266,6 +276,9 @@ Firmware-CLI/
   - `PYOCD_TURNKEY_PROVIDER` for the turnkey brain backend:
     `openai-api`, `anthropic-api`, `codex-cli`, or `claude-cli`
   - `PYOCD_TURNKEY_MODEL` for an optional explicit model override
+  - `PYOCD_TURNKEY_MEMORY_MODE` for turnkey provider-memory compaction:
+    `deterministic` or `model-summary`
+  - `PYOCD_TURNKEY_NATIVE_SYNC_EVERY` for native-session safety-sync cadence
   - `OPENAI_API_KEY` for the native OpenAI API provider
   - `ANTHROPIC_API_KEY` for the native Anthropic API provider
 - With a board id set, the MCP server resolves that board's facts (target,
@@ -381,6 +394,7 @@ Run the turnkey CLI in freeform verify/diagnose mode:
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --board-id nrf52833dk --task "Diagnose this board interaction." --memory-mode model-summary --native-sync-every 0
 ```
 
 Run the operator-facing CLI over the same turnkey brain:
@@ -407,6 +421,7 @@ Operator-shell note:
   - `/workspace`, `/build-command`, `/flash-artifact`, `/elf`
   - `/verify`, `/diagnose`, `/repair`
   - `/prompt`, `/diff`, `/serial`, `/score`, `/events`
+  - `/memory-mode`, `/native-sync-every`
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
 
@@ -428,6 +443,19 @@ Turnkey provider rules:
 - `claude-cli` uses the locally installed `claude` CLI and inherits whatever
   Claude Code auth you already configured there, including a Claude
   subscription or `ANTHROPIC_API_KEY`
+- provider continuity is unified across all backends:
+  - the brain always persists compact local turn-fact memory
+  - OpenAI uses native continuation first, then falls back to the local memory
+    layer if the native handle is missing or reset
+  - OpenAI can also inject local-memory safety sync on a cadence
+    (`--native-sync-every`, default `4`, `0` disables)
+  - Anthropic, Codex CLI, and Claude CLI always reason from the canonical
+    local memory block rather than provider-owned remote sessions
+- turnkey memory controls are optional:
+  - `--memory-mode deterministic|model-summary`
+  - `--native-sync-every N`
+  - `.env`:
+    `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
 
 Windows PowerShell:
 
@@ -606,6 +634,15 @@ Verified:
 - the first `R12` code path now exists in the repo:
   `src/pyocd_debug_mcp/brain/`, `skills/`, `pyocd-debug-brain`, and
   `tests/harness/r12_turnkey_benchmark.py`
+- the current Branch A provider/prompt layer is also in place:
+  - provider capabilities and loop-owned provider session state are explicit
+  - all providers share one canonical compact local-memory model
+  - OpenAI uses native continuation as an accelerator, with local fallback and
+    optional periodic safety sync
+  - Anthropic, Codex CLI, and Claude CLI use the same canonical compact
+    memory model without fake durable remote sessions
+  - model-facing server-tool docs now come from live MCP metadata through
+    `brain/tool_schemas.py`
 - the first Pass 1 UX-layer code path now also exists in the repo:
   `src/pyocd_debug_mcp/ux/`, `src/pyocd_debug_mcp/brain/events.py`, and
   `pyocd-debug`
