@@ -132,6 +132,11 @@ Modules:
 P0 should not implement the full features. It should preserve current behavior
 and add tests for parsing/serialization and no-op hooks.
 
+Active implementation docs for this step:
+
+- `markdowns/curr/p0_foundation_spec.md`
+- `markdowns/curr/p0_foundation_process.md`
+
 ## Wave 1 - Three Parallel Branches
 
 After `P0` lands back into Wave 0, Branch A, Branch B, and Branch C branch from

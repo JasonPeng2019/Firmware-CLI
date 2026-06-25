@@ -7,6 +7,7 @@ from pathlib import Path
 
 import anyio
 from prompt_toolkit import PromptSession
+from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
@@ -15,6 +16,15 @@ from pyocd_debug_mcp.ux.artifacts import find_shortcut_entries
 from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashCommand, TaskInput, parse_shell_input
 from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
 from pyocd_debug_mcp.ux.renderer import RawOutputPolicy, UXRenderer
+
+try:  # pragma: no cover - import path differs by host platform
+    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError as _NoConsoleScreenBufferError
+except ImportError:  # pragma: no cover - non-Windows hosts
+    _NO_CONSOLE_ERROR_TYPE: type[BaseException] = RuntimeError
+else:  # pragma: no cover - Windows import path only
+    _NO_CONSOLE_ERROR_TYPE = _NoConsoleScreenBufferError
+
+_NO_CONSOLE_ERRORS: tuple[type[BaseException], ...] = (_NO_CONSOLE_ERROR_TYPE,)
 
 
 @dataclass(frozen=True)
@@ -107,7 +117,14 @@ class OperatorShell:
     def __init__(self, renderer: UXRenderer | None = None) -> None:
         self.renderer = renderer or UXRenderer(raw_output="off")
         self.context = ShellContext(raw_output=self.renderer.raw_output)
-        self._session: PromptSession[str] = PromptSession()
+        self._session: PromptSession[str] = self._build_prompt_session()
+
+    @staticmethod
+    def _build_prompt_session() -> PromptSession[str]:
+        try:
+            return PromptSession()
+        except _NO_CONSOLE_ERRORS:
+            return PromptSession(output=DummyOutput())
 
     def run(self) -> int:
         self.renderer.print_info("pyocd-debug interactive shell. Use `/help` for commands.")
@@ -231,17 +248,15 @@ class OperatorShell:
         return True
 
     def _handle_workspace_command(self, command: SlashCommand) -> bool:
-        if not command.args:
+        raw_value = _normalize_command_text(command.arg_text)
+        if raw_value is None:
             self.renderer.print_info(f"Workspace root: {self.context.workspace_root or '(unset)'}")
             return True
-        if len(command.args) != 1:
-            self.renderer.print_error("Usage: /workspace <path|clear>")
-            return True
-        if command.args[0] == "clear":
+        if raw_value == "clear":
             self.context.workspace_root = None
             self.renderer.print_info("Workspace root cleared.")
             return True
-        path = Path(command.args[0]).expanduser().resolve()
+        path = Path(raw_value).expanduser().resolve()
         if not path.exists() or not path.is_dir():
             self.renderer.print_refusal(
                 f"Refused [ux/invalid-workspace]: workspace root does not exist or is not a directory: {path}"
@@ -273,17 +288,15 @@ class OperatorShell:
         label: str,
     ) -> bool:
         current_value = getattr(self.context, attribute)
-        if not command.args:
+        raw_value = _normalize_command_text(command.arg_text)
+        if raw_value is None:
             self.renderer.print_info(f"{label}: {current_value or '(default)'}")
             return True
-        if len(command.args) != 1:
-            self.renderer.print_error(usage)
-            return True
-        if command.args[0] == "default":
+        if raw_value == "default":
             setattr(self.context, attribute, None)
             self.renderer.print_info(f"{label} reset to default resolution.")
             return True
-        path = Path(command.args[0]).expanduser().resolve()
+        path = Path(raw_value).expanduser().resolve()
         if not path.exists() or not path.is_file():
             self.renderer.print_refusal(
                 f"Refused [ux/missing-artifact]: {label.lower()} does not exist or is not a file: {path}"

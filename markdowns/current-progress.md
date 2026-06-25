@@ -34,9 +34,12 @@ What is already true:
   implemented in code
 - the Codex-backed turnkey path has already cleared the frozen 12-case turnkey
   suite on the scoped pair
+- the serial `P0` foundation slice for the R12 prototype is now implemented and
+  non-hardware clean on the merged trunk
 
 What is still open:
 
+- the parallel Wave 1 R12 prototype branches are still open
 - the required second-provider turnkey proof on the scoped pair is not green
   yet
 - broader fresh-machine portability proof is still open
@@ -46,6 +49,9 @@ turnkey validation. The current boundary is:
 
 - lower layers are green on the scoped pair
 - Codex-backed turnkey proof exists
+- Wave 0 cleanup/re-proof is treated as done on the merged trunk
+- `P0` shared brain/prototype substrate is landed and green on the non-hardware
+  ladder
 - second-provider closure and fresh-machine portability still need work
 
 ## What Is Implemented

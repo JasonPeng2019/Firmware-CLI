@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
 from typing import Literal, cast
 
+from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.timeouts import (
+    PROVIDER_REQUEST_TIMEOUT_SECONDS,
+    TurnkeyTimeoutConfig,
+    default_turnkey_timeout_config,
+)
 
 TurnkeyMode = Literal["freeform", "benchmark"]
 TurnkeyProviderKind = Literal["openai-api", "anthropic-api", "codex-cli", "claude-cli"]
@@ -23,6 +29,7 @@ class BrainProviderConfig:
     provider: TurnkeyProviderKind
     model: str | None
     api_key: str | None = None
+    timeout_seconds: float = PROVIDER_REQUEST_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,9 @@ class TurnkeyInvocation:
     code_edits_allowed: bool = False
     allowed_edit_roots: tuple[str, ...] = ()
     recover_allowed: bool = True
+    timeout_config: TurnkeyTimeoutConfig = field(default_factory=default_turnkey_timeout_config)
+    timeout_proposal: TimeoutProposal | None = None
+    iteration_estimate: IterationEstimate | None = None
 
     @property
     def has_repair_context(self) -> bool:
@@ -69,12 +79,19 @@ def _require_executable(name: str, provider: TurnkeyProviderKind) -> None:
 def load_provider_config(
     model_override: str | None = None,
     provider_override: TurnkeyProviderKind | None = None,
+    provider_timeout_seconds: float | None = None,
 ) -> BrainProviderConfig:
     load_local_env()
     provider = cast_provider(
         (provider_override or os.environ.get("PYOCD_TURNKEY_PROVIDER") or "openai-api").strip()
     )
     model = (model_override or os.environ.get("PYOCD_TURNKEY_MODEL") or "").strip() or None
+
+    timeout_seconds = (
+        provider_timeout_seconds
+        if provider_timeout_seconds is not None
+        else PROVIDER_REQUEST_TIMEOUT_SECONDS
+    )
 
     if provider == "openai-api":
         api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
@@ -87,7 +104,7 @@ def load_provider_config(
             raise BrainConfigError(
                 "A model is required. Pass `--model` or set `PYOCD_TURNKEY_MODEL` in your environment or local .env."
             )
-        return BrainProviderConfig(provider=provider, api_key=api_key, model=model)
+        return BrainProviderConfig(provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds)
 
     if provider == "anthropic-api":
         api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
@@ -100,15 +117,15 @@ def load_provider_config(
             raise BrainConfigError(
                 "A model is required. Pass `--model` or set `PYOCD_TURNKEY_MODEL` in your environment or local .env."
             )
-        return BrainProviderConfig(provider=provider, api_key=api_key, model=model)
+        return BrainProviderConfig(provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds)
 
     if provider == "codex-cli":
         _require_executable("codex", provider)
-        return BrainProviderConfig(provider=provider, model=model)
+        return BrainProviderConfig(provider=provider, model=model, timeout_seconds=timeout_seconds)
 
     if provider == "claude-cli":
         _require_executable("claude", provider)
-        return BrainProviderConfig(provider=provider, model=model)
+        return BrainProviderConfig(provider=provider, model=model, timeout_seconds=timeout_seconds)
 
     raise BrainConfigError(f"Unsupported turnkey provider: {provider}")
 
@@ -144,6 +161,9 @@ def build_turnkey_invocation(
     code_edits_allowed: bool = False,
     allowed_edit_roots: tuple[str, ...] = (),
     recover_allowed: bool = True,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> TurnkeyInvocation:
     normalized_model = model.strip() if model is not None and model.strip() else None
     return TurnkeyInvocation(
@@ -167,4 +187,7 @@ def build_turnkey_invocation(
         code_edits_allowed=code_edits_allowed,
         allowed_edit_roots=allowed_edit_roots,
         recover_allowed=recover_allowed,
+        timeout_config=timeout_config or default_turnkey_timeout_config(),
+        timeout_proposal=timeout_proposal,
+        iteration_estimate=iteration_estimate,
     )

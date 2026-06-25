@@ -210,10 +210,12 @@ Firmware-CLI/
     |-- current-progress.md
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
-    |   |-- r10_contract.md
-    |   |-- r11_benchmark_spec.md
-    |   `-- r12_turnkey_spec.md
-    `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
+    |   |-- p0_foundation_spec.md
+    |   |-- p0_foundation_process.md
+    |   |-- p0-foundation_review.md
+    |   |-- r12_turnkey_spec.md
+    |   `-- things-to-change.md
+    `-- tmp/                  # historical slice docs and retired step-scoped notes
 ```
 
 ## Naming Rules
@@ -502,8 +504,10 @@ Current limitation:
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
-- `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
-- `R11` benchmark contract: [markdowns/curr/r11_benchmark_spec.md](./markdowns/curr/r11_benchmark_spec.md)
+- Active P0 foundation spec: [markdowns/curr/p0_foundation_spec.md](./markdowns/curr/p0_foundation_spec.md)
+- Active P0 process ledger: [markdowns/curr/p0_foundation_process.md](./markdowns/curr/p0_foundation_process.md)
+- Historical `R10` contract: [markdowns/tmp/r10_contract.md](./markdowns/tmp/r10_contract.md)
+- Historical `R11` benchmark contract: [markdowns/tmp/r11_benchmark_spec.md](./markdowns/tmp/r11_benchmark_spec.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
@@ -603,7 +607,7 @@ Latest turnkey verification:
 - the retained alternate Nordic profile `nrf52840dk` is now live-proven on
   this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
   alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
-- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof
+- `markdowns/tmp/r10_contract.md` is live-backed by the scoped bench proof
 
 - `R12` is now live-proven through the full frozen 12-case corpus with the
   `codex-cli` provider on `nrf52833dk + nucleo_l476rg`:

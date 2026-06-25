@@ -1423,7 +1423,18 @@ Simple branch schedule:
   - self-diagnose with extensive tests
   - validate against the real scoped STM32 and Nordic boards
 - serial next: `P0` foundation shared shapes and hook points
+  - completed on the merged trunk via:
+    - `markdowns/curr/p0_foundation_spec.md`
+    - `markdowns/curr/p0_foundation_process.md`
+  - deliverables:
+    - `brain/decision_types.py`
+    - expanded `brain/provider_types.py`
+    - shared turnkey timeout config/update shapes in `timeouts.py`
+    - minimal `brain/client_actions.py`
+    - compatibility-preserving hook points in `brain/actions.py`,
+      `brain/loop.py`, and `brain/cli.py`
 - parallel Wave 1:
+  - this is now the next implementation frontier
   - Branch A: provider session + tool schema prompt
   - Branch B: action boundary + batches + client actions
   - Branch C: event spine + timeout policy

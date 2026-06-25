@@ -53,15 +53,18 @@ a glance before relying on detail.
 | `benchmark_support.py` | Product-owned shared benchmark contracts/helpers: case loading, workspace prep, session reconciliation, scoring, and benchmark artifact writing. |
 | `pack_provision.py` | Pinned, deterministic CMSIS-Pack provisioning: `ensure_all` (fetch+sha256-verify from `packs/manifest.yaml`) and `discover_local_packs` (network-free runtime lookup for pyOCD's `pack` option). Replaces dependence on the live `pyocd pack` index. |
 | `target_errors.py` | Typed error taxonomy: `TargetControlError` base + `ProbeNotFound`, `TargetConnection`, `LockedTarget`, `UnsupportedArtifact`, `SymbolLookup`, `ReferenceArtifact`. |
+| `timeouts.py` | Shared timeout constants plus turnkey timeout config/update models used by the runtime and the P0 prototype substrate. |
 
 ### `brain/` — R12 turnkey product layer
 
 | Path | What it is / does |
 |---|---|
 | `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
+| `brain/decision_types.py` | Shared future-facing prototype decision/planning shapes: timeout proposals, iteration estimates, early-exit verdicts, future board-decision envelopes, and batch/action-call containers. |
 | `brain/app.py` | Shared run/benchmark invocation helpers reused by both the headless brain CLI and the operator-facing UX CLI. |
 | `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
 | `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
+| `brain/client_actions.py` | Minimal session-scoped client-action record/store contract landed in P0; execution is still future work. |
 | `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
 | `brain/evidence.py` | Typed observation/hypothesis/experiment/strategy-evaluation records persisted into turnkey state artifacts. |
 | `brain/events.py` | Structured event model + sink contract for live UX rendering and persisted `brain_events.jsonl` artifacts. |
@@ -74,7 +77,7 @@ a glance before relying on detail.
 | `brain/provider_factory.py` | Factory that maps provider config to the correct decision backend. |
 | `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
-| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn` and `DecisionProvider`. |
+| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn`, optional provider-session/progress payloads, and `DecisionProvider`. |
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering; resolves skills from the live repo when present or from bundled package data when installed. |
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
@@ -196,19 +199,13 @@ a glance before relying on detail.
 | `current-progress.md` | Live repo status, current proof boundary, exact rerun ladder, expected outputs, and the remaining open work. |
 | `repo_file_index.md` | This file. |
 
-### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
+### `markdowns/curr/` - step-scoped docs for the current/active step (graduate to `tmp/` when done)
 
 | Path | What it is / does |
 |---|---|
-| `r10_contract.md` | Implementation source of truth for the R10 runtime-safety contract; still referenced because R11 builds on it. |
-| `r11_benchmark_spec.md` | Implementation source of truth for the active R11 benchmark slice. |
-| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
-| `r12-ben-mainline-merge_process.md`, `r12_ben_mainline_merge_spec.md` | Ben mainline merge process/spec docs for the Jason-originated R12 hardening work. |
-| `r12-nucleo-reproof_spec.md`, `r12-windows-cmdline-bug_spec.md` | Focused R12 follow-up specs for STM32 re-proof and Windows command-line bugs. |
-| `runtime-timeout-audit_spec.md` | Timeout-hardening audit/spec for provider, server, harness, and helper command paths. |
-| `stm32-build-r11-turnkey_process.md`, `stm32-build-r11-turnkey_spec.md`, `stm32-r11-windows-retest_spec.md` | STM32-centric benchmark/process specs retained as active historical references. |
-| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained STM32-only ThreadX button-blink scaffold spec; manual-path first and outside the current acceptance substrate. |
-| `uxlayer_gap_checklist.md` | Requirement-by-requirement audit of the shipped UX layer against `UXLayer.md`, including Pass 1 implemented/partial/deferred status. |
+| `p0_foundation_spec.md`, `p0_foundation_process.md` | The active serial P0 foundation contract and process ledger for the R12 prototype. |
+| `r12_turnkey_spec.md` | The broader R12 prototype contract that P0 is preparing the codebase to support. |
+| `things-to-change.md` | Active R12 prototype backlog and priority ordering. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
@@ -218,6 +215,13 @@ a glance before relying on detail.
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
 | `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
+| `r10_contract.md`, `r11_benchmark_spec.md` | Older slice contracts retained for historical traceability, not current-step authority. |
+| `r12-ben-mainline-merge_process.md`, `r12_ben_mainline_merge_spec.md` | Completed Ben mainline merge process/spec docs. |
+| `r12-nucleo-reproof_spec.md`, `r12-windows-cmdline-bug_spec.md` | Completed focused R12 follow-up specs. |
+| `runtime-timeout-audit_spec.md` | Historical timeout-hardening audit/spec. |
+| `stm32-build-r11-turnkey_process.md`, `stm32-build-r11-turnkey_spec.md`, `stm32-r11-windows-retest_spec.md` | Older STM32-centric benchmark/process docs. |
+| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained exploratory STM32-only scaffold spec. |
+| `uxlayer_gap_checklist.md` | Historical UX gap audit after the first shipped shell pass. |
 
 ## `superpowers/` — internal authoring playbooks
 
