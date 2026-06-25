@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-import re
 import shutil
 from typing import Literal, cast
 
@@ -168,30 +167,4 @@ def build_turnkey_invocation(
         code_edits_allowed=code_edits_allowed,
         allowed_edit_roots=allowed_edit_roots,
         recover_allowed=recover_allowed,
-    )
-
-
-def task_requires_code_fix(task: str) -> bool:
-    lowered = task.lower()
-    sanitized = lowered
-    for pattern in (
-        r"\bdo not edit\b",
-        r"\bdon't edit\b",
-        r"\bwithout editing\b",
-        r"\bwithout edits?\b",
-        r"\bno edits?\b",
-    ):
-        sanitized = re.sub(pattern, "", sanitized)
-
-    return any(
-        re.search(pattern, sanitized) is not None
-        for pattern in (
-            r"\bfix\b",
-            r"\brepair\b",
-            r"\bpatch\b",
-            r"\brewrite\b",
-            r"\bedit\b",
-            r"\bchange(?:\s+the)?\s+code\b",
-            r"\bmodify(?:\s+the)?\s+code\b",
-        )
     )

@@ -1,12 +1,15 @@
 # Agentic Firmware Debug Tool — Concrete Build Plan (step-ordered)
 
-> **STATUS (2026-06): Stages 0–3 (roadmap R0–R10) are IMPLEMENTED and live-proven
-> on the scoped pair (`nrf52833dk` + `nucleo_l476rg`).** This is the original
-> design / decision record. Steps that describe building the substrate, the MCP
-> server, or the guardrails — including **Step 1.0d** (the API de-risk and
-> service-layer migration) — are **done**; read them as the rationale behind the
-> shipped code, not as pending work. The remaining active work is Stage 4 / `R11`
-> (the Codex benchmark). Live status: `current-progress.md`; file map:
+> **STATUS (2026-06): Stages 0–4 through roadmap `R11` are IMPLEMENTED and
+> live-proven on the scoped pair (`nrf52833dk` + `nucleo_l476rg`). `R12` is now
+> implemented in code, and the Codex-backed turnkey path has already cleared the
+> full frozen 12-case corpus on the scoped pair.** This is the original design /
+> decision record. Steps that describe building the substrate, the MCP server,
+> the guardrails, or the benchmark layer — including **Step 1.0d** (the API
+> de-risk and service-layer migration) — are **done**; read them as the
+> rationale behind the shipped code, not as pending work. The remaining active
+> proof work is `R12` closure: the second-provider requirement and the broader
+> fresh-machine portability proof. Live status: `current-progress.md`; file map:
 > `repo_file_index.md`.
 
 > **Scope of this document.** This is the *design + implementation plan* — what to build, in what

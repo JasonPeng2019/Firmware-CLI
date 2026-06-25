@@ -158,9 +158,11 @@ Firmware-CLI/
 |       |   |-- benchmark.py
 |       |   |-- cli.py
 |       |   |-- config.py
+|       |   |-- evidence.py
 |       |   |-- events.py
 |       |   |-- loop.py
 |       |   |-- mcp_client.py
+|       |   |-- playbooks.py
 |       |   |-- provider_anthropic.py
 |       |   |-- provider_claude_cli.py
 |       |   |-- provider_codex_cli.py
@@ -196,6 +198,7 @@ Firmware-CLI/
 |       |-- runtime_resources.py
 |       |-- serial_resolver.py
 |       |-- server.py
+|       |-- timeouts.py
 |       |-- zephyr_build.py
 |       `-- target_errors.py
 |-- scratch/
@@ -346,6 +349,15 @@ Run host bootstrap and Stage 0 for one board on your bench:
 uv run python host_bootstrap.py --board-id nrf52833dk
 uv run python stage0_check.py --board-id nrf52833dk
 ```
+
+Board-scoped `host_bootstrap.py --board-id ...` behavior:
+
+- it now requires a unique matching probe for each selected board
+- it now attempts board-specific serial resolution for each selected board
+- on success it prints the matched probe UID/description and the matched serial
+  port
+- if serial matching is still ambiguous, it warns with rerun guidance using
+  `--port BOARD_ID=PORT`
 
 Run the turnkey CLI in freeform verify/diagnose mode:
 
@@ -505,6 +517,12 @@ Verified:
 
 - non-hardware verification: this document's tree, command surface, and doc
   links match the current root-level scripts and docs
+- latest clean-slate rerun on the macOS mixed-board host re-proved:
+  - both scoped-board probes visible together
+  - strict `host_bootstrap.py --board-id ...` success for both scoped boards,
+    including matched probe UID + matched serial-port reporting
+  - STM32 Stage 0 + Stage 1 smoke
+  - Nordic Stage 0 + recover + Stage 1 smoke
 - hardware-backed STM32 proof on this Mac host: `nucleo_l476rg` now passes
   Stage 0 connect, flash, and UART through the shared target-control services
 - the STM32 bench truth is fully closed in repo status, including the confirmed

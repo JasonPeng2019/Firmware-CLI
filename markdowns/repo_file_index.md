@@ -23,7 +23,7 @@ a glance before relying on detail.
 | `stage0_setup.md` | Single operator guide for the bench bring-up scripts (`setup_host`, `host_bootstrap`, `stage0_check`). |
 | `setup_host.ps1` | Windows unattended host-bootstrap entry point. `(by name)` |
 | `setup_host.sh` | macOS host-bootstrap entry point. `(by name)` |
-| `host_bootstrap.py` | Host-level readiness checks (pyOCD runs, probes/serial enumerate, board configs load, packs present/installable). Does not validate a board or install OS drivers. |
+| `host_bootstrap.py` | Host-level readiness checks (pyOCD runs, probes/serial enumerate, board configs load, packs present/installable). In `--board-id` mode it now also requires a uniquely matched probe and board-specific serial result for each selected board before it reports Stage 0 readiness. Does not flash or install OS drivers. |
 | `stage0_check.py` | Stage 0 board/toolchain validation CLI; data-driven from board configs; now a thin frontend over the shared services. |
 
 ## `skills/`
@@ -147,9 +147,9 @@ a glance before relying on detail.
 | `test_server_board_config.py` | Server board-config resolution tests. `(by name)` |
 | `test_server_import.py` | Server import/smoke test. `(by name)` |
 | `test_server_runtime_tools.py` | Server runtime tool-surface tests. `(by name)` |
-| `cases/<case_id>/case.yaml` + `prompt.md` | R11 benchmark cases (known-good `k001`, injected-bug `b001/b002`, observability-fault `f001`) per board. |
+| `cases/<case_id>/case.yaml` + `prompt.md` | R11/R12 benchmark cases: known-good `k001`, injected-bug `b001/b002/b003/b004`, and observability-fault `f001`, mirrored across the scoped pair. |
 | `cases/r11_result_schema.json` | JSON schema for Codex benchmark results. |
-| `cases/suites.yaml` | Pilot suite ordering (`pilot_v1`). |
+| `cases/suites.yaml` | Benchmark suite ordering (`pilot_v1`, `pilot_v1_plus_b003_b004`, retained alternate-board suites). |
 | `cases/README.md`, `tests/README.md` | Case-format and test-layout docs. |
 | `fixtures/`, `cases/`, `harness/` `.gitkeep` | Tracked empty-dir placeholders. |
 
@@ -187,14 +187,13 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
-| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
+| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current active R12 frontier. *Design/plan doc - see status banner.* |
 | `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0 clean slate, serial P0, parallel Branches A/B/C, parallel Branches D/E/F, merge-back rules, and serial final integration. |
 | `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
 | `UXLayer.md` | UX-layer design/implementation note for the additive `pyocd-debug` operator shell; Pass 1 is implemented, with richer streaming/checkpoint work still deferred. |
-| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
+| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 closure boundary. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
-| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, R12 status/prototype caveats, and the Pass 1 UX validation ladder. |
-| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
+| `current-progress.md` | Live repo status, current proof boundary, exact rerun ladder, expected outputs, and the remaining open work. |
 | `repo_file_index.md` | This file. |
 
 ### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
@@ -218,6 +217,7 @@ a glance before relying on detail.
 | `audit_and_validation_plan.md` | The audit + nRF52840 validation + Mac re-proof execution plan (Phase 0 complete). |
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
+| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
 
 ## `superpowers/` — internal authoring playbooks
 
