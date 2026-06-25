@@ -371,6 +371,19 @@ parallel branches.
 
 Wave 0 is the only branch that continues across the whole prototype.
 
+When Wave 0 changes during an active parallel wave, fan that change out to every
+active branch in the wave before new feature work continues. Do this one target
+branch at a time:
+
+1. merge `P-Wave-0` into the target branch;
+2. resolve any conflict on that target branch;
+3. run the agreed checks for that branch;
+4. push the target branch;
+5. continue to the next target branch.
+
+Do not auto-resolve conflicts across all targets. Conflict resolution and checks
+stay serial even when the fan-out is scripted.
+
 Merge sequence:
 
 1. Clean/fix/test current repo state on Wave 0.

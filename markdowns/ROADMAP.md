@@ -1451,6 +1451,9 @@ Parallelization rule:
   before `G` starts
 - `G` branches from Wave 0 after Wave 2 and contains only final wiring /
   acceptance cleanup
+- when Wave 0 changes during an active parallel wave, merge `P-Wave-0` into each
+  active target branch one at a time, run that branch's checks, and push it
+  before continuing feature work
 - Long-lived branches should not broadly edit `brain/loop.py`,
   `brain/actions.py`, `brain/cli.py`, or `server.py`; use the ownership matrix
   in `markdowns/R12_P_SPLIT.md` and keep shared-file edits as tiny integration
