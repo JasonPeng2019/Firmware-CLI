@@ -164,8 +164,8 @@ a glance before relying on detail.
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
-| `R12_P_SPLIT.md` | Conflict-safe R12 prototype packet split: P0 foundation, module ownership, shared-file rules, and merge order for parallel branches. |
-| `things-to-change.md` | Active product/design backlog for the R12 capability prototype; contains detailed notes behind the roadmap/build-plan summaries. |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: serial P0, parallel Branches A/B/C, parallel Branches D/E/F, and serial final integration. |
+| `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
 | `UXLayer.md` | Proposal for a richer operator-facing pure CLI shell over the current R12 turnkey brain, including event streams, progress output, inspector mode, and checkpoint rendering. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
