@@ -20,7 +20,12 @@ from pyocd_debug_mcp.brain.actions import (
     VerificationSnapshot,
 )
 from pyocd_debug_mcp.brain.cli import build_parser as build_turnkey_cli_parser
-from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation, load_provider_config
+from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
+    build_turnkey_invocation,
+    load_provider_config,
+    task_requires_code_fix,
+)
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     _build_claude_command,
@@ -118,6 +123,17 @@ def test_load_provider_config_supports_cli_providers_without_model(
     assert claude.provider == "claude-cli"
     assert claude.api_key is None
     assert claude.model is None
+
+
+def test_task_requires_code_fix_ignores_negated_edit_language() -> None:
+    assert task_requires_code_fix("Fix the wrong UART boot signature.") is True
+    assert task_requires_code_fix("Repair this firmware and explain the change.") is True
+    assert (
+        task_requires_code_fix(
+            "Verify this reference firmware is healthy and explain why. Do not edit source files."
+        )
+        is False
+    )
 
 
 def test_skill_loader_selects_common_and_family_skills_deterministically() -> None:
@@ -292,6 +308,15 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
     assert (execution.run_root / "logs" / "brain_trace.jsonl").exists()
     assert (execution.run_root / "logs" / "model_turns.jsonl").exists()
+    assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
+    event_kinds = [
+        json.loads(line)["event_kind"]
+        for line in (execution.run_root / "logs" / "brain_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "provider_turn_start" in event_kinds
+    assert "provider_turn_complete" in event_kinds
+    assert "tool_complete" in event_kinds
+    assert "final_result" in event_kinds
 
 
 def test_run_turnkey_treats_binary_read_as_workspace_error(
@@ -1028,7 +1053,7 @@ def test_r12_benchmark_records_case_artifacts(
         )(),
     )
     async def fake_run_turnkey_with_provider(
-        _invocation: object, *, provider_config: object
+        _invocation: object, *, provider_config: object, event_sink: object | None = None
     ) -> TurnkeyExecution:
         return TurnkeyExecution(
             invocation=replace(
@@ -1079,6 +1104,7 @@ def test_r12_benchmark_records_case_artifacts(
             selected_skills=(),
             model_turns=(),
             brain_trace=(),
+            brain_events=(),
         )
 
     monkeypatch.setattr(r12_benchmark, "run_turnkey_with_provider", fake_run_turnkey_with_provider)
@@ -1157,7 +1183,7 @@ def test_r12_benchmark_falls_back_to_single_new_session_root(
     )
 
     async def fake_run_turnkey_with_provider(
-        _invocation: object, *, provider_config: object
+        _invocation: object, *, provider_config: object, event_sink: object | None = None
     ) -> TurnkeyExecution:
         return TurnkeyExecution(
             invocation=replace(
@@ -1208,6 +1234,7 @@ def test_r12_benchmark_falls_back_to_single_new_session_root(
             selected_skills=(),
             model_turns=(),
             brain_trace=(),
+            brain_events=(),
         )
 
     monkeypatch.setattr(r12_benchmark, "run_turnkey_with_provider", fake_run_turnkey_with_provider)

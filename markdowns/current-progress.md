@@ -53,12 +53,15 @@ now contains:
 - the top-level `skills/` tree
 - the internal deterministic helper tree under `playbooks/turnkey/`
 - the `pyocd-debug-brain` CLI
+- the additive `pyocd-debug` operator-facing CLI
 - multiple decision-provider backends:
   - native OpenAI API
   - native Anthropic API
   - Codex CLI
   - Claude Code CLI
 - the sibling turnkey benchmark path over the same 12-case corpus
+- the new structured brain-event path that powers the operator shell and
+  persists `runs/<session_id>/logs/brain_events.jsonl`
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
 
 The Ben mainline also now carries the Jason-originated hardening that was
@@ -92,8 +95,9 @@ missing before this merge pass:
 - generic alternate-suite acceptance logic so retained-board turnkey suites no
   longer fail only because the suite is not the scoped pair
 
-What is still missing is full official-pair second-provider proof and
-fresh-machine portability proof needed to call the turnkey layer fully closed.
+What is still missing is full official-pair second-provider proof, live
+operator-shell revalidation on the scoped pair, and fresh-machine portability
+proof needed to call the turnkey layer fully closed.
 
 The active prototype direction has also moved beyond the original narrow R12
 acceptance layer. The current docs now track a capability prototype that adds
@@ -276,7 +280,15 @@ Code that now exists:
 - `src/pyocd_debug_mcp/brain/loop.py`
 - `src/pyocd_debug_mcp/brain/benchmark.py`
 - `src/pyocd_debug_mcp/brain/cli.py`
+- `src/pyocd_debug_mcp/brain/app.py`
+- `src/pyocd_debug_mcp/brain/events.py`
 - `src/pyocd_debug_mcp/brain/playbooks.py`
+- `src/pyocd_debug_mcp/ux/cli.py`
+- `src/pyocd_debug_mcp/ux/shell.py`
+- `src/pyocd_debug_mcp/ux/renderer.py`
+- `src/pyocd_debug_mcp/ux/history.py`
+- `src/pyocd_debug_mcp/ux/artifacts.py`
+- `src/pyocd_debug_mcp/ux/commands.py`
 - `tests/harness/r12_turnkey_benchmark.py`
 - `skills/common/...`
 - `skills/mcu_families/nrf52833/...`
@@ -304,10 +316,258 @@ What that code does:
 - supports freeform `run` mode and benchmark mode
 - captures turnkey artifacts into the same `runs/<session_id>/...` tree
 - persists typed evidence inside `turnkey_state.json`
+- emits and persists normalized brain events in `brain_events.jsonl`
 - reuses the existing 12-case benchmark corpus instead of inventing a second
   benchmark taxonomy
 - keeps deterministic repair/health-check helper playbooks in a separate
   internal layer rather than overloading the prompt-skill YAMLs
+
+### Operator UX Layer Pass 1
+
+The new operator-facing CLI is now implemented in code as `pyocd-debug`.
+
+What it currently does:
+
+- launches an interactive REPL shell with no args
+- exposes pretty one-shot wrappers:
+  - `pyocd-debug run ...`
+  - `pyocd-debug benchmark ...`
+  - `pyocd-debug history`
+  - `pyocd-debug show <session_id>`
+  - `pyocd-debug rerun <session_id>`
+- renders live status for:
+  - provider turns
+  - MCP tool activity
+  - builds
+  - green-check runs
+- shows evidence summaries after completed provider turns
+- supports raw-provider-output visibility:
+  - `/raw on`
+  - `/raw off`
+  - `/raw last`
+  - one-shot `--raw-output off|final|all`
+- now defaults the REPL to summary-first output instead of always echoing raw
+  completed turns
+- now persists v1 repair context in the REPL:
+  - `/workspace <path|clear>`
+  - `/build-command "<cmd>"|clear`
+  - `/flash-artifact <path|default>`
+  - `/elf <path|default>`
+- now exposes guided commands over the existing freeform path:
+  - `/verify [extra text]`
+  - `/diagnose [extra text]`
+  - `/repair [extra text]`
+- now exposes common artifact shortcuts over the existing run tree:
+  - `/prompt [session_id]`
+  - `/diff [session_id]`
+  - `/serial [session_id]`
+  - `/score [session_id]`
+  - `/events [session_id]`
+- reuses the exact same brain loop and benchmark path as `pyocd-debug-brain`
+  rather than forking any orchestration logic
+
+What is not done yet:
+
+- true token-level provider streaming
+- live reconnection to an already-running historical session
+- full fresh scoped-board live proof of the new summary-first/guided shell on
+  this exact merged code across both required providers
+
+### Latest Live UX Validation (2026-06-23, macOS mixed-board host)
+
+This validation pass reran the scoped substrate first and then exercised the
+new shell against the real attached boards.
+
+What was re-proven before the shell work:
+
+- `uv run pytest -q`
+  - passed: `216 passed`
+- `uv run ruff check .`
+  - passed
+- `uv run mypy src`
+  - passed
+- `uv run python host_bootstrap.py --board-id nucleo_l476rg`
+  - passed
+- `uv run python stage0_check.py --board-id nucleo_l476rg --reference-firmware nucleo_l476rg=firmware/nucleo_l476rg/reference/build/firmware.elf --confirm-shared-usb nucleo_l476rg`
+  - passed
+- `uv run python -m tests.harness.stage1_smoke --board-id nucleo_l476rg`
+  - passed
+- `uv run python host_bootstrap.py --board-id nrf52833dk`
+  - passed
+- `uv run python stage0_check.py --board-id nrf52833dk --reference-firmware nrf52833dk=firmware/nrf52833dk/reference/build/firmware.elf --recover-test nrf52833dk --confirm-shared-usb nrf52833dk`
+  - passed
+- `uv run python -m tests.harness.stage1_smoke --board-id nrf52833dk`
+  - passed
+- `uv run pyocd-debug --help`
+  - passed
+- `uv run pyocd-debug-brain --help`
+  - passed
+
+Additional code fix required during this live pass:
+
+- the shell-guided `/verify` task initially failed incorrectly with
+  `Refused [turnkey/missing-workspace-context]`
+- root cause:
+  - `task_requires_code_fix(...)` treated the phrase
+    `Do not edit source files.` as a positive repair signal because it matched
+    the raw token `edit`
+- fix applied:
+  - the code-fix heuristic now ignores common negated edit phrases before
+    looking for real repair verbs
+- verification after the fix:
+  - targeted UX/turnkey tests passed
+  - full repo checks still passed
+
+Disposable repair workspaces prepared for this pass:
+
+- root layout:
+  - `/tmp/pyocd-ux-layout.DNtRkr`
+- STM32 copied bug workspace:
+  - `/tmp/pyocd-ux-layout.DNtRkr/firmware/nucleo_l476rg/bugs/b001__wrong_boot_text`
+- Nordic copied bug workspace:
+  - `/tmp/pyocd-ux-layout.DNtRkr/firmware/nrf52833dk/bugs/b001__wrong_boot_text`
+- important detail:
+  - the copied workspaces had to preserve the `firmware/...` relative layout,
+    because the STM32 bug fixture references
+    `../../../common/nucleo_l476rg.overlay`
+  - the disposable copies were built successfully with the repo-rooted command
+    form:
+    - `uv run --project <repo-root> pyocd-zephyr-build ...`
+
+Observed shell outcomes:
+
+- live shell-side `/repair` refusal is now proven
+  - command:
+    - `/board nucleo_l476rg`
+    - `/repair Restore the tracked healthy behavior.`
+  - observed result:
+    - deterministic shell refusal:
+      `Refused [ux/missing-repair-context]: \`/repair\` requires /workspace <path> to be set first.`
+  - no debug session was created for that refusal
+- Codex shell proof is partial, not complete
+  - provider:
+    - `codex-cli`
+  - board:
+    - `nucleo_l476rg`
+  - command:
+    - `/verify Explain why this reference firmware is healthy.`
+  - what was successfully observed:
+    - summary-first rendering by default
+    - no raw-provider-output panel before `/raw on`
+    - real `connect(board_id="nucleo_l476rg")` path with no UID or serial-port override
+    - real session created:
+      - `session_id=20260623T215644Z-25551634`
+      - run root:
+        `runs/20260623T215644Z-25551634/`
+    - server event log proves at least:
+      - `connect`
+      - `get_board_info`
+  - what did **not** complete in a usable time window:
+    - the freeform `/verify` run never reached a final healthy result during
+      the validation window
+    - `/raw on` completed-turn proof was therefore not established under Codex
+    - fresh-session `/prompt`, `/serial`, `/events`, and `/score` checks were
+      not completed under Codex
+    - context-backed `/repair` was not completed under Codex
+  - current interpretation:
+    - this is a provider/loop completion problem, not a shell command-parsing
+      problem and not a board-attach problem
+- Claude shell proof is currently blocked by provider model resolution
+  - provider:
+    - `claude-cli --model sonnet`
+  - board:
+    - `nrf52833dk`
+  - command:
+    - `/verify Explain why this reference firmware is healthy.`
+  - observed result:
+    - provider failure before any board session was opened
+    - exact error:
+      `ProviderResponseError: Claude CLI provider did not return a valid turnkey action: API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-4-20250514"}}`
+  - consequence:
+    - no `session_id`
+    - no board attach
+    - no artifact-shortcut validation under Claude
+    - no context-backed `/repair` validation under Claude
+  - current interpretation:
+    - this is a provider precondition/configuration failure and must not be
+      counted as successful UX proof
+
+Remaining live UX gaps after this pass:
+
+- rerun the Codex REPL ladder and get a complete `/verify` result to prove:
+  - completed summary-first freeform success
+  - `/raw on` completed-turn output
+  - fresh-session `/prompt`, `/serial`, and `/events`
+  - `/score` refusal on a completed freeform session
+  - context-backed `/repair` on the disposable STM32 workspace
+- fix or reconfigure the Claude CLI provider path so `--model sonnet` yields a
+  valid live turn on this host, then rerun the same shell ladder on:
+  - `nrf52833dk`
+  - the disposable Nordic repair workspace
+- only after those provider-dependent reruns should the remaining Pass 1 UX
+  live-proof items be marked closed
+
+### Manual UX Validation To Re-Run
+
+Run these from repo root after the usual scoped substrate preflight:
+
+```bash
+uv run pytest -q
+uv run ruff check .
+uv run mypy src
+uv run pyocd-debug --help
+uv run pyocd-debug-brain --help
+uv run pyocd-debug run --board-id nucleo_l476rg --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nucleo_l476rg__k001_reference_green
+uv run pyocd-debug benchmark --case-id nrf52833dk__b001_wrong_boot_text
+uv run pyocd-debug history
+uv run pyocd-debug
+```
+
+Expected outcomes and why:
+
+- `pyocd-debug --help`
+  - should show `run`, `benchmark`, `history`, `show`, and `rerun`
+  - because the new operator shell is an additive CLI layer, not a rewrite of
+    `pyocd-debug-brain`
+- `pyocd-debug run ...`
+  - should create a normal turnkey `session_id`
+  - should write the same `turnkey_request.json`, `turnkey_result.json`,
+    `turnkey_state.json`, and now also `brain_events.jsonl`
+  - should show live tool/progress activity plus a final result summary
+  - because the shell is consuming real brain-loop events instead of replaying
+    post-hoc text
+- `pyocd-debug benchmark --case-id ...`
+  - should reuse the same benchmark result/score path as the headless CLI
+  - because the UX layer wraps the existing turnkey benchmark runner instead of
+    creating a second benchmark implementation
+- `pyocd-debug history`
+  - should list saved turnkey sessions newest-first
+  - because it reads `runs/<session_id>/run-metadata/turnkey_request.json`
+    and `turnkey_result.json` rather than inventing a second state store
+- `pyocd-debug` interactive shell
+  - should default to summary-first rendering
+  - should accept `/workspace`, `/build-command`, `/flash-artifact`, and
+    `/elf` without changing the underlying turnkey invocation path
+  - should let `/verify` and `/diagnose` run without code-edit context
+  - should make `/repair` refuse until workspace/build context has been set
+  - should surface `/prompt`, `/diff`, `/serial`, `/score`, and `/events`
+    against the selected or most recent session
+  - because the shell is meant to be a thin operator layer over the same brain
+    runtime, not a second orchestration engine
+
+Current rerun notes from the latest live pass:
+
+- `/repair` refusal is already live-proven
+- `/verify` no longer falsely refuses for missing repair context after the
+  negated-`edit` heuristic fix
+- Codex currently needs another rerun because the shell attached and created a
+  real session, but the freeform verify path did not reach a final result in
+  the validation window
+- Claude currently needs provider repair or configuration before any of the
+  shell-board proofs can count, because `--model sonnet` returned a live 404
+  model-not-found error on this host
 
 ## Live Bench Facts
 
@@ -317,7 +577,7 @@ hosts used for the scoped validation.
 ### `nucleo_l476rg`
 
 - probe UID: `0668FF514988525067213913`
-- serial port: `/dev/cu.usbmodem144403`
+- serial port: `/dev/cu.usbmodem143103`
 - pyOCD target: `stm32l476rgtx`
 - pack token: `stm32l476`
 - probe and COM port were confirmed to come from the same physical board

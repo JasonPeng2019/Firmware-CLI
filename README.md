@@ -19,12 +19,14 @@ The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
 12-case Codex benchmark corpus. `R12` is now implemented in the repo as a
-turnkey product layer with one live-proven provider path and one still-open
-provider proof gap:
+turnkey product layer with one live-proven provider path, one still-open
+provider proof gap, and a new additive Pass 1 operator shell over the same
+brain/runtime:
 
 - native Python brain package
 - multi-provider decision backends
-- turnkey CLI
+- stable headless turnkey CLI
+- operator-facing `pyocd-debug` CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
 
@@ -35,6 +37,13 @@ The current live status is:
   `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
 - the normal turnkey path worked from `connect(board_id=...)` with no
   hard-coded probe UID or serial-port override
+- the new `pyocd-debug` shell is now implemented on top of the same shared
+  turnkey loop with:
+  - structured brain events
+  - live tool/progress rendering
+  - evidence summaries
+  - history/show/rerun flows
+  - raw-provider-output visibility after completed turns
 - `claude-cli --model sonnet` is still failing on this host before any board
   interaction with:
   `API Error: 404 ... model: claude-sonnet-4-20250514`
@@ -60,6 +69,7 @@ Today that means:
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
 - a Codex-proven turnkey brain and turnkey benchmark path over the same corpus
+- an implemented Pass 1 operator-facing UX shell over the same brain
 - an open second-provider validation gap for Claude CLI on this host
 
 The official scoped board pair for the real Phase A / Phase B bench path is
@@ -136,9 +146,11 @@ Firmware-CLI/
 |       |   `-- recover_gate.py
 |       |-- brain/
 |       |   |-- actions.py
+|       |   |-- app.py
 |       |   |-- benchmark.py
 |       |   |-- cli.py
 |       |   |-- config.py
+|       |   |-- events.py
 |       |   |-- loop.py
 |       |   |-- mcp_client.py
 |       |   |-- provider_anthropic.py
@@ -151,6 +163,13 @@ Firmware-CLI/
 |       |   |-- skills.py
 |       |   |-- state.py
 |       |   `-- workspace.py
+|       |-- ux/
+|       |   |-- artifacts.py
+|       |   |-- cli.py
+|       |   |-- commands.py
+|       |   |-- history.py
+|       |   |-- renderer.py
+|       |   `-- shell.py
 |       |-- services/
 |       |   |-- convergence_watcher.py
 |       |   |-- session_runtime.py
@@ -324,6 +343,26 @@ uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 ```
+
+Run the operator-facing CLI over the same turnkey brain:
+
+```bash
+uv run pyocd-debug
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
+uv run pyocd-debug history
+```
+
+Operator-shell note:
+
+- `pyocd-debug` uses the Rich + `prompt_toolkit` shell in a real TTY and
+  falls back to plain non-live printing when stdout is not interactive
+- the REPL now defaults to summary-first output; use `/raw on` to show full
+  completed provider turns live
+- the REPL now supports persistent repair/artifact context and guided commands:
+  - `/workspace`, `/build-command`, `/flash-artifact`, `/elf`
+  - `/verify`, `/diagnose`, `/repair`
+  - `/prompt`, `/diff`, `/serial`, `/score`, `/events`
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
 
@@ -513,6 +552,9 @@ Verified:
 - the first `R12` code path now exists in the repo:
   `src/pyocd_debug_mcp/brain/`, `skills/`, `pyocd-debug-brain`, and
   `tests/harness/r12_turnkey_benchmark.py`
+- the first Pass 1 UX-layer code path now also exists in the repo:
+  `src/pyocd_debug_mcp/ux/`, `src/pyocd_debug_mcp/brain/events.py`, and
+  `pyocd-debug`
 - the turnkey layer no longer depends on Codex CLI or MCP registration:
   it launches the local MCP server as a subprocess and talks to it directly
 - the turnkey benchmark path reuses the frozen `pilot_v1_plus_b003_b004`
@@ -545,5 +587,8 @@ Latest turnkey verification:
     `API Error: 404 ... model: claude-sonnet-4-20250514`
   - the Claude six-case pilot and full 12-case suite were therefore not run in
     this pass
+- the Pass 1 `pyocd-debug` shell is implemented and green under the local
+  non-hardware test/lint/typecheck ladder, but true provider-token streaming is
+  still intentionally deferred to the next UX follow-up
 - the broader self-contained no-`NCS` portability claim still needs true fresh
   Windows and macOS host validation

@@ -39,6 +39,18 @@ Both paths currently reuse the same 12-case corpus:
 
 - `pilot_v1_plus_b003_b004`
 
+Current UX-layer relationship:
+
+- `pyocd-debug-brain`
+  - stable headless/automation CLI
+  - benchmark path used by `tests/harness/r12_turnkey_benchmark.py`
+- `pyocd-debug`
+  - operator-facing CLI over the same turnkey brain
+  - pretty/live rendering, history/show/rerun flows, summary-first raw-output
+    controls, persistent repair context, guided verify/diagnose/repair
+    commands, and artifact shortcuts
+  - does not replace the harnesses or change the benchmark corpus/schema
+
 Current live status:
 
 - the `R11` BYO-agent path is live-proven on the scoped pair
@@ -46,6 +58,9 @@ Current live status:
   `codex-cli`
 - the `R12` second-provider closure check is still open because the current
   `claude-cli --model sonnet` path fails before any board action on this host
+- the Pass 1 `pyocd-debug` shell is implemented in code and covered by the
+  local non-hardware test/lint/typecheck ladder; provider-token streaming and
+  true live session resume are still the next UX follow-up
 
 Keep bug-variant source trees under `firmware/<board>/bugs/`. Keep harness and
 test definitions under `tests/`.
