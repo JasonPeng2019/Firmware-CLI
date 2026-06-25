@@ -7,8 +7,10 @@ license = { text = "Apache-2.0" }
 
 dependencies = [
     "anthropic>=0.96.0",           # official Anthropic SDK for the optional Claude API provider
+    "rich>=13.9.0",                # operator-facing pretty CLI rendering for the R12 UX layer
     "mcp[cli]>=1.2.0",              # official MCP Python SDK; [cli] pulls in the `mcp` dev/inspector tooling
     "openai>=2.0.0",               # official OpenAI SDK for the R12 turnkey brain
+    "prompt_toolkit>=3.0.48",      # interactive REPL shell for the operator-facing UX layer
     "httpx>=0.27",                 # deterministic pack provisioning + live-index repair downloads
     "pyocd>=0.44.0",               # Cortex-M debug/flash/inspection; current stable is 0.44.1
     "pyserial>=3.5",               # serial-port discovery and UART smoke checks
@@ -19,6 +21,7 @@ dependencies = [
 [project.scripts]
 pyocd-debug-mcp = "pyocd_debug_mcp.server:main"
 pyocd-debug-brain = "pyocd_debug_mcp.brain.cli:main"
+pyocd-debug = "pyocd_debug_mcp.ux.cli:main"
 pyocd-pack-repair = "pyocd_debug_mcp.pack_index_repair:main"
 pyocd-zephyr-build = "pyocd_debug_mcp.zephyr_build:main"
 
@@ -38,6 +41,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyocd_debug_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"tests/cases" = "src/pyocd_debug_mcp/_runtime_data/benchmark/cases"
+"skills" = "src/pyocd_debug_mcp/_runtime_data/skills"
+"playbooks/turnkey" = "src/pyocd_debug_mcp/_runtime_data/playbooks/turnkey"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

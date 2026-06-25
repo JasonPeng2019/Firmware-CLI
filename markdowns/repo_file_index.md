@@ -179,7 +179,9 @@ a glance before relying on detail.
 |---|---|
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
+| `p0-wave0-main-reconcile_spec.md` | Wave 0 branch-reconciliation spec for merging `main` UX/foundation work into the validated `P-Wave-0` runtime baseline. |
 | `p0_0_layered_validation_plan.md` | Wave 0/P0.0 clean-slate validation ladder: repo hygiene, non-hardware checks, timeout/hang negative tests, real-board proof, MCP smoke, turnkey smoke, benchmark slice, and soak criteria before branching P0. |
+| `p0_0_validation_report.md` | Evidence-backed execution report for the P0.0 validation ladder, including merge fixes, real-board results, and deferred-risk notes. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 

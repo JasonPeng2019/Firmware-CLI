@@ -60,6 +60,8 @@ now contains:
   - Claude Code CLI
 - the sibling turnkey benchmark path over the same 12-case corpus
 - the frozen `R12` contract in `markdowns/curr/r12_turnkey_spec.md`
+- the imported Pass 1 event/UX shell scaffold from `main`, which is now on
+  this branch but should still be cleaned up before further P0 prototype work
 
 The Ben mainline also now carries the Jason-originated hardening that was
 missing before this merge pass:

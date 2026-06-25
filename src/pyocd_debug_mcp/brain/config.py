@@ -172,19 +172,3 @@ def build_turnkey_invocation(
         allowed_edit_roots=allowed_edit_roots,
         recover_allowed=recover_allowed,
     )
-
-
-def task_requires_code_fix(task: str) -> bool:
-    lowered = task.lower()
-    return any(
-        token in lowered
-        for token in (
-            "fix",
-            "repair",
-            "patch",
-            "edit",
-            "rewrite",
-            "change the code",
-            "modify the code",
-        )
-    )

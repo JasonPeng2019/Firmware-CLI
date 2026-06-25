@@ -9,8 +9,9 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from pyocd_debug_mcp.board_config import BoardConfig
+from pyocd_debug_mcp.runtime_resources import resolve_turnkey_playbooks_root
 
-PLAYBOOKS_ROOT = Path(__file__).resolve().parents[3] / "playbooks" / "turnkey"
+PLAYBOOKS_ROOT = resolve_turnkey_playbooks_root()
 SUPPORTED_BOARD_KINDS = frozenset({"all", "nordic_only"})
 SUPPORTED_WORKFLOW_KINDS = frozenset(
     {

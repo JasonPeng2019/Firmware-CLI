@@ -60,10 +60,16 @@ The first `R12` implementation must add all of these:
 
 - `src/pyocd_debug_mcp/brain/`
 - `pyocd-debug-brain` console script
+- `src/pyocd_debug_mcp/ux/`
+- `pyocd-debug` console script
 - top-level `skills/` data tree
 - top-level `playbooks/turnkey/` internal deterministic helper tree
 - turnkey benchmark runner alongside the existing `R11` runner
 - turnkey run artifacts written into `runs/<session_id>/...`
+- package-owned bundled runtime data for:
+  - benchmark cases/prompts/schema
+  - turnkey skill manifests
+  - turnkey playbooks
 
 The current prototype increment must add or tighten:
 
@@ -91,6 +97,7 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 - configuration loading
 - local MCP subprocess lifecycle
 - model-provider interaction
+- structured brain events for the operator UX layer
 - state tracking
 - skill loading
 - local workspace editing/build support
@@ -295,9 +302,12 @@ current benchmark and task surface rather than maximum mutation power.
 
 ## CLI Contract
 
-Add a new console script:
+The repo now has two CLI layers over the same turnkey brain:
 
 - `pyocd-debug-brain`
+  - stable headless/automation surface
+- `pyocd-debug`
+  - operator-facing shell and pretty one-shot runner
 
 ### Freeform mode
 
@@ -326,9 +336,44 @@ Freeform mode rules:
 
 - If `--workspace-root` and `--build-command` are absent, the brain is
   diagnose/verify only.
-- If the task obviously requires a code fix but there is no editable workspace
-  and build command, the CLI returns a deterministic refusal.
+- Generic freeform `run --task "fix ..."` does not pre-refuse based only on
+  wording.
+- Explicit repair-oriented shell flows such as `/repair` still require repair
+  context and refuse shell-side until `/workspace` and `/build-command` are
+  set.
+- When freeform repair context is present, editable paths are constrained by
+  workspace containment rather than a hardcoded `src/` root.
 - The CLI owns server startup and teardown.
+
+### Operator shell mode
+
+```bash
+pyocd-debug
+pyocd-debug run --board-id <id> --task "<text>" [options]
+pyocd-debug benchmark --case-id <id> [options]
+pyocd-debug benchmark --suite pilot_v1_plus_b003_b004 [options]
+pyocd-debug history
+pyocd-debug show <session_id>
+pyocd-debug rerun <session_id>
+```
+
+Frozen Pass 1 UX decisions:
+
+- `pyocd-debug-brain` remains unchanged as the stable headless CLI.
+- `pyocd-debug` is additive and reuses the exact same orchestration loop and
+  benchmark path.
+- the shell is implemented with `rich` + `prompt_toolkit`
+- the shell consumes a structured event sink from the brain loop
+- raw output policy is summary-first:
+  - REPL `/raw on` prints the full raw provider reply after each completed turn
+  - REPL `/raw off` hides raw output but still stores it in artifacts
+  - REPL `/raw last` re-renders the last completed provider reply
+  - one-shot `pyocd-debug run|benchmark` uses `--raw-output off|final|all`
+- Pass 1 is turn-level-first:
+  - live provider/tool/build/green-check status is visible while work is in
+    progress
+  - full raw provider output becomes visible after the completed turn
+  - true token-level provider streaming is intentionally deferred to Pass 2
 
 ### Benchmark mode
 
@@ -372,13 +417,25 @@ Frozen first brain-level convergence rules:
 
 ## Turnkey Run Capture
 
-The MCP server session root under `runs/<session_id>/...` remains canonical.
+The MCP server session root under `runs/<session_id>/...` remains canonical
+whenever a real board session is created.
+
+The turnkey layer now creates a provisional run root before provider creation
+or MCP startup. That provisional run root is renamed to the real
+`runs/<session_id>/...` path the first time a session is created.
+
+If no board session is ever created, the provisional run root remains in place
+with `session_id=null` and a turnkey result that uses:
+
+- `final_status=blocked`
+- `classification=tooling_failure`
 
 The turnkey layer must add these artifacts:
 
 - `run-metadata/turnkey_request.json`
 - `run-metadata/turnkey_result.json`
 - `run-metadata/turnkey_state.json`
+- `logs/brain_events.jsonl`
 - `logs/brain_trace.jsonl`
 - `logs/model_turns.jsonl`
 - `logs/prompt.txt`
@@ -503,6 +560,9 @@ uv run pyocd-debug-brain run --provider anthropic-api --board-id nrf52833dk --ta
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain benchmark --provider openai-api --suite pilot_v1_plus_b003_b004 --model <model>
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
+uv run pyocd-debug history
 ```
 
 ## Out Of Scope For This Pass
@@ -512,5 +572,7 @@ uv run pyocd-debug-brain benchmark --provider openai-api --suite pilot_v1_plus_b
   wait, timeout-sync, and stream/progress plumbing
 - no additional provider surfaces beyond the four frozen backends above
 - no reconnect-tolerant benchmark accounting
+- no token-level provider streaming in Pass 1; that is the deliberate next UX
+  follow-up after the current shell lands
 - no expanded benchmark corpus beyond the current 12 cases
 - no `R13+` work

@@ -8,17 +8,18 @@
 > BYO-agent benchmark milestone. Read those sections as history, not as pending work. For
 > live status see `current-progress.md`; for the file map see `repo_file_index.md`.
 >
-> **Current post-fix proof boundary:** the latest STM32 Windows rerun has
-> re-proved the `R11` path and unblocked `R12` on STM32. The remaining proof
-> gaps are narrower and live in `current-progress.md`: re-run Nordic in the
-> current post-fix state, plus true fresh-machine Windows/macOS managed
-> Zephyr/no-NCS deployment validation.
+> **Current proof boundary:** the Codex-backed `R12` turnkey path is now
+> live-proven on the scoped pair through the full frozen 12-case corpus. The
+> remaining proof gaps are narrower and live in `current-progress.md`: the
+> required second-provider closure bar, plus true fresh-machine Windows/macOS
+> managed-Zephyr/no-NCS deployment validation.
 >
-> **Prototype execution note:** the current prototype branch plan uses a
-> narrower Wave 0 gate than full `R12` closure. Wave 0 must re-prove the current
-> Codex-backed turnkey baseline on the currently validated host and scoped pair.
-> Full second-provider reproof and true fresh-machine portability proof are
-> deferred, unverified prototype risk unless later restored as hard gates.
+> **Prototype execution note:** the current prototype branch plan still uses a
+> narrower Wave 0 gate than full `R12` closure. Wave 0 must re-prove the
+> current Codex-backed turnkey baseline on the currently validated host and
+> scoped pair. Full second-provider reproof and true fresh-machine portability
+> proof are deferred, unverified prototype risk unless later restored as hard
+> gates.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 

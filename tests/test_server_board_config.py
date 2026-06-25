@@ -64,7 +64,6 @@ def test_resolve_probe_uid_resolves_jlink_uid_on_non_windows(monkeypatch) -> Non
     assert board is not None
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
-    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
@@ -83,7 +82,6 @@ def test_resolve_probe_uid_prefers_explicit_unique_id(monkeypatch) -> None:
     assert board is not None
 
     monkeypatch.setenv("PYOCD_PROBE_UID", "env-uid")
-    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
@@ -100,7 +98,6 @@ def test_resolve_probe_uid_prefers_env_uid(monkeypatch) -> None:
     assert board is not None
 
     monkeypatch.setenv("PYOCD_PROBE_UID", "env-uid")
-    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
@@ -112,18 +109,22 @@ def test_resolve_probe_uid_prefers_env_uid(monkeypatch) -> None:
     assert server._resolve_probe_uid_for_connect(board, None) == "env-uid"
 
 
-def test_resolve_probe_uid_skips_jlink_autoresolution_on_windows(monkeypatch) -> None:
+def test_resolve_probe_uid_autoresolves_jlink_uid_on_windows(monkeypatch) -> None:
     board = server.resolve_board_config("nrf52840dk", None)
     assert board is not None
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("resolve_probe_for_board should not run for implicit Windows J-Link selection")
-
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
-    monkeypatch.setattr(server.sys, "platform", "win32")
-    monkeypatch.setattr(server, "resolve_probe_for_board", fail_if_called)
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: type(
+            "Resolution",
+            (),
+            {"probe": type("Probe", (), {"uid": "jlink-win-123"})()},
+        )(),
+    )
 
-    assert server._resolve_probe_uid_for_connect(board, None) is None
+    assert server._resolve_probe_uid_for_connect(board, None) == "jlink-win-123"
 
 
 def test_resolve_probe_uid_raises_for_ambiguous_non_windows_jlink(monkeypatch) -> None:
@@ -131,7 +132,6 @@ def test_resolve_probe_uid_raises_for_ambiguous_non_windows_jlink(monkeypatch) -
     assert board is not None
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
-    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",

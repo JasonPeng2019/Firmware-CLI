@@ -5,30 +5,25 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
 import anyio
 
+from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain.actions import TurnkeyRunResult
 from pyocd_debug_mcp.brain.config import (
     TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
 )
+from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from tests.harness import r11_benchmark as r11  # noqa: E402
 
 DEFAULT_MAX_ITERS = 18
 
 
-def _render_case_task(case: r11.BenchmarkCase) -> str:
+def _render_case_task(case: benchmark_support.BenchmarkCase) -> str:
     lines = [
         f"You are validating benchmark case `{case.case_id}` on `{case.board_id}`.",
         f"Case title: {case.title}",
@@ -148,8 +143,8 @@ def _render_case_task(case: r11.BenchmarkCase) -> str:
     return "\n".join(lines)
 
 
-def _execution_to_agent_result(result: TurnkeyRunResult) -> r11.ParsedAgentResult:
-    return r11.ParsedAgentResult(
+def _execution_to_agent_result(result: TurnkeyRunResult) -> benchmark_support.ParsedAgentResult:
+    return benchmark_support.ParsedAgentResult(
         case_id=result.case_id or "",
         board_id=result.board_id,
         session_id=result.session_id or "",
@@ -171,10 +166,10 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def _record_turnkey_case_artifacts(
-    prepared: r11.PreparedCase,
+    prepared: benchmark_support.PreparedCase,
     execution: TurnkeyExecution,
-    verification: r11.VerificationSummary,
-    score_report: r11.ScoreReport,
+    verification: benchmark_support.VerificationSummary,
+    score_report: benchmark_support.ScoreReport,
     run_root: Path,
 ) -> None:
     benchmark_case = {
@@ -194,8 +189,8 @@ def _record_turnkey_case_artifacts(
         "board_id": prepared.case.board_id,
         "flash_artifact": str(prepared.flash_artifact),
         "symbol_artifact": str(prepared.symbol_artifact),
-        "flash_artifact_sha256": r11._sha256(prepared.flash_artifact),
-        "symbol_artifact_sha256": r11._sha256(prepared.symbol_artifact),
+        "flash_artifact_sha256": benchmark_support._sha256(prepared.flash_artifact),
+        "symbol_artifact_sha256": benchmark_support._sha256(prepared.symbol_artifact),
         "artifact_kind": "bug_variant" if prepared.case.kind == "injected_bug" else "reference",
         "workspace_source_root": str(prepared.workspace.source_root),
     }
@@ -225,7 +220,10 @@ def _record_turnkey_case_artifacts(
     _write_json(run_root / "run-metadata" / "firmware_identity.json", firmware_identity)
 
 
-def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool:
+def _suite_acceptance(
+    suite_name: str,
+    reports: list[benchmark_support.CaseRunReport],
+) -> bool:
     if not reports:
         return False
     if any(report.score_report.score < 50 for report in reports):
@@ -234,7 +232,7 @@ def _suite_acceptance(suite_name: str, reports: list[r11.CaseRunReport]) -> bool
     if average < 85:
         return False
 
-    suite_cases = {case.case_id: case for case in r11.load_suite(suite_name)}
+    suite_cases = {case.case_id: case for case in benchmark_support.load_suite(suite_name)}
     by_case = {report.case_id: report for report in reports}
     known_good_ids = {
         case_id
@@ -283,14 +281,15 @@ async def run_case_async(
     provider: TurnkeyProviderKind | None = None,
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
-    serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
-) -> r11.CaseRunReport:
-    case = r11.load_case(case_id)
-    if case.scoring_profile != r11.DEFAULT_SCORING_PROFILE:
+    serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
+) -> benchmark_support.CaseRunReport:
+    case = benchmark_support.load_case(case_id)
+    if case.scoring_profile != benchmark_support.DEFAULT_SCORING_PROFILE:
         raise RuntimeError(f"Unsupported scoring profile: {case.scoring_profile}")
 
-    prepared = r11._prepare_case(case)
-    r11._prepare_target_state(prepared)
+    prepared = benchmark_support._prepare_case(case)
+    benchmark_support._prepare_target_state(prepared)
     provider_config = load_provider_config(model, provider)
     invocation = build_turnkey_invocation(
         mode="benchmark",
@@ -313,9 +312,13 @@ async def run_case_async(
         allowed_edit_roots=case.allowed_actions.allowed_edit_roots,
         recover_allowed=case.allowed_actions.recover_allowed,
     )
-    before_session_dirs = r11._session_dirs()
-    execution = await run_turnkey_with_provider(invocation, provider_config=provider_config)
-    after_session_dirs = r11._session_dirs()
+    before_session_dirs = benchmark_support._session_dirs()
+    execution = await run_turnkey_with_provider(
+        invocation,
+        provider_config=provider_config,
+        event_sink=event_sink,
+    )
+    after_session_dirs = benchmark_support._session_dirs()
     new_session_roots = tuple(
         after_session_dirs[name]
         for name in sorted(set(after_session_dirs) - set(before_session_dirs))
@@ -334,7 +337,7 @@ async def run_case_async(
             run_root=run_root,
         )
     if resolved_session_id is None or run_root is None:
-        verification = r11.VerificationSummary(
+        verification = benchmark_support.VerificationSummary(
             flash_ok=False,
             uart_ok=False,
             symbol_ok=False,
@@ -342,7 +345,7 @@ async def run_case_async(
             excerpt="",
             error_text="The turnkey client did not create a canonical MCP session.",
         )
-        score_report = r11.ScoreReport(
+        score_report = benchmark_support.ScoreReport(
             score=0,
             outcome_label="fail",
             diagnosis_points=0,
@@ -351,14 +354,14 @@ async def run_case_async(
             safety_points=0,
             penalties=("session-root-missing",),
             reasons=((verification.error_text,) if verification.error_text is not None else ()),
-            actual_changed_files=r11._changed_files(
+            actual_changed_files=benchmark_support._changed_files(
                 prepared.workspace.snapshot_root,
                 prepared.workspace.workspace_root,
             ),
             classification_correct=False,
             intervention_correct=False,
         )
-        return r11.CaseRunReport(
+        return benchmark_support.CaseRunReport(
             case_id=case.case_id,
             board_id=case.board_id,
             session_id=None,
@@ -372,7 +375,7 @@ async def run_case_async(
         [resolved_session_id] if resolved_session_id is not None else []
     )
     if len(session_ids_seen) != 1:
-        verification = r11.VerificationSummary(
+        verification = benchmark_support.VerificationSummary(
             flash_ok=False,
             uart_ok=False,
             symbol_ok=False,
@@ -380,7 +383,7 @@ async def run_case_async(
             excerpt="",
             error_text="The turnkey client opened more than one MCP session during a benchmark case.",
         )
-        score_report = r11.ScoreReport(
+        score_report = benchmark_support.ScoreReport(
             score=0,
             outcome_label="fail",
             diagnosis_points=0,
@@ -389,14 +392,14 @@ async def run_case_async(
             safety_points=0,
             penalties=("multiple-sessions",),
             reasons=((verification.error_text,) if verification.error_text is not None else ()),
-            actual_changed_files=r11._changed_files(
+            actual_changed_files=benchmark_support._changed_files(
                 prepared.workspace.snapshot_root,
                 prepared.workspace.workspace_root,
             ),
             classification_correct=False,
             intervention_correct=False,
         )
-        return r11.CaseRunReport(
+        return benchmark_support.CaseRunReport(
             case_id=case.case_id,
             board_id=case.board_id,
             session_id=resolved_session_id,
@@ -406,15 +409,15 @@ async def run_case_async(
             run_root=run_root,
         )
 
-    verification = r11._run_final_verification(prepared)
-    actual_changed_files = r11._changed_files(
+    verification = benchmark_support._run_final_verification(prepared)
+    actual_changed_files = benchmark_support._changed_files(
         prepared.workspace.snapshot_root,
         prepared.workspace.workspace_root,
     )
     agent_result = _execution_to_agent_result(execution.result)
-    score_report = r11._score_case(case, agent_result, verification, actual_changed_files)
+    score_report = benchmark_support._score_case(case, agent_result, verification, actual_changed_files)
     _record_turnkey_case_artifacts(prepared, execution, verification, score_report, run_root)
-    return r11.CaseRunReport(
+    return benchmark_support.CaseRunReport(
         case_id=case.case_id,
         board_id=case.board_id,
         session_id=resolved_session_id,
@@ -431,8 +434,9 @@ def run_case(
     provider: TurnkeyProviderKind | None = None,
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
-    serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
-) -> r11.CaseRunReport:
+    serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
+) -> benchmark_support.CaseRunReport:
     return anyio.run(
         lambda: run_case_async(
             case_id,
@@ -440,6 +444,7 @@ def run_case(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            event_sink=event_sink,
         )
     )
 
@@ -450,8 +455,9 @@ def run_suite(
     provider: TurnkeyProviderKind | None = None,
     model: str | None,
     max_iters: int = DEFAULT_MAX_ITERS,
-    serial_read_seconds: float = r11.DEFAULT_SERIAL_READ_SECONDS,
-) -> list[r11.CaseRunReport]:
+    serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
+    event_sink: EventSink | None = None,
+) -> list[benchmark_support.CaseRunReport]:
     return [
         run_case(
             case.case_id,
@@ -459,8 +465,9 @@ def run_suite(
             model=model,
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
+            event_sink=event_sink,
         )
-        for case in r11.load_suite(suite_name)
+        for case in benchmark_support.load_suite(suite_name)
     ]
 
 
@@ -476,7 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     case_parser.add_argument(
         "--serial-read-seconds",
         type=float,
-        default=r11.DEFAULT_SERIAL_READ_SECONDS,
+        default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
 
     suite_parser = subparsers.add_parser("suite", help="Run a named turnkey benchmark suite.")
@@ -487,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument(
         "--serial-read-seconds",
         type=float,
-        default=r11.DEFAULT_SERIAL_READ_SECONDS,
+        default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
     return parser
 
@@ -505,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
         )
-        r11.print_case_summary(report)
+        benchmark_support.print_case_summary(report)
         return 0 if report.score_report.outcome_label == "full_success" else 1
 
     reports = run_suite(
@@ -516,6 +523,6 @@ def main(argv: list[str] | None = None) -> int:
         serial_read_seconds=args.serial_read_seconds,
     )
     for report in reports:
-        r11.print_case_summary(report)
-    r11.print_suite_summary(args.suite, reports)
+        benchmark_support.print_case_summary(report)
+    benchmark_support.print_suite_summary(args.suite, reports)
     return 0 if _suite_acceptance(args.suite, reports) else 1

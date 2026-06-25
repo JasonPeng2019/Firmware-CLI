@@ -6,14 +6,11 @@ import argparse
 
 import anyio
 
+from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
-from pyocd_debug_mcp.brain.config import (
-    BrainConfigError,
-    build_turnkey_invocation,
-    load_provider_config,
-    task_requires_code_fix,
-)
-from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
+from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
+from pyocd_debug_mcp.brain.config import BrainConfigError
+from pyocd_debug_mcp.brain.loop import TurnkeyExecution
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,18 +63,11 @@ def _print_execution(execution: TurnkeyExecution) -> None:
 
 
 async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
-    provider = load_provider_config(args.model, args.provider)
-    if task_requires_code_fix(args.task) and not (args.workspace_root and args.build_command):
-        raise BrainConfigError(
-            "Refused [turnkey/missing-workspace-context]: this task appears to require a code fix, "
-            "but no --workspace-root and --build-command were supplied."
-        )
-    invocation = build_turnkey_invocation(
-        mode="freeform",
-        provider=provider.provider,
+    return await run_freeform_task(
         board_id=args.board_id,
         task=args.task,
-        model=provider.model,
+        provider=args.provider,
+        model=args.model,
         max_iters=args.max_iters,
         serial_read_seconds=args.serial_read_seconds,
         port=args.port,
@@ -85,11 +75,7 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         elf=args.elf,
         workspace_root=args.workspace_root,
         build_command=args.build_command,
-        code_edits_allowed=bool(args.workspace_root and args.build_command),
-        allowed_edit_roots=("src",) if args.workspace_root and args.build_command else (),
-        recover_allowed=True,
     )
-    return await run_turnkey_with_provider(invocation, provider_config=provider)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -101,32 +87,27 @@ def main(argv: list[str] | None = None) -> int:
             _print_execution(execution)
             return 0 if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"} else 1
 
-        provider = load_provider_config(args.model, args.provider)
         if args.case_id:
-            report = r12_benchmark.run_case(
-                args.case_id,
-                provider=provider.provider,
-                model=provider.model,
+            report = run_benchmark_case(
+                case_id=args.case_id,
+                provider=args.provider,
+                model=args.model,
                 max_iters=args.max_iters,
                 serial_read_seconds=args.serial_read_seconds,
             )
-            from tests.harness import r11_benchmark as r11  # local import to keep product path light
-
-            r11.print_case_summary(report)
+            benchmark_support.print_case_summary(report)
             return 0 if report.score_report.outcome_label == "full_success" else 1
 
-        reports = r12_benchmark.run_suite(
-            args.suite,
-            provider=provider.provider,
-            model=provider.model,
+        reports = run_benchmark_suite(
+            suite_name=args.suite,
+            provider=args.provider,
+            model=args.model,
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
         )
-        from tests.harness import r11_benchmark as r11  # local import to keep product path light
-
         for report in reports:
-            r11.print_case_summary(report)
-        r11.print_suite_summary(args.suite, reports)
+            benchmark_support.print_case_summary(report)
+        benchmark_support.print_suite_summary(args.suite, reports)
         return 0 if r12_benchmark._suite_acceptance(args.suite, reports) else 1
     except BrainConfigError as exc:
         print(str(exc))
