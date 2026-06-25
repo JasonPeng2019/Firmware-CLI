@@ -10,6 +10,7 @@ import anyio
 
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
 
 class ProviderResponseError(RuntimeError):
@@ -19,8 +20,14 @@ class ProviderResponseError(RuntimeError):
 class CodexCLIDecisionProvider:
     """Decision provider that shells out to `codex exec`."""
 
-    def __init__(self, *, model: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        model: str | None,
+        timeout_seconds: float = PROVIDER_REQUEST_TIMEOUT_SECONDS,
+    ) -> None:
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
         return await anyio.to_thread.run_sync(self._next_decision_sync, instructions, turn_prompt)
@@ -33,19 +40,25 @@ class CodexCLIDecisionProvider:
                 tmp_path = Path(tmpdir)
                 output_path = tmp_path / "turn_decision.json"
                 prompt_text = _compose_prompt(instructions, current_prompt)
-                result = subprocess.run(
-                    _build_codex_command(
-                        model=self._model,
-                        working_dir=tmp_path,
-                        output_path=output_path,
-                    ),
-                    input=prompt_text,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
-                    check=False,
-                )
+                try:
+                    result = subprocess.run(
+                        _build_codex_command(
+                            model=self._model,
+                            working_dir=tmp_path,
+                            output_path=output_path,
+                        ),
+                        input=prompt_text,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        check=False,
+                        timeout=self._timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise ProviderResponseError(
+                        f"Codex CLI timed out after {self._timeout_seconds:.0f}s."
+                    ) from exc
                 output_text = (
                     output_path.read_text(encoding="utf-8")
                     if output_path.exists()

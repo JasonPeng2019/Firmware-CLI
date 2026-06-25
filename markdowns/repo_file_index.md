@@ -63,6 +63,7 @@ a glance before relying on detail.
 | `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
 | `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
 | `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
+| `brain/evidence.py` | Typed observation/hypothesis/experiment/strategy-evaluation records persisted into turnkey state artifacts. |
 | `brain/events.py` | Structured event model + sink contract for live UX rendering and persisted `brain_events.jsonl` artifacts. |
 | `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
 | `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
@@ -77,6 +78,12 @@ a glance before relying on detail.
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering; resolves skills from the live repo when present or from bundled package data when installed. |
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
+
+## `playbooks/turnkey/`
+
+| Path | What it is / does |
+|---|---|
+| `playbooks/turnkey/*.yaml` | Internal deterministic helper playbooks used by the turnkey brain for reference health, diagnosis, repair, and Nordic recover-cycle guidance. |
 
 ### `ux/` — operator-facing turnkey shell
 
@@ -180,11 +187,14 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
-| `ROADMAP.md` | Full project plan (R0–R15), dependency tree, gates, rolling-frontier staffing. *Design/plan doc — see status banner.* |
-| `UXLayer.md` | R12 UX-layer design/implementation note: freezes the original barebones CLI contract, records the Pass 1 `pyocd-debug` shell design, and leaves token streaming as Pass 2. |
-| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions. *Design/plan doc — see status banner.* |
-| `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails). *Design doc — see status banner.* |
-| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, R12 provider-proof status, and the new Pass 1 UX validation checklist. |
+| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0 clean slate, serial P0, parallel Branches A/B/C, parallel Branches D/E/F, merge-back rules, and serial final integration. |
+| `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
+| `UXLayer.md` | UX-layer design/implementation note for the additive `pyocd-debug` operator shell; Pass 1 is implemented, with richer streaming/checkpoint work still deferred. |
+| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
+| `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
+| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, R12 status/prototype caveats, and the Pass 1 UX validation ladder. |
+| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
 | `repo_file_index.md` | This file. |
 
 ### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
@@ -193,7 +203,13 @@ a glance before relying on detail.
 |---|---|
 | `r10_contract.md` | Implementation source of truth for the R10 runtime-safety contract; still referenced because R11 builds on it. |
 | `r11_benchmark_spec.md` | Implementation source of truth for the active R11 benchmark slice. |
-| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice, including the additive `pyocd-debug` operator shell. |
+| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
+| `r12-ben-mainline-merge_process.md`, `r12_ben_mainline_merge_spec.md` | Ben mainline merge process/spec docs for the Jason-originated R12 hardening work. |
+| `r12-nucleo-reproof_spec.md`, `r12-windows-cmdline-bug_spec.md` | Focused R12 follow-up specs for STM32 re-proof and Windows command-line bugs. |
+| `runtime-timeout-audit_spec.md` | Timeout-hardening audit/spec for provider, server, harness, and helper command paths. |
+| `stm32-build-r11-turnkey_process.md`, `stm32-build-r11-turnkey_spec.md`, `stm32-r11-windows-retest_spec.md` | STM32-centric benchmark/process specs retained as active historical references. |
+| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained STM32-only ThreadX button-blink scaffold spec; manual-path first and outside the current acceptance substrate. |
+| `uxlayer_gap_checklist.md` | Requirement-by-requirement audit of the shipped UX layer against `UXLayer.md`, including Pass 1 implemented/partial/deferred status. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 

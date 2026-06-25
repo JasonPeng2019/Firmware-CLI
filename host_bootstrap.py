@@ -42,6 +42,11 @@ from pyocd_debug_mcp.pack_provision import (  # noqa: E402
 )
 from pyocd_debug_mcp.probe_inventory import list_connected_probes  # noqa: E402
 from pyocd_debug_mcp.serial_resolver import command_exists  # noqa: E402
+from pyocd_debug_mcp.timeouts import (  # noqa: E402
+    DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    SETUP_COMMAND_TIMEOUT_SECONDS,
+    subprocess_timeout_stream_text,
+)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -87,14 +92,29 @@ DEPENDENCIES = (
 )
 
 
-def run(cmd: list[str], capture: bool = True, cwd: Path | None = None) -> tuple[int, str, str]:
+def run(
+    cmd: list[str],
+    capture: bool = True,
+    cwd: Path | None = None,
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+) -> tuple[int, str, str]:
     try:
         result = subprocess.run(
-            cmd, capture_output=capture, text=True, cwd=str(cwd) if cwd else None
+            cmd,
+            capture_output=capture,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+            timeout=timeout_seconds,
         )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after {timeout_seconds:.0f}s: {' '.join(cmd)}",
+        )
     return result.returncode, result.stdout or "", result.stderr or ""
 
 
@@ -118,7 +138,12 @@ def reconcile_canonical_env(package_names: list[str]) -> bool:
     repo_root = Path(__file__).resolve().parent
     cmd = ["uv", "sync", "--locked"]
     print(f"  Attempting: {' '.join(cmd)}")
-    rc, _, _ = run(cmd, capture=False, cwd=repo_root)
+    rc, _, _ = run(
+        cmd,
+        capture=False,
+        cwd=repo_root,
+        timeout_seconds=SETUP_COMMAND_TIMEOUT_SECONDS,
+    )
     return rc == 0
 
 

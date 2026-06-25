@@ -16,6 +16,18 @@ The acceptance target for this pass is not a harder corpus. It is:
 
 This document is the implementation source of truth for `R12`.
 
+Current prototype amendment:
+
+- The original `R12` acceptance layer proved the first turnkey path over the
+  frozen `R11` corpus.
+- The current prototype target is a stronger autonomy proof on top of that
+  path. It should show that the model can work freely on host-side code,
+  request governed board interactions only when needed, use live progress to
+  avoid waiting blindly, and validate fixes with scoped evidence.
+- Product polish, remote hosting, broad backend expansion, and shipped UI
+  completeness remain later work. The prototype should prioritize capability,
+  bounded execution, and debuggability.
+
 ## Frozen Product Decisions
 
 - The turnkey brain is a native Python client.
@@ -59,6 +71,23 @@ The first `R12` implementation must add all of these:
   - turnkey skill manifests
   - turnkey playbooks
 
+The current prototype increment must add or tighten:
+
+- persistent provider sessions where the provider supports them
+- a final board-decision boundary: host-only work is model-native, while
+  board/server-native work is still gated by the brain
+- real MCP tool descriptions and JSON schemas in the turnkey prompt
+- model-composed action batches, plus `wait` and UART write capability
+- live CLI progress output and a developer inspector stream
+- basic timeout hardening for every blocking layer still missing a bound
+- dynamically refined timeout budgets proposed by the model, clamped by the
+  brain, and mirrored into the server for subsequent operations
+- client actions: model-authored scripts that persist for the client session
+  and can call gated server tools only through the brain-approved API
+- scoped green approval with model-made tests, including a narrow flipped-value
+  check for the first benchmark/prototype surface
+- chunked stream checkpoints for UART reads, builds, and long client actions
+
 ## Architecture
 
 ### Brain Package
@@ -74,6 +103,11 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 - local workspace editing/build support
 - deterministic outer-loop control
 - turnkey benchmark orchestration helpers
+- provider-session state and conversation continuation
+- model-native host action dispatch
+- governed client-action registration/execution
+- live event emission for the operator CLI and inspector
+- timeout-budget clamping and server timeout synchronization
 
 ### Provider
 
@@ -219,7 +253,17 @@ The model-facing action surface is smaller than the full server surface.
 - `read_memory`
 - `flash_firmware`
 - `read_serial`
+- `write_serial`
+- `wait`
 - `unlock_recover`
+
+### Model-native host actions
+
+Host-only file/process work may be performed without a board decision when it
+does not call server-native tools and does not cross the normal host safety
+policy. This is where the prototype should let the model write code, inspect
+files, run local commands, and create host-only helper scripts with much less
+friction than board operations.
 
 ### Local workspace actions exposed to the brain
 
@@ -228,6 +272,22 @@ The model-facing action surface is smaller than the full server surface.
 - run the case/build command
 - diff against the original workspace snapshot
 - run final green verification
+
+### Client actions
+
+Client actions are model-authored scripts saved into a client-session action
+store. They are not pasted inline into a decision. The model must create or
+update the named script, then choose to run it through a structured action with
+inputs.
+
+Rules:
+
+- host-only client actions run as model-native host work
+- client actions that call server-native tools are governed actions
+- every server-native call inside a client action goes through the same brain
+  gate as a direct tool call
+- client actions persist for one client session, not globally, in this
+  prototype
 
 ### Actions intentionally withheld in v1
 
@@ -331,16 +391,27 @@ The server watcher remains the authoritative destructive-action guardrail.
 
 Frozen first brain-level convergence rules:
 
-- stop after `max_iters`
+- ask the model for an iteration estimate broken down by board calls,
+  debugging headroom, likely false stops, and a fixed brain-added cushion
+- clamp the final iteration budget to a brain-owned hard maximum
 - stop after repeated identical build failures with no file change
 - stop after repeated diagnosis-only turns with no new observation
 - stop after repeated edit/build cycles with no verification improvement
-- use shorter MCP read timeouts for lightweight runtime checks and longer
-  budgets for connect/flash/recover/build paths
+- prompt the model to propose per-action timeout budgets instead of always
+  using maximum defaults
+- clamp model-proposed timeouts in the brain and mirror allowed updates to the
+  server through a partial `set_timeouts` style update; the setter changes only
+  named fields and never rewrites a config file
+- apply timeout changes to subsequent operations, not in-flight operations
+- use chunked checkpoints for UART reads, builds, and long client actions so
+  the brain can detect progress, summarize it, and cancel when progress stalls
 - interpret server `Refused [...]` and `Blocked [...]` responses as state
   transitions, not noise
-- refuse edit/build actions in freeform mode unless the user provided
-  workspace/build context
+- use gated early exits for `infeasible` and `needs_intervention`
+- require user permission before an automated action whose estimated duration
+  exceeds the unattended-duration cap
+- incentivize targeted print/log instrumentation when debugging unexpected
+  behavior or bug reproduction failures
 
 `R12` does not replace `R10` guardrails. It consumes them.
 
@@ -368,6 +439,11 @@ The turnkey layer must add these artifacts:
 - `logs/brain_trace.jsonl`
 - `logs/model_turns.jsonl`
 - `logs/prompt.txt`
+- `logs/provider_stream.jsonl`
+- `logs/parsed_decisions.jsonl`
+- `logs/tool_calls.jsonl`
+- `logs/stream_checkpoints.jsonl`
+- `logs/inspector_events.jsonl`
 - `applied-patches/turnkey.diff`
 
 The state artifact must include the typed evidence trail:
@@ -376,6 +452,9 @@ The state artifact must include the typed evidence trail:
 - hypotheses
 - experiments
 - strategy evaluations
+- timeout budget proposals and clamped values
+- client actions created and invoked
+- scoped green-test scripts and flipped-value results
 
 In benchmark mode, also persist:
 
@@ -409,6 +488,20 @@ The first turnkey benchmark proves product value through lower operator burden:
 - no explicit probe UID in the normal path
 - no explicit serial port in the normal path
 - no manual MCP server launch
+
+The prototype capability increment additionally proves:
+
+- the model can keep a persistent working session instead of reopening every
+  turn
+- the model can do substantial host-side code work without asking the board gate
+  for every step
+- board interactions remain explicit final decisions, batched when useful, and
+  visible to the operator
+- the operator can see progress and inspect brain/provider/server traffic while
+  long work is still running
+- timeout choices become task-sensitive instead of hardcoded maximum waits
+- scoped green approval can be driven by model-made scripts and a narrow
+  flipped-value check
 
 ## Acceptance Threshold
 
@@ -465,7 +558,8 @@ uv run pyocd-debug history
 ## Out Of Scope For This Pass
 
 - no `nrf52840dk` critical-path work
-- no new MCP server tools
+- no broad MCP server expansion beyond the prototype's required UART write,
+  wait, timeout-sync, and stream/progress plumbing
 - no additional provider surfaces beyond the four frozen backends above
 - no reconnect-tolerant benchmark accounting
 - no token-level provider streaming in Pass 1; that is the deliberate next UX

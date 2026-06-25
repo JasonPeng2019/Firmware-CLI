@@ -292,6 +292,7 @@ sequence it appears.
 | `[FAIL] pyOCD not found - run: uv sync` / `pyocd missing` / `pyserial missing` / `pyOCD not found` / `pyserial not found` | Repo environment incomplete | `uv sync` (or `host_bootstrap.py --install-missing`) -> rerun the same script |
 | `[FAIL] <path> is missing required field ...` | Invalid board config | Correct the board YAML -> rerun |
 | `[WARN] No debug probes detected` / `<board> ... no probes detected` (esp. Windows, when a `COM*` port is still visible) | Board absent, USB/cable (charge-only) issue, missing debug-interface driver, or another process owns the probe | Repair host visibility — Windows ST-Link: install the ST-Link driver via STM32CubeProgrammer/STSW-LINK009 and replug (WinUSB/Zadig only as fallback); see [init.md](./init.md) "Windows ST-Link driver" -> rerun `host_bootstrap.py --board-id <board>` |
+| `command timed out after ...s: pyocd ...` / `command timed out after ...s: nrfjprog ...` / `command timed out after ...s: STM32_Programmer_CLI ...` | A probe/vendor helper did not return within the repo's bounded host-command window | Close other probe users, replug the board, repair vendor drivers/tools if needed -> rerun the same command; if the timeout repeats, run the vendor helper directly once to confirm whether the tool itself is hanging |
 | `pyocd list --probes` says no probes on Windows, but plain `pyocd list` still shows the ST-Link row | pyOCD Windows console/encoding quirk rather than true hardware absence | Use the repo's shared probe path (`host_bootstrap.py`, `stage0_check.py`, the MCP server). The shared `probe_inventory` fallback now retries against plain `pyocd list` and accepts the Windows nonzero-exit/valid-stdout case. If both commands truly show nothing, fall back to driver/cable/process checks and rerun |
 | `<board> ... probes detected, but none matched this board` | Probe exists but hint/family match was inconclusive | Narrow to the right `--board-id`, fix `probe_hint_terms`, or disconnect unrelated hardware -> rerun `stage0_check.py --board-id <board>` |
 | `<board>: target '<target>' not found` / `[WARN] target '<target>' not found` / `✖︎` next to the target in `pyocd list` | Required pyOCD target not built in and its pinned pack is not provisioned yet, or the operator is relying on a partial live pyOCD pack index | Rerun with `--install-packs` to fetch the pinned pack from `packs/manifest.yaml` (deterministic; does NOT use the live index). If a board's target is not covered, add a pin to `packs/manifest.yaml`. If you explicitly need the live index repaired for ad-hoc `pyocd pack find/install`, run `uv run pyocd-pack-repair` or `uv run pyocd-pack-repair --vendor Keil --pack-name STM32L4xx_DFP` — see [packs/live_index_repair.md](./packs/live_index_repair.md) |
@@ -402,8 +403,12 @@ Verified:
   confirmed shared USB correlation for `nucleo_l476rg`
 - the canonical Windows `R0` bootstrap path has been verified on a real
   Windows host
+- timeout troubleshooting now matches the bounded host-command behavior in
+  `host_bootstrap.py`, `stage0_check.py`, and the shared server helper path
 
 Pending verification:
 
 - `nrf52840dk` remains a retained alternate Nordic profile and still needs live
   proof if future support for that board becomes a project goal
+- repeated vendor-helper timeout symptoms still need live confirmation on a
+  board/driver failure that actually hangs pyOCD, nrfjprog, or STM32CubeProgrammer

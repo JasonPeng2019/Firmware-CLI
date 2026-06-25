@@ -7,6 +7,15 @@
 > `markdowns/curr/r12_turnkey_spec.md`; it is the concrete UX-layer design note
 > for the current implementation and the follow-up token-streaming pass.
 
+Current prototype focus:
+
+- live progress during provider turns and tool execution
+- visible model/provider text without treating that text as the authoritative
+  decision
+- structured decision files/objects as the source of truth for brain actions
+- an inspector mode for prompt/brain/provider/server debugging
+- chunked checkpoints for UART reads, builds, and long client actions
+
 ## Non-Negotiable First Change
 
 Before anything else can be done, add a structured event stream or callback
@@ -33,16 +42,26 @@ Why this must come first:
 - the same event stream is also the cleanest basis for session history,
   artifact discovery, richer error rendering, and later hosted/client work
 
+The event stream must not make streamed model prose authoritative. The provider
+may stream normal text to the user for visibility, but the brain only acts on
+the final parsed decision artifact/object for that turn.
+
 What this first change should provide:
 
 - an event sink or callback on the main turnkey loop
 - one structured event shape for:
   - loop lifecycle
+  - provider stream chunks and heartbeat/progress markers
   - provider turn start/end
+  - parsed decision accepted/rejected
   - tool start/end
   - file read/replace
   - build start/end
+  - UART read/write chunks
+  - client-action create/run/checkpoint
   - green-check start/end
+  - timeout budget requested/clamped/synced
+  - stream checkpoint continue/cancel verdict
   - refusal/block/failure
   - verification-state updates
   - final result emission
@@ -744,7 +763,22 @@ Exit criteria:
 - one-shot runs still preserve deterministic exit codes
 - benchmark output remains scriptable
 
-### Phase 3: Add The Interactive Shell
+### Phase 3: Add Inspector And Checkpoints
+
+Add a developer-only inspector path and chunk checkpoints before investing in a
+full interactive shell.
+
+Exit criteria:
+
+- `--inspect` or equivalent opens/writes a live trace of prompt turns, provider
+  stream text, parsed decisions, tool calls, state snapshots, and server
+  observations
+- UART reads, builds/external commands, and long client actions can emit
+  checkpoint chunks
+- checkpoint turns can return a bounded continue/cancel verdict, while ordinary
+  model prose during those checkpoint turns is ignored by the brain
+
+### Phase 4: Add The Interactive Shell
 
 Add the operator-facing REPL shell on top of the same invocation layer.
 
@@ -754,7 +788,7 @@ Exit criteria:
 - session-aware prompt
 - guided run/benchmark/history flows
 
-### Phase 4: Add Session History And Artifact Browsing
+### Phase 5: Add Session History And Artifact Browsing
 
 Make `runs/<session_id>/...` easy to inspect from the shell.
 

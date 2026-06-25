@@ -4,8 +4,10 @@
 > local **stdio** server on the scoped pair — the adapters/services/guardrails
 > split, the tools-vs-resources surface, deterministic guardrails below the
 > client, and session-keyed runtime state all exist in `src/pyocd_debug_mcp/`.
-> Still future: remote Streamable-HTTP + OAuth transport (`R13`) and the turnkey
-> brain + CLI (`R12`). Design doc; live status in `current-progress.md`.
+> The `R12` turnkey brain/CLI exists as the active product layer; the current
+> work is the capability prototype described in the build plan and
+> `markdowns/curr/r12_turnkey_spec.md`. Still future: remote Streamable-HTTP +
+> OAuth transport (`R13`). Design doc; live status in `current-progress.md`.
 
 > This plan reformulates the project around the **MCP-server-as-core** design: one headless
 > server holding the hardware tools + deterministic guardrails + convergence watcher, with two
@@ -174,13 +176,42 @@ below the brain so they bind both.
 - It holds the parts that are *yours* and premium: the agent loop, **skills injection** (structured
   per-chip/peripheral knowledge — the validated moat), hypothesis→experiment orchestration, and the
   loop-aware convergence logic that needs to see the reasoning arc.
-- **Frontend = CLI** (argparse-style: task, port, ELF, max-iters). Embedded engineers live in the
-  terminal. A GUI can come later; the CLI is the v1 frontend.
+- **Frontend = CLI**. Embedded engineers live in the terminal. A GUI can come later; the CLI is the
+  v1 frontend and must show live progress rather than only end-of-run summaries.
 - **Keys:** BYOK (user supplies their API key in config) is the default and keeps the moat intact.
   You can also point your own keys at it for a fully managed offering.
 - **Closed-source:** keep the brain's valuable logic server-side if real secrecy matters (local
   Python is easy to decompile). The commodity part (adapters) is what's hard to hide; the moat
   (skills, orchestration) is what you keep server-side — which lines up cleanly.
+
+Current `R12` prototype control model:
+
+- **Persistent provider sessions:** API-backed providers should continue the
+  same inference session/conversation across turns. CLI-backed providers may
+  remain wrapper based until their surfaces support true persistence, but the
+  brain contract should be session-oriented.
+- **Free host work, governed board work:** host-only file/process/code actions
+  are model-native. Any action that touches server-native tools, hardware, or
+  the board must be expressed as the model's final structured board decision and
+  executed by the brain.
+- **Three action classes:** model actions are host-only, client actions are
+  model-authored session scripts, and server tools are hardware/server-native.
+  Client actions that call server tools are governed exactly like direct server
+  tool calls.
+- **Schemas, not summaries:** the prompt includes the real MCP tool
+  descriptions/schemas so the model composes valid calls and ordered batches.
+- **Batches:** one board decision may contain an ordered sequence of governed
+  actions, including `wait` and UART write in the prototype surface.
+- **Timeouts:** the model may propose per-action timeout and iteration budgets,
+  but the brain clamps them, enforces unattended hard caps, and syncs allowed
+  timeout changes to the server for subsequent operations.
+- **Progress and checkpoints:** UART reads, builds/external commands, and long
+  client actions can emit chunks/checkpoints. The brain records them, streams
+  operator progress, may ask the model for a checkpoint/cancel verdict, and
+  ignores any non-verdict text from that checkpoint turn.
+- **Inspector:** developer builds can mirror prompt turns, provider stream text,
+  parsed decisions, tool calls, server observations, and state snapshots into a
+  terminal/log stream for debugging.
 
 ---
 

@@ -9,9 +9,12 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Protocol
 
+import anyio
 from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from pyocd_debug_mcp.timeouts import MCP_STARTUP_TIMEOUT_SECONDS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SESSION_ID_PATTERN = re.compile(r"session_id=([A-Za-z0-9T\-]+)")
@@ -208,8 +211,15 @@ class LocalMCPClient:
     async def start(self) -> None:
         if self.available_tools:
             return
-        await self._transport.__aenter__()
-        tools = await self._transport.list_tool_names()
+        try:
+            with anyio.fail_after(MCP_STARTUP_TIMEOUT_SECONDS):
+                await self._transport.__aenter__()
+                tools = await self._transport.list_tool_names()
+        except TimeoutError as exc:
+            await self._transport.__aexit__(type(exc), exc, exc.__traceback__)
+            raise MCPClientError(
+                f"Local MCP server startup timed out after {MCP_STARTUP_TIMEOUT_SECONDS:.0f}s."
+            ) from exc
         self.available_tools = tuple(sorted(tools))
 
     async def stop(self) -> None:

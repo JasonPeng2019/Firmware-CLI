@@ -14,7 +14,12 @@ class PySerialUARTInterface(UARTInterface):
         except ImportError as exc:
             raise RuntimeError("pyserial is not installed") from exc
 
-        serial_handle = serial.Serial(device, baudrate=baudrate, timeout=timeout_seconds)
+        serial_handle = serial.Serial(
+            device,
+            baudrate=baudrate,
+            timeout=timeout_seconds,
+            write_timeout=timeout_seconds,
+        )
         return UARTPortHandle(
             handle=serial_handle,
             device=device,

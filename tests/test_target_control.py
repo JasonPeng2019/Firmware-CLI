@@ -9,6 +9,17 @@ from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig, RECOVER_MODE_MANUAL_ONLY
 from pyocd_debug_mcp.services import target_control
 from pyocd_debug_mcp.target_errors import ProbeNotFoundError, TargetConnectionError, UnsupportedArtifactError
+from pyocd_debug_mcp.timeouts import (
+    PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
+    PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
+    PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
+    PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
+    PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
+    PYOCD_RESET_HALT_TIMEOUT_SECONDS,
+    PYOCD_STEP_TIMEOUT_SECONDS,
+)
 
 
 class FakeTarget:
@@ -27,6 +38,20 @@ class FakeSession:
         self.target = target
 
 
+def default_pyocd_timeout_options() -> dict[str, object]:
+    return {
+        "cpu.step.instruction.timeout": PYOCD_STEP_TIMEOUT_SECONDS,
+        "reset.halt_timeout": PYOCD_RESET_HALT_TIMEOUT_SECONDS,
+        "reset.dap_recover.timeout": PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
+        "reset.core_recover.timeout": PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
+        "flash.timeout.init": PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
+        "flash.timeout.program": PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
+        "flash.timeout.erase_sector": PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
+        "flash.timeout.erase_all": PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
+        "flash.timeout.analyzer": PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
+    }
+
+
 def test_build_session_options_keeps_jlink_workaround() -> None:
     jlink_board = BoardConfig(
         board_id="tmp_jlink",
@@ -43,7 +68,7 @@ def test_build_session_options_keeps_jlink_workaround() -> None:
 
     options = target_control.build_session_options(jlink_board, jlink_board.pyocd_target)
 
-    assert options == {
+    assert options == default_pyocd_timeout_options() | {
         "target_override": "nrf52840",
         "jlink.non_interactive": False,
     }
@@ -65,7 +90,7 @@ def test_build_session_options_adds_nucleo_under_reset_workaround() -> None:
 
     options = target_control.build_session_options(stlink_board, stlink_board.pyocd_target)
 
-    assert options == {
+    assert options == default_pyocd_timeout_options() | {
         "target_override": "stm32l476rgtx",
         "connect_mode": "under-reset",
         "frequency": 1_000_000,
@@ -312,7 +337,7 @@ def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monk
             "return_first": True,
             "unique_id": "1050263657",
             "auto_open": False,
-            "options": {
+            "options": default_pyocd_timeout_options() | {
                 "target_override": "nrf52840",
                 "jlink.non_interactive": False,
             },
@@ -322,12 +347,25 @@ def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monk
             "return_first": True,
             "unique_id": None,
             "auto_open": False,
-            "options": {
+            "options": default_pyocd_timeout_options() | {
                 "target_override": "nrf52840",
                 "jlink.non_interactive": False,
             },
         },
     ]
+
+
+def test_run_cmd_returns_timeout_code(monkeypatch) -> None:
+    def fake_run(*args, **kwargs):
+        raise swd_pyocd.subprocess.TimeoutExpired(cmd=kwargs.get("args", "pyocd"), timeout=3)
+
+    monkeypatch.setattr(swd_pyocd.subprocess, "run", fake_run)
+
+    rc, out, err = swd_pyocd._run_cmd(["pyocd", "list"], timeout_seconds=3)
+
+    assert rc == 124
+    assert out == ""
+    assert "command timed out after 3s" in err
 
 
 def test_adapter_read_memory_raises_typed_connection_error() -> None:

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
+from pyocd_debug_mcp.adapters.uart_pyserial import PySerialUARTInterface
 from pyocd_debug_mcp.adapters.uart_interface import UARTInterface, UARTPortHandle
 from pyocd_debug_mcp.services import uart_capture
 
@@ -166,3 +170,26 @@ def test_capture_uart_output_decodes_non_utf8_with_replacement() -> None:
 
     assert result.matched is True
     assert "\ufffd" in result.text
+
+
+def test_pyserial_open_sets_read_and_write_timeouts(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSerial:
+        def __init__(self, device: str, *, baudrate: int, timeout: float, write_timeout: float) -> None:
+            captured["device"] = device
+            captured["baudrate"] = baudrate
+            captured["timeout"] = timeout
+            captured["write_timeout"] = write_timeout
+
+    monkeypatch.setitem(sys.modules, "serial", SimpleNamespace(Serial=FakeSerial))
+
+    handle = PySerialUARTInterface().open("COM9", baudrate=115200, timeout_seconds=0.2)
+
+    assert captured == {
+        "device": "COM9",
+        "baudrate": 115200,
+        "timeout": 0.2,
+        "write_timeout": 0.2,
+    }
+    assert handle.timeout_seconds == 0.2

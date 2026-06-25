@@ -68,6 +68,10 @@ from pyocd_debug_mcp.target_errors import (  # noqa: E402
     TargetConnectionError,
     UnsupportedArtifactError,
 )
+from pyocd_debug_mcp.timeouts import (  # noqa: E402
+    DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    subprocess_timeout_stream_text,
+)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -114,12 +118,27 @@ class FlashResult:
     session_handle: TargetSessionHandle | None = None
 
 
-def run(cmd: list[str], capture: bool = True) -> tuple[int, str, str]:
+def run(
+    cmd: list[str],
+    capture: bool = True,
+    timeout_seconds: float = DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+) -> tuple[int, str, str]:
     try:
-        result = subprocess.run(cmd, capture_output=capture, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=capture,
+            text=True,
+            timeout=timeout_seconds,
+        )
     except FileNotFoundError:
         executable = cmd[0] if cmd else "<unknown>"
         return 127, "", f"command not found: {executable}"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after {timeout_seconds:.0f}s: {' '.join(cmd)}",
+        )
     return result.returncode, result.stdout or "", result.stderr or ""
 
 

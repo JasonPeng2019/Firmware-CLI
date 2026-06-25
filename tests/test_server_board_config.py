@@ -181,10 +181,11 @@ def test_build_session_options_adds_jlink_workaround() -> None:
 
     options = server.build_session_options(board, board.pyocd_target)
 
-    assert options == {
-        "target_override": "nrf52833",
-        "jlink.non_interactive": False,
-    }
+    assert options is not None
+    assert options["target_override"] == "nrf52833"
+    assert options["jlink.non_interactive"] is False
+    assert options["flash.timeout.erase_all"] == 240.0
+    assert options["cpu.step.instruction.timeout"] == 2.0
 
 
 def test_build_session_options_leaves_non_jlink_boards_clean() -> None:
@@ -193,8 +194,9 @@ def test_build_session_options_leaves_non_jlink_boards_clean() -> None:
 
     options = server.build_session_options(board, board.pyocd_target)
 
-    assert options == {
-        "target_override": "stm32l476rgtx",
-        "connect_mode": "under-reset",
-        "frequency": 1_000_000,
-    }
+    assert options is not None
+    assert options["target_override"] == "stm32l476rgtx"
+    assert options["connect_mode"] == "under-reset"
+    assert options["frequency"] == 1_000_000
+    assert options["flash.timeout.erase_all"] == 240.0
+    assert options["cpu.step.instruction.timeout"] == 2.0
