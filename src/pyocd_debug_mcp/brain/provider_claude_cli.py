@@ -8,8 +8,19 @@ import tempfile
 
 import anyio
 
-from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
-from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.brain.provider_parsing import (
+    parse_memory_summary_json,
+    parse_turn_decision_json,
+)
+from pyocd_debug_mcp.brain.provider_types import (
+    ProviderCapabilities,
+    ProviderMemoryEntry,
+    ProviderMemorySummaryResult,
+    ProviderPromptBundle,
+    ProviderSessionState,
+    ProviderTurn,
+    render_memory_summary_request,
+)
 from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
 
@@ -29,17 +40,59 @@ class ClaudeCLIDecisionProvider:
         self._model = model
         self._timeout_seconds = timeout_seconds
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
-        return await anyio.to_thread.run_sync(self._next_decision_sync, instructions, turn_prompt)
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            supports_native_session=False,
+            supports_transcript_continuation=True,
+            supports_response_id_continuation=False,
+            supports_tool_schema_prompt=True,
+            continuation_mode="transcript-only",
+        )
 
-    def _next_decision_sync(self, instructions: str, turn_prompt: str) -> ProviderTurn:
+    async def next_decision(
+        self,
+        *,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
+        return await anyio.to_thread.run_sync(
+            self._next_decision_sync,
+            prompt_bundle,
+            session_state,
+        )
+
+    async def summarize_memory(
+        self,
+        *,
+        session_state: ProviderSessionState,
+        prior_summary_text: str,
+        evicted_entries: tuple[ProviderMemoryEntry, ...],
+    ) -> ProviderMemorySummaryResult:
+        return await anyio.to_thread.run_sync(
+            self._summarize_memory_sync,
+            session_state,
+            prior_summary_text,
+            evicted_entries,
+        )
+
+    def _next_decision_sync(
+        self,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
         last_error: Exception | None = None
-        current_prompt = turn_prompt
+        base_prompt = prompt_bundle.user_prompt_text(include_memory=True)
+        current_prompt = base_prompt
         for _attempt in range(2):
             with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-") as tmpdir:
                 try:
                     result = subprocess.run(
-                        _build_claude_command(model=self._model, instructions=instructions, prompt=current_prompt),
+                        _build_claude_command(
+                            model=self._model,
+                            instructions=prompt_bundle.system_instructions,
+                            prompt=current_prompt,
+                        ),
                         text=True,
                         encoding="utf-8",
                         errors="replace",
@@ -56,7 +109,7 @@ class ClaudeCLIDecisionProvider:
                 if command_error is not None:
                     last_error = command_error
                     current_prompt = (
-                        f"{turn_prompt}\n\n"
+                        f"{base_prompt}\n\n"
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
                     )
                     continue
@@ -65,7 +118,7 @@ class ClaudeCLIDecisionProvider:
                 except Exception as exc:  # noqa: BLE001 - preserve parse failures
                     last_error = exc
                     current_prompt = (
-                        f"{turn_prompt}\n\n"
+                        f"{base_prompt}\n\n"
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
                     )
                     continue
@@ -73,10 +126,93 @@ class ClaudeCLIDecisionProvider:
                     decision=decision,
                     output_text=output_text,
                     response_id=None,
+                    session_state=session_state.with_last_continuation_path(
+                        "transcript-memory",
+                    ).with_updated_metadata(
+                        {
+                            "continuation_kind": "transcript-memory",
+                            "cli_mode": "print",
+                        }
+                    ),
+                    provider_metadata={
+                        "continuation_kind": "transcript-memory",
+                        "continuation_mode": self.capabilities.continuation_mode,
+                        "continuation_path": "transcript-memory",
+                        "memory_injected": True,
+                        "cli_mode": "print",
+                    },
                 )
 
         raise ProviderResponseError(
             f"Claude CLI provider did not return a valid turnkey action: {last_error}"
+        )
+
+    def _summarize_memory_sync(
+        self,
+        session_state: ProviderSessionState,
+        prior_summary_text: str,
+        evicted_entries: tuple[ProviderMemoryEntry, ...],
+    ) -> ProviderMemorySummaryResult:
+        last_error: Exception | None = None
+        prompt = render_memory_summary_request(
+            prior_summary_text=prior_summary_text,
+            evicted_entries=evicted_entries,
+            summary_char_limit=session_state.summary_char_limit,
+        )
+        current_prompt = (
+            f"{prompt}\n\n"
+            "Return exactly one JSON object with a non-empty summary_text field."
+        )
+        system = "Return only one JSON object with a non-empty summary_text field."
+        for _attempt in range(2):
+            with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-summary-") as tmpdir:
+                try:
+                    result = subprocess.run(
+                        _build_claude_command(
+                            model=self._model,
+                            instructions=system,
+                            prompt=current_prompt,
+                        ),
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        cwd=tmpdir,
+                        check=False,
+                        timeout=self._timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise ProviderResponseError(
+                        f"Claude CLI memory summarizer timed out after {self._timeout_seconds:.0f}s."
+                    ) from exc
+                output_text, command_error = _extract_claude_output_text(result)
+                if command_error is not None:
+                    last_error = command_error
+                    current_prompt = (
+                        f"{prompt}\n\n"
+                        "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
+                    )
+                    continue
+                try:
+                    summary_text = parse_memory_summary_json(output_text)
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    current_prompt = (
+                        f"{prompt}\n\n"
+                        "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
+                    )
+                    continue
+                return ProviderMemorySummaryResult(
+                    summary_text=summary_text,
+                    provider_metadata={
+                        "continuation_path": "summary-call",
+                        "provider": "claude-cli",
+                        "model": self._model,
+                        "cli_mode": "print",
+                    },
+                )
+        raise ProviderResponseError(
+            f"Claude CLI provider did not return a valid memory summary: {last_error}"
         )
 
 

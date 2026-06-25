@@ -27,18 +27,32 @@ from pyocd_debug_mcp.brain.config import (
     BrainProviderConfig,
     BrainConfigError,
     build_turnkey_invocation,
+    resolve_memory_mode,
+    resolve_native_sync_every,
     load_provider_config,
 )
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey, run_turnkey_with_provider
+from pyocd_debug_mcp.brain.mcp_client import MCPClientError, ToolDescriptor, ToolTextResult
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     _build_claude_command,
     _extract_claude_output_text,
 )
 from pyocd_debug_mcp.brain.provider_codex_cli import _build_codex_command
-from pyocd_debug_mcp.brain.mcp_client import MCPClientError, ToolTextResult
-from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.brain.provider_types import (
+    apply_deterministic_compaction,
+    append_memory_entry,
+    plan_memory_compaction,
+    ProviderCapabilities,
+    ProviderMemoryEntry,
+    ProviderMemorySummaryResult,
+    ProviderPromptBundle,
+    ProviderSessionState,
+    ProviderTurn,
+    make_provider_session_state,
+)
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
+from pyocd_debug_mcp.brain.tool_schemas import build_tool_schema_bundle
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
 
 
@@ -46,12 +60,49 @@ class FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            supports_native_session=False,
+            supports_transcript_continuation=True,
+            supports_response_id_continuation=False,
+            supports_tool_schema_prompt=True,
+            continuation_mode="transcript-only",
+        )
+
+    async def next_decision(
+        self,
+        *,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
             output_text=json.dumps(decision.model_dump(mode="json")),
             response_id="resp-test",
+            session_state=session_state.with_last_continuation_path(
+                "transcript-memory",
+                metadata={"continuation_kind": "test-transcript-memory"},
+            ),
+            provider_metadata={
+                "continuation_kind": "test-transcript-memory",
+                "continuation_path": "transcript-memory",
+                "memory_injected": True,
+            },
+        )
+
+    async def summarize_memory(
+        self,
+        *,
+        session_state: ProviderSessionState,
+        prior_summary_text: str,
+        evicted_entries: tuple[ProviderMemoryEntry, ...],
+    ) -> ProviderMemorySummaryResult:
+        turns = ",".join(str(entry.turn_index) for entry in evicted_entries) or "none"
+        return ProviderMemorySummaryResult(
+            summary_text=f"{prior_summary_text}\n- summarized turns: {turns}".strip(),
+            provider_metadata={"provider": "fake-provider"},
         )
 
 
@@ -59,6 +110,38 @@ class FakeClient:
     def __init__(self, results: dict[str, list[ToolTextResult]]) -> None:
         self._results = {name: deque(items) for name, items in results.items()}
         self.calls: list[tuple[str, dict[str, object] | None]] = []
+        self._tool_descriptors = (
+            ToolDescriptor(
+                name="connect",
+                description="Connect to one board.",
+                input_schema={"type": "object", "properties": {"board_id": {"type": "string"}}},
+            ),
+            ToolDescriptor(
+                name="read_serial",
+                description="Read serial text until a match or timeout.",
+                input_schema={"type": "object", "properties": {"expected_text": {"type": "string"}}},
+            ),
+            ToolDescriptor(
+                name="disconnect",
+                description="Disconnect the active session.",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            ToolDescriptor(
+                name="get_state",
+                description="Read target state.",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            ToolDescriptor(
+                name="flash_firmware",
+                description="Flash one firmware artifact.",
+                input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+            ),
+            ToolDescriptor(
+                name="unlock_recover",
+                description="Recover a protected device.",
+                input_schema={"type": "object", "properties": {"confirm": {"type": "boolean"}}},
+            ),
+        )
 
     async def __aenter__(self) -> "FakeClient":
         return self
@@ -72,6 +155,9 @@ class FakeClient:
         if not queue:
             raise RuntimeError(f"Unexpected tool call: {tool_name}")
         return queue.popleft()
+
+    async def list_tools(self) -> tuple[ToolDescriptor, ...]:
+        return self._tool_descriptors
 
 
 def test_load_provider_config_requires_api_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,6 +211,108 @@ def test_load_provider_config_supports_cli_providers_without_model(
     assert claude.provider == "claude-cli"
     assert claude.api_key is None
     assert claude.model is None
+
+
+def test_provider_session_state_serialization_and_deterministic_compaction() -> None:
+    state = make_provider_session_state(
+        provider="codex-cli",
+        model=None,
+        continuation_mode="transcript-only",
+    )
+    for index in range(1, 7):
+        state = append_memory_entry(
+            state,
+            ProviderMemoryEntry(
+                turn_index=index,
+                classification="healthy",
+                observation_summary=f"obs {index}",
+                hypothesis=None,
+                action_kind="server_tool",
+                action_summary=f"connect {index}",
+                result_summary=f"result {index}",
+                verification_snapshot="flash=True uart=True symbol=True green=True",
+            ),
+        )
+    plan = plan_memory_compaction(state)
+    assert plan is not None
+
+    state = apply_deterministic_compaction(state, plan)
+    record = state.to_record()
+
+    assert record["provider"] == "codex-cli"
+    assert record["memory_mode"] == "deterministic"
+    assert len(record["recent_memory_entries"]) == 4
+    assert record["recent_memory_entries"][0]["turn_index"] == 3
+    assert record["memory_summary"]["covered_through_turn"] == 2
+    assert record["memory_summary"]["source"] == "deterministic"
+
+
+def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
+    bundle = build_tool_schema_bundle(
+        (
+            ToolDescriptor(
+                name="read_serial",
+                description="Read UART.",
+                input_schema={"type": "object", "properties": {"expected_text": {"type": "string"}}},
+            ),
+            ToolDescriptor(
+                name="connect",
+                description="Connect to a board.",
+                input_schema={"type": "object", "properties": {"board_id": {"type": "string"}}},
+            ),
+            ToolDescriptor(
+                name="debug_internal_only",
+                description="Ignore me.",
+                input_schema={"type": "object"},
+            ),
+        )
+    )
+
+    assert [entry.name for entry in bundle.entries] == ["connect", "read_serial"]
+    assert "debug_internal_only" not in bundle.rendered_text
+    assert bundle.schema_hash
+
+
+def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_MODE", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", raising=False)
+
+    assert resolve_memory_mode() == "deterministic"
+    assert resolve_native_sync_every() == 4
+
+    monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_MODE", "model-summary")
+    monkeypatch.setenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", "7")
+
+    assert resolve_memory_mode() == "model-summary"
+    assert resolve_native_sync_every() == 7
+
+
+def test_memory_compaction_triggers_on_recent_memory_char_limit() -> None:
+    state = ProviderSessionState(
+        provider="codex-cli",
+        model=None,
+        memory_mode="deterministic",
+        continuation_mode="transcript-only",
+        recent_render_char_limit=200,
+    )
+    for index in range(1, 4):
+        state = append_memory_entry(
+            state,
+            ProviderMemoryEntry(
+                turn_index=index,
+                classification="healthy",
+                observation_summary="x" * 180,
+                hypothesis=None,
+                action_kind="server_tool",
+                action_summary="y" * 180,
+                result_summary="z" * 180,
+                verification_snapshot="flash=True uart=False symbol=True green=False",
+            ),
+        )
+    plan = plan_memory_compaction(state)
+    assert plan is not None
+    assert plan.evicted_entries
+    assert plan.rendered_recent_char_count <= state.recent_render_char_limit
 
 
 def test_product_runtime_modules_do_not_import_tests_or_mutate_sys_path() -> None:
@@ -386,8 +574,32 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
     tmp_path: Path,
 ) -> None:
     class FailingProvider:
-        async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+        @property
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                supports_native_session=False,
+                supports_transcript_continuation=True,
+                supports_response_id_continuation=False,
+                supports_tool_schema_prompt=True,
+                continuation_mode="transcript-only",
+            )
+
+        async def next_decision(
+            self,
+            *,
+            prompt_bundle: ProviderPromptBundle,
+            session_state: ProviderSessionState,
+        ) -> ProviderTurn:
             raise RuntimeError("provider exploded")
+
+        async def summarize_memory(
+            self,
+            *,
+            session_state: ProviderSessionState,
+            prior_summary_text: str,
+            evicted_entries: tuple[ProviderMemoryEntry, ...],
+        ) -> ProviderMemorySummaryResult:
+            raise RuntimeError("summarizer exploded")
 
     monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
     invocation = build_turnkey_invocation(

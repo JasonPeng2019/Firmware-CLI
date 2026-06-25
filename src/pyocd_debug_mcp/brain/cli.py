@@ -99,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--elf")
     run_parser.add_argument("--max-iters", type=int, default=12)
     run_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
+    run_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--workspace-root")
     run_parser.add_argument("--build-command")
     _add_planning_hook_arguments(run_parser)
@@ -111,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--model")
     benchmark_parser.add_argument("--max-iters", type=int, default=18)
     benchmark_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
+    benchmark_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
+    benchmark_parser.add_argument("--native-sync-every", type=int)
     _add_planning_hook_arguments(benchmark_parser)
     return parser
 
@@ -147,6 +151,8 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         model=args.model,
         max_iters=args.max_iters,
         serial_read_seconds=args.serial_read_seconds,
+        memory_mode=args.memory_mode,
+        native_sync_every=args.native_sync_every,
         port=args.port,
         flash_artifact=args.flash_artifact,
         elf=args.elf,
@@ -180,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_config=timeout_config,
                 timeout_proposal=timeout_proposal,
                 iteration_estimate=iteration_estimate,
+                memory_mode=args.memory_mode,
+                native_sync_every=args.native_sync_every,
             )
             benchmark_support.print_case_summary(report)
             return 0 if report.score_report.outcome_label == "full_success" else 1
@@ -193,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
             iteration_estimate=iteration_estimate,
+            memory_mode=args.memory_mode,
+            native_sync_every=args.native_sync_every,
         )
         for report in reports:
             benchmark_support.print_case_summary(report)
