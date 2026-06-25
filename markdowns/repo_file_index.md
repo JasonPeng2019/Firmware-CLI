@@ -166,22 +166,23 @@ a glance before relying on detail.
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
 | `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0/P0.0 clean-slate validation, serial P0, parallel Branches A/B/C, parallel Branches D/E/F, merge-back rules, and serial final integration. |
 | `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
-| `UXLayer.md` | Proposal for a richer operator-facing pure CLI shell over the current R12 turnkey brain, including event streams, progress output, inspector mode, and checkpoint rendering. |
+| `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
 | `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 status/prototype caveats. |
-| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
 | `repo_file_index.md` | This file. |
 
 ### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
 
 | Path | What it is / does |
 |---|---|
+| `p0-0-doc-sync-superpowers-audit_spec.md` | Active Wave 0 follow-up spec for markdown cleanup, superpowers audit, and code/doc compliance fixes after the merge-validation pass. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
-| `p0-wave0-main-reconcile_spec.md` | Wave 0 branch-reconciliation spec for merging `main` UX/foundation work into the validated `P-Wave-0` runtime baseline. |
+| `p0-0-static-audit-fix_spec.md` | Active Wave 0 static-audit fix spec for repo/runtime hardening issues found before the latest merge-validation pass. |
 | `p0_0_layered_validation_plan.md` | Wave 0/P0.0 clean-slate validation ladder: repo hygiene, non-hardware checks, timeout/hang negative tests, real-board proof, MCP smoke, turnkey smoke, benchmark slice, and soak criteria before branching P0. |
 | `p0_0_validation_report.md` | Evidence-backed execution report for the P0.0 validation ladder, including merge fixes, real-board results, and deferred-risk notes. |
+| `uxlayer_gap_checklist.md` | Current-state Pass 1 vs Pass 2 checklist for the operator shell implementation. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
@@ -190,6 +191,10 @@ a glance before relying on detail.
 | `audit_and_validation_plan.md` | The audit + nRF52840 validation + Mac re-proof execution plan (Phase 0 complete). |
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
+| `p0-0-src-audit_review.md` | Completed independent review of the earlier `src/` audit/fix pass. |
+| `p0-wave0-main-reconcile_spec.md` | Completed Wave 0 branch-reconciliation spec for the `main` into `P-Wave-0` merge. |
+| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained ThreadX STM32 scaffold proposal that is intentionally outside the active prototype gate. |
+| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
 | `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
 
 ## `superpowers/` — internal authoring playbooks
@@ -212,13 +217,11 @@ a glance before relying on detail.
 
 ## Verified
 
-- This index now reflects the cleaned `markdowns/curr/` folder and the archived
-  current-step docs under `markdowns/tmp/curr-archive-2026-06-25/`.
-- The new `markdowns/curr/p0_0_layered_validation_plan.md` is listed as the
-  Wave 0 / `P0.0` validation ladder.
+- This index now reflects the current `markdowns/curr/` folder after the Wave 0
+  merge-validation pass and the moved completed docs under `markdowns/tmp/`.
+- The current `markdowns/curr/p0_0_validation_report.md` is listed as the
+  executed Wave 0 / `P0.0` validation report.
 
 ## Pending Verification
 
 - This index update is documentation-only.
-- The `P0.0` validation plan itself still needs to be executed against the repo
-  and the scoped boards.

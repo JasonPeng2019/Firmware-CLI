@@ -97,6 +97,18 @@ missing before this merge pass:
 What is still missing for broad turnkey closure is full official-pair
 second-provider proof and fresh-machine portability proof.
 
+The latest Wave 0 merge-validation pass also produced a current merged-branch
+proof artifact:
+
+- `markdowns/curr/p0_0_validation_report.md`
+
+That report covers the reconciled `P-Wave-0` branch after the `main` merge,
+including real stdio MCP client/server smoke, turnkey smoke, benchmark sanity,
+and timeout-recovery checks on the attached `nrf52840dk + nucleo_l476rg` pair.
+It does not replace the historical scoped-pair truth for `nrf52833dk`; it is
+the current merged-branch proof for the hardware that was attached in that
+session.
+
 For the current prototype branch plan, those items are intentionally deferred.
 The active execution boundary is narrower:
 

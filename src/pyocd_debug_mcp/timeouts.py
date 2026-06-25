@@ -14,6 +14,18 @@ MCP_STARTUP_TIMEOUT_SECONDS = 30.0
 # PROJECT-DEFINED (model providers can be slow, but must not block forever).
 PROVIDER_REQUEST_TIMEOUT_SECONDS = 300.0
 
+# PROJECT-DEFINED (default turnkey client timeout for ordinary MCP tool calls).
+TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
+
+# PROJECT-DEFINED (turnkey connect needs a longer ceiling than ordinary reads).
+TURNKEY_CONNECT_TIMEOUT_SECONDS = 60.0
+
+# PROJECT-DEFINED (turnkey flash can legitimately take much longer than reads).
+TURNKEY_FLASH_TIMEOUT_SECONDS = 240.0
+
+# PROJECT-DEFINED (turnkey recover/unlock can legitimately take much longer than reads).
+TURNKEY_RECOVER_TIMEOUT_SECONDS = 180.0
+
 # PROJECT-DEFINED (explicit pyOCD operation ceilings; mirrors/tightens pyOCD defaults).
 PYOCD_STEP_TIMEOUT_SECONDS = 2.0
 PYOCD_RESET_HALT_TIMEOUT_SECONDS = 2.0

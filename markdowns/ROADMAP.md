@@ -1709,9 +1709,11 @@ That is the entire project, translated from stage language into execution langua
 
 ## Pending Verification
 
-- The `P0.0` validation plan has not been executed as part of this documentation
-  edit.
-- Real `nucleo_l476rg` and `nrf52833dk` proof remains required before Wave 0 can
-  be treated as clean for `P0`.
+- The current merged `P-Wave-0` branch now has an executed Wave 0 validation
+  report in `markdowns/curr/p0_0_validation_report.md`, including real proof on
+  the attached `nrf52840dk + nucleo_l476rg` pair.
+- A fresh official-scope `nrf52833dk + nucleo_l476rg` re-proof is still a
+  separate evidence task if the team wants the prototype gate tied back to the
+  exact scoped pair instead of the current attached pair.
 - Second-provider parity and fresh-machine portability are intentionally
   deferred outside the Wave 0 prototype gate and remain unverified.

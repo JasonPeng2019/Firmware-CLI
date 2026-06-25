@@ -437,9 +437,12 @@ into the other branch, or into final integration.
 
 ## Pending Verification
 
-- Wave 0 still needs the `P0.0` layered validation plan executed, including real
-  STM32 and Nordic board proof plus Codex-baseline reproof, before prototype
-  feature work starts.
+- Wave 0 now has an executed `P0.0` validation report in
+  `markdowns/curr/p0_0_validation_report.md`, including real proof on the
+  attached `nrf52840dk + nucleo_l476rg` pair and the merged `P-Wave-0` branch.
+- If the team wants the prototype gate tied back to the exact official scoped
+  pair, a fresh `nrf52833dk + nucleo_l476rg` re-proof remains a separate
+  follow-on evidence task.
 - Second-provider and fresh-machine portability proof remain intentionally
   deferred outside the Wave 0 gate and must not be claimed as verified.
 - The exact module names should be checked against implementation reality when

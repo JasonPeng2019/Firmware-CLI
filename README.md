@@ -46,9 +46,14 @@ The current live status is:
   - evidence summaries
   - history/show/rerun flows
   - raw-provider-output visibility after completed turns
-- `claude-cli --model sonnet` is still failing on this host before any board
-  interaction with:
-  `API Error: 404 ... model: claude-sonnet-4-20250514`
+- `claude-cli` is no longer globally blocked on this host:
+  - STM32 freeform and `k001` benchmark proof now exist through the local
+    Claude CLI path
+  - the official-pair second-provider closure bar is still open
+  - the `--model sonnet` alias path that previously failed with
+    `API Error: 404 ... model: claude-sonnet-4-20250514` should be treated as
+    an alias-specific failure mode, not as proof that the provider path is
+    unusable
 - the turnkey/runtime surface is now product-owned rather than test-owned:
   - shared Stage 1 and benchmark helpers live under `src/pyocd_debug_mcp/`
   - packaged installs bundle the benchmark cases, skill manifests, and
@@ -214,8 +219,10 @@ Firmware-CLI/
     |-- current-progress.md
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
+    |   |-- p0-0-doc-sync-superpowers-audit_spec.md
     |   |-- p0-0-static-audit-fix_spec.md
     |   |-- p0_0_layered_validation_plan.md
+    |   |-- p0_0_validation_report.md
     |   `-- r12_turnkey_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
@@ -508,10 +515,11 @@ Current limitation:
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
-- `P-Wave-0` main reconcile spec: [markdowns/curr/p0-wave0-main-reconcile_spec.md](./markdowns/curr/p0-wave0-main-reconcile_spec.md)
 - `P0.0` layered validation plan: [markdowns/curr/p0_0_layered_validation_plan.md](./markdowns/curr/p0_0_layered_validation_plan.md)
 - `P0.0` validation report: [markdowns/curr/p0_0_validation_report.md](./markdowns/curr/p0_0_validation_report.md)
+- `P0.0` doc-sync and superpowers audit spec: [markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md](./markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md)
 - `P0.0` static audit fix spec: [markdowns/curr/p0-0-static-audit-fix_spec.md](./markdowns/curr/p0-0-static-audit-fix_spec.md)
+- Archived Wave 0 reconcile spec: [markdowns/tmp/p0-wave0-main-reconcile_spec.md](./markdowns/tmp/p0-wave0-main-reconcile_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
 
@@ -623,12 +631,13 @@ Latest turnkey verification:
 - deferred prototype risk that is not yet re-proved:
   - full official-pair second-provider closure
   - true fresh-machine Windows/macOS portability proof
-- current observed second-provider blocker on this host:
-  - `uv run pyocd-debug-brain run --provider claude-cli --model sonnet ...`
-    failed before any board action with
-    `API Error: 404 ... model: claude-sonnet-4-20250514`
-  - the Claude six-case pilot and full 12-case suite were therefore not run in
-    that pass
+- current official-pair second-provider gap:
+  - the STM32 Claude CLI path is proven on this host, but the official-pair
+    freeform + suite closure bar is still open
+  - the `--model sonnet` alias path that previously failed with
+    `API Error: 404 ... model: claude-sonnet-4-20250514` remains a known
+    alias-specific failure mode and should not be treated as the provider's
+    current global status
 - the Pass 1 `pyocd-debug` shell is implemented and green under the local
   non-hardware test/lint/typecheck ladder, but true provider-token streaming is
   still intentionally deferred to the next UX follow-up

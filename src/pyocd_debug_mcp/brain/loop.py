@@ -43,16 +43,18 @@ from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, pr
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
+from pyocd_debug_mcp.timeouts import (
+    TURNKEY_CONNECT_TIMEOUT_SECONDS,
+    TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+    TURNKEY_FLASH_TIMEOUT_SECONDS,
+    TURNKEY_RECOVER_TIMEOUT_SECONDS,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
-DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
-CONNECT_TIMEOUT_SECONDS = 60.0
-FLASH_TIMEOUT_SECONDS = 240.0
-RECOVER_TIMEOUT_SECONDS = 180.0
 
 
 class TurnkeyLoopError(RuntimeError):
@@ -613,14 +615,14 @@ async def _call_tool_with_timeout(
 
 def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:
     if tool_name == "connect":
-        return CONNECT_TIMEOUT_SECONDS
+        return TURNKEY_CONNECT_TIMEOUT_SECONDS
     if tool_name == "flash_firmware":
-        return FLASH_TIMEOUT_SECONDS
+        return TURNKEY_FLASH_TIMEOUT_SECONDS
     if tool_name == "unlock_recover":
-        return RECOVER_TIMEOUT_SECONDS
+        return TURNKEY_RECOVER_TIMEOUT_SECONDS
     if tool_name == "read_serial":
-        return max(DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0)
-    return DEFAULT_TOOL_TIMEOUT_SECONDS
+        return max(TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0)
+    return TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
 
 
 async def _execute_server_tool(
@@ -833,7 +835,7 @@ async def _execute_green_check(
         client,
         "flash_firmware",
         {"path": str(flash_artifact), "halt_after_reset": True},
-        timeout_seconds=FLASH_TIMEOUT_SECONDS,
+        timeout_seconds=TURNKEY_FLASH_TIMEOUT_SECONDS,
     )
     if flash_result.refusal_code or flash_result.blocked_code:
         state.last_result_text = flash_result.text
@@ -843,7 +845,7 @@ async def _execute_green_check(
         client,
         "read_core_register",
         {"name": "pc"},
-        timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
+        timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
     )
     if pc_result.refusal_code or pc_result.blocked_code:
         state.last_result_text = pc_result.text
@@ -863,7 +865,7 @@ async def _execute_green_check(
                 "address": f"0x{resolved_symbol.address:08X}",
                 "word_size": 32,
             },
-            timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
+            timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
         )
         if value_result.refusal_code or value_result.blocked_code:
             state.last_result_text = value_result.text
@@ -903,7 +905,10 @@ async def _execute_green_check(
         client,
         "read_serial",
         read_serial_args,
-        timeout_seconds=max(DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0),
+        timeout_seconds=max(
+            TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+            invocation.serial_read_seconds + 12.0,
+        ),
     )
     if serial_result.refusal_code or serial_result.blocked_code:
         state.last_result_text = serial_result.text
@@ -1577,7 +1582,7 @@ async def run_turnkey(
                         client,
                         "disconnect",
                         {},
-                        timeout_seconds=DEFAULT_TOOL_TIMEOUT_SECONDS,
+                        timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
                     )
                     state.register_disconnect()
                     await _record_brain_event(
