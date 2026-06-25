@@ -76,6 +76,11 @@ class UXRenderer:
                     self.render_raw_output(raw_output)
             return
 
+        if event.event_kind == "provider_progress":
+            stage = details.get("stage", "provider")
+            self.console.print(f"[cyan]provider[/cyan] [{stage}] {event.message}")
+            return
+
         if event.event_kind == "tool_complete":
             tool_name = details.get("tool_name", "(tool)")
             duration_ms = details.get("duration_ms")

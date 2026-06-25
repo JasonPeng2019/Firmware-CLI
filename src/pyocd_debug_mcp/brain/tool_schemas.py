@@ -12,6 +12,29 @@ from pyocd_debug_mcp.brain.mcp_client import ToolDescriptor
 
 _CURATED_TOOL_ORDER = cast(tuple[str, ...], get_args(AllowedServerToolName))
 _EMPTY_OBJECT_SCHEMA = {"type": "object", "additionalProperties": False}
+_COMMON_RESPONSE_SEMANTICS = (
+    "Expected policy denials are plain text: `Refused [<code>]: <message> session_id=<id>`.",
+    "Expected watcher blocks are plain text: `Blocked [<code>]: <message> session_id=<id>`.",
+    "Unexpected runtime/backend failures remain real tool errors rather than plain-text success/refusal output.",
+)
+_TOOL_RESPONSE_SEMANTICS: dict[str, tuple[str, ...]] = {
+    "connect": (
+        "Success text includes `session_id=...` so later log and guardrail output can be correlated to `runs/<session_id>/...`.",
+        "Normal success starts with `Connected to board ... via probe ... via ...`.",
+    ),
+    "disconnect": (
+        "Success text is `Disconnected.` when a session was active; repeated disconnects may return `Not connected.`.",
+    ),
+    "flash_firmware": (
+        "Normal success starts with `Flashed ... via ...; target left ...`.",
+    ),
+    "read_serial": (
+        "Healthy match text starts with `UART matched ...` and includes the matched excerpt.",
+    ),
+    "unlock_recover": (
+        "Successful supported recover starts with `Recover completed via ...`.",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -19,12 +42,14 @@ class ToolSchemaEntry:
     name: str
     description: str
     input_schema: dict[str, object]
+    response_semantics: tuple[str, ...] = ()
 
     def to_record(self) -> dict[str, object]:
         return {
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
+            "response_semantics": list(self.response_semantics),
         }
 
 
@@ -54,6 +79,7 @@ def build_tool_schema_bundle(tool_descriptors: tuple[ToolDescriptor, ...]) -> To
                 name=tool_name,
                 description=_normalize_description(tool_name, descriptor.description),
                 input_schema=_normalize_input_schema(descriptor.input_schema),
+                response_semantics=_TOOL_RESPONSE_SEMANTICS.get(tool_name, ()),
             )
         )
     rendered_text = _render_bundle(tuple(entries))
@@ -77,7 +103,8 @@ def _normalize_input_schema(input_schema: dict[str, object]) -> dict[str, object
 def _render_bundle(entries: tuple[ToolSchemaEntry, ...]) -> str:
     if not entries:
         return "Curated MCP tool surface:\n(no matching MCP tools were available)"
-    lines = ["Curated MCP tool surface:"]
+    lines = ["Curated MCP tool surface:", "Common response semantics:"]
+    lines.extend(f"- {line}" for line in _COMMON_RESPONSE_SEMANTICS)
     for entry in entries:
         lines.append(f"- {entry.name}")
         lines.append(f"  description: {entry.description}")
@@ -86,4 +113,7 @@ def _render_bundle(entries: tuple[ToolSchemaEntry, ...]) -> str:
             f"    {line}"
             for line in json.dumps(entry.input_schema, indent=2, sort_keys=True).splitlines()
         )
+        if entry.response_semantics:
+            lines.append("  response_semantics:")
+            lines.extend(f"    - {line}" for line in entry.response_semantics)
     return "\n".join(lines)

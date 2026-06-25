@@ -631,10 +631,18 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     kwargs = captured["kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["previous_response_id"] == "resp-prev"
+    assert kwargs["input"] == "prompt"
     assert turn.response_id == "resp-next"
     assert turn.session_state.native_handle is not None
     assert turn.session_state.native_handle.response_id == "resp-next"
     assert turn.provider_metadata["continuation_path"] == "native"
+    assert turn.provider_metadata["prompt_render_mode"] == "native-delta"
+    assert turn.provider_metadata["static_tool_schema_injected"] is False
+    assert turn.provider_metadata["decision_schema_injected"] is False
+    assert [update.stage for update in turn.progress_updates] == [
+        "provider_request",
+        "continuation",
+    ]
     assert provider.capabilities.supports_native_session is True
 
 

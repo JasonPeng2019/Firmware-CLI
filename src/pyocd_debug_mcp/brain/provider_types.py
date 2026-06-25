@@ -320,18 +320,37 @@ class ProviderPromptBundle:
     turn_context_text: str
     turn_decision_schema_text: str
 
-    def user_prompt_text(self, *, include_memory: bool = True) -> str:
+    def _join_user_sections(self, *sections: str) -> str:
+        return "\n\n".join(section for section in (part.strip() for part in sections) if section)
+
+    def render_bootstrap_text(self, *, include_memory: bool = True) -> str:
         sections = [self.tool_schema_text.strip()]
         if include_memory and self.provider_memory_text.strip():
             sections.append(self.provider_memory_text.strip())
         sections.append(self.turn_context_text.strip())
         sections.append(self.turn_decision_schema_text.strip())
-        return "\n\n".join(section for section in sections if section)
+        return self._join_user_sections(*sections)
+
+    def render_native_delta_text(self) -> str:
+        return self._join_user_sections(self.turn_context_text)
+
+    def render_native_sync_text(self, *, include_memory: bool = True) -> str:
+        return self.render_bootstrap_text(include_memory=include_memory)
+
+    def render_retry_text(self, correction_note: str) -> str:
+        return self._join_user_sections(
+            self.turn_context_text,
+            self.turn_decision_schema_text,
+            correction_note,
+        )
+
+    def user_prompt_text(self, *, include_memory: bool = True) -> str:
+        return self.render_bootstrap_text(include_memory=include_memory)
 
     def full_prompt_text(self, *, include_memory: bool = True) -> str:
         return (
             f"{self.system_instructions.strip()}\n\n"
-            f"{self.user_prompt_text(include_memory=include_memory).strip()}\n"
+            f"{self.render_bootstrap_text(include_memory=include_memory).strip()}\n"
         )
 
     def to_record(self) -> dict[str, object]:
@@ -357,6 +376,13 @@ class ProviderProgressUpdate:
     stage: str
     message: str
     details: dict[str, object] = field(default_factory=dict)
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "stage": self.stage,
+            "message": self.message,
+            "details": dict(self.details),
+        }
 
 
 @dataclass(frozen=True)
@@ -413,6 +439,7 @@ def provider_turn_record(provider_turn: ProviderTurn) -> dict[str, object]:
         "response_id": provider_turn.response_id,
         "provider_metadata": dict(provider_turn.provider_metadata),
         "session_state": provider_turn.session_state.summary_record(),
+        "progress_updates": [update.to_record() for update in provider_turn.progress_updates],
     }
 
 

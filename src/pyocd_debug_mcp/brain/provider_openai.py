@@ -17,6 +17,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderContinuationPath,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
+    ProviderProgressUpdate,
     ProviderPromptBundle,
     ProviderSessionState,
     ProviderTurn,
@@ -86,20 +87,80 @@ class OpenAIDecisionProvider:
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
         last_error: Exception | None = None
+        retry_count = 0
         previous_response_id = (
             session_state.native_handle.response_id
             if session_state.native_handle is not None
             else None
         )
+        has_local_memory = provider_has_local_memory(session_state)
         use_local_memory = False
+        native_sync_used = False
         continuation_path: ProviderContinuationPath = "native"
+        prompt_render_mode = "bootstrap/full"
         if previous_response_id is None:
-            use_local_memory = provider_has_local_memory(session_state)
+            use_local_memory = has_local_memory
             continuation_path = "local-memory-fallback" if use_local_memory else "native"
+            prompt_render_mode = "native-sync" if use_local_memory else "bootstrap/full"
         elif should_inject_native_memory_sync(session_state):
             use_local_memory = True
             continuation_path = "local-memory-fallback"
-        current_prompt = prompt_bundle.user_prompt_text(include_memory=use_local_memory)
+            native_sync_used = True
+            prompt_render_mode = "native-sync"
+        else:
+            prompt_render_mode = "native-delta"
+        if prompt_render_mode == "native-delta":
+            current_prompt = prompt_bundle.render_native_delta_text()
+        elif prompt_render_mode == "native-sync":
+            current_prompt = prompt_bundle.render_native_sync_text(include_memory=use_local_memory)
+        else:
+            current_prompt = prompt_bundle.render_bootstrap_text(include_memory=use_local_memory)
+        static_tool_schema_injected = prompt_render_mode != "native-delta"
+        decision_schema_injected = prompt_render_mode != "native-delta"
+        progress_updates: list[ProviderProgressUpdate] = [
+            ProviderProgressUpdate(
+                stage="provider_request",
+                message="Dispatching OpenAI Responses turn.",
+                details={
+                    "continuation_path": continuation_path,
+                    "prompt_render_mode": prompt_render_mode,
+                    "native_response_id_present": previous_response_id is not None,
+                    "memory_injected": use_local_memory,
+                },
+            )
+        ]
+        if native_sync_used:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="memory_sync",
+                    message="Injecting canonical local memory into the OpenAI native continuation turn.",
+                    details={"native_sync_every": session_state.native_sync_every},
+                )
+            )
+        elif previous_response_id is not None:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Using OpenAI native continuation with the prior response id.",
+                    details={"previous_response_id": previous_response_id},
+                )
+            )
+        elif use_local_memory:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Native continuation handle is missing; falling back to canonical local memory.",
+                    details={"memory_available": has_local_memory},
+                )
+            )
+        else:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Starting a new native OpenAI turn with the bootstrap prompt.",
+                    details={},
+                )
+            )
         response_format = {
             "type": "json_schema",
             "name": "turn_decision",
@@ -123,9 +184,16 @@ class OpenAIDecisionProvider:
                 decision = parse_turn_decision_json(output_text)
             except Exception as exc:  # noqa: BLE001 - preserve structured parse failures
                 last_error = exc
-                current_prompt = (
-                    f"{prompt_bundle.user_prompt_text(include_memory=use_local_memory)}\n\n"
+                retry_count += 1
+                current_prompt = prompt_bundle.render_retry_text(
                     "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                )
+                progress_updates.append(
+                    ProviderProgressUpdate(
+                        stage="provider_retry",
+                        message="OpenAI returned invalid structured output; retrying with a schema-correction prompt.",
+                        details={"retry_count": retry_count},
+                    )
                 )
                 continue
             response_id = getattr(response, "id", None)
@@ -143,15 +211,24 @@ class OpenAIDecisionProvider:
                         "native_response_id_present": response_id is not None,
                         "native_session_used": bool(previous_response_id),
                         "memory_injected": use_local_memory,
-                        "native_sync_used": use_local_memory and previous_response_id is not None,
+                        "native_sync_used": native_sync_used,
+                        "prompt_render_mode": prompt_render_mode,
+                        "static_tool_schema_injected": static_tool_schema_injected,
+                        "decision_schema_injected": decision_schema_injected,
+                        "retry_count": retry_count,
                     },
                 ),
                 provider_metadata={
                     "continuation_mode": self.capabilities.continuation_mode,
                     "continuation_path": continuation_path,
                     "memory_injected": use_local_memory,
-                    "native_sync_used": use_local_memory and previous_response_id is not None,
+                    "native_sync_used": native_sync_used,
+                    "prompt_render_mode": prompt_render_mode,
+                    "static_tool_schema_injected": static_tool_schema_injected,
+                    "decision_schema_injected": decision_schema_injected,
+                    "retry_count": retry_count,
                 },
+                progress_updates=tuple(progress_updates),
             )
 
         raise ProviderResponseError(

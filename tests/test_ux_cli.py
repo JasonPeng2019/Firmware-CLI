@@ -191,6 +191,29 @@ def test_renderer_non_tty_fallback_prints_status_lines() -> None:
     assert "provider is thinking" in stream.getvalue()
 
 
+def test_renderer_prints_provider_progress_events() -> None:
+    stream = io.StringIO()
+    renderer = UXRenderer(console=Console(file=stream, force_terminal=False, color_system=None))
+    renderer.emit(
+        BrainEvent(
+            event_kind="provider_progress",
+            timestamp="2026-06-25T00:00:00Z",
+            board_id="nrf52833dk",
+            iteration=1,
+            session_id="20260625T000000Z-aaaa1111",
+            provider="openai-api",
+            model="gpt-test",
+            message="Using OpenAI native continuation with the prior response id.",
+            details={"stage": "continuation"},
+        )
+    )
+
+    output = stream.getvalue()
+    assert "provider" in output
+    assert "continuation" in output
+    assert "prior response id" in output
+
+
 def test_operator_cli_without_args_launches_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     launched: dict[str, bool] = {"called": False}
 

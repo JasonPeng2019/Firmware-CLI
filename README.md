@@ -34,7 +34,7 @@ brain/runtime:
 - operator-facing `pyocd-debug` CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
-- live MCP tool-schema prompting sourced from the local server metadata
+- live MCP tool-schema prompting sourced from the local server metadata plus a curated response-semantics overlay
 
 The current live status is:
 
@@ -74,6 +74,8 @@ The current live status is:
     model without pretending they have durable remote sessions
   - deterministic compaction is the default; `model-summary` compaction is
     available as an explicit option
+  - coarse provider progress checkpoints are now emitted as first-class brain
+    events for runtime/UX inspection
 
 For the current prototype branch plan, second-provider parity and true
 fresh-machine Windows/macOS portability are explicit deferred risks, not the

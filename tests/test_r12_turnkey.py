@@ -15,6 +15,7 @@ from pyocd_debug_mcp import benchmark_support as r11
 from pyocd_debug_mcp import reference_smoke
 from pyocd_debug_mcp.brain import app as brain_app
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
+from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain.actions import (
     FinalizeAction,
     ServerToolAction,
@@ -27,10 +28,11 @@ from pyocd_debug_mcp.brain.config import (
     BrainProviderConfig,
     BrainConfigError,
     build_turnkey_invocation,
+    load_provider_config,
     resolve_memory_mode,
     resolve_native_sync_every,
-    load_provider_config,
 )
+from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey, run_turnkey_with_provider
 from pyocd_debug_mcp.brain.mcp_client import MCPClientError, ToolDescriptor, ToolTextResult
 from pyocd_debug_mcp.brain.provider_claude_cli import (
@@ -46,6 +48,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
+    ProviderProgressUpdate,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
@@ -55,6 +58,7 @@ from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.tool_schemas import build_tool_schema_bundle
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
 from pyocd_debug_mcp.timeouts import (
+    TurnkeyTimeoutConfig,
     TURNKEY_CONNECT_TIMEOUT_SECONDS,
     TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
     TURNKEY_FLASH_TIMEOUT_SECONDS,
@@ -283,6 +287,25 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
     assert record["memory_summary"]["source"] == "deterministic"
 
 
+def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> None:
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    assert bundle.render_bootstrap_text(include_memory=True) == (
+        "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+    )
+    assert bundle.render_native_delta_text() == "turn context"
+    assert bundle.render_native_sync_text(include_memory=True) == (
+        "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+    )
+    assert bundle.render_retry_text("retry now") == "turn context\n\ndecision schema\n\nretry now"
+
+
 def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
     bundle = build_tool_schema_bundle(
         (
@@ -306,6 +329,9 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
 
     assert [entry.name for entry in bundle.entries] == ["connect", "read_serial"]
     assert "debug_internal_only" not in bundle.rendered_text
+    assert "Refused [<code>]: <message> session_id=<id>" in bundle.rendered_text
+    assert "Blocked [<code>]: <message> session_id=<id>" in bundle.rendered_text
+    assert "Success text includes `session_id=...`" in bundle.rendered_text
     assert bundle.schema_hash
 
 
@@ -666,6 +692,154 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
     assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
     assert "provider exploded" in execution.result.summary
+
+
+def test_run_turnkey_forwards_provider_progress_updates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class ProgressProvider:
+        @property
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                supports_native_session=False,
+                supports_transcript_continuation=True,
+                supports_response_id_continuation=False,
+                supports_tool_schema_prompt=True,
+                continuation_mode="transcript-only",
+            )
+
+        async def next_decision(
+            self,
+            *,
+            prompt_bundle: ProviderPromptBundle,
+            session_state: ProviderSessionState,
+        ) -> ProviderTurn:
+            return ProviderTurn(
+                decision=TurnDecision(
+                    observation_summary="Healthy baseline confirmed.",
+                    classification="healthy",
+                    action=FinalizeAction(
+                        final_status="diagnosed_only",
+                        classification="healthy",
+                        root_cause="No fault found.",
+                        summary="Healthy baseline confirmed.",
+                    ),
+                ),
+                output_text="{}",
+                response_id="resp-progress",
+                session_state=session_state.with_last_continuation_path("transcript-memory"),
+                provider_metadata={"continuation_path": "transcript-memory"},
+                progress_updates=(
+                    ProviderProgressUpdate(
+                        stage="provider_request",
+                        message="Dispatching fake provider request.",
+                    ),
+                ),
+            )
+
+        async def summarize_memory(
+            self,
+            *,
+            session_state: ProviderSessionState,
+            prior_summary_text: str,
+            evicted_entries: tuple[ProviderMemoryEntry, ...],
+        ) -> ProviderMemorySummaryResult:
+            return ProviderMemorySummaryResult(summary_text=prior_summary_text or "- summary")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify this reference firmware is healthy.",
+        model=None,
+        max_iters=1,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, ProgressProvider()),
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    event_kinds = [record["event_kind"] for record in execution.brain_events]
+    assert "provider_progress" in event_kinds
+
+
+def test_run_turnkey_uses_invocation_default_timeout_for_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    captured_disconnect_timeouts: list[float] = []
+    original_call_tool = loop_mod._call_tool_with_timeout
+
+    async def _wrapped_call_tool(client: Any, tool_name: str, arguments: dict[str, object], *, timeout_seconds: float) -> ToolTextResult:
+        if tool_name == "disconnect":
+            captured_disconnect_timeouts.append(timeout_seconds)
+        return await original_call_tool(client, tool_name, arguments, timeout_seconds=timeout_seconds)
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop._call_tool_with_timeout", _wrapped_call_tool)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify this reference firmware is healthy.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+        timeout_config=replace(TurnkeyTimeoutConfig(), default_tool_seconds=17.0),
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to connect first.",
+                classification="healthy",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Connected and healthy.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="No fault found.",
+                    summary="Healthy baseline confirmed.",
+                ),
+            ),
+        ]
+    )
+
+    anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(
+                Any,
+                lambda: FakeClient(
+                    {
+                        "connect": [
+                            ToolTextResult(
+                                tool_name="connect",
+                                text=(
+                                    "Connected to board 'NUCLEO-L476RG' via probe "
+                                    "0668FF514988525067213913 via pyocd-native. "
+                                    "[board config: nucleo_l476rg] session_id=20260625T000000Z-timeout"
+                                ),
+                            )
+                        ],
+                        "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+                    }
+                ),
+            ),
+        )
+    )
+
+    assert captured_disconnect_timeouts == [17.0]
 
 
 def test_run_turnkey_returns_structured_tooling_failure_for_mcp_startup_errors(
@@ -1753,6 +1927,70 @@ def test_turnkey_cli_uses_higher_default_iteration_budget_for_benchmarks() -> No
     args = build_turnkey_cli_parser().parse_args(["benchmark", "--case-id", "nrf52833dk__b003_silent_uart"])
 
     assert args.max_iters == 18
+
+
+def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
+    args = r12_benchmark.build_parser().parse_args(
+        [
+            "case",
+            "--case-id",
+            "nrf52833dk__k001_reference_green",
+            "--timeout-config-json",
+            "{\"default_tool_seconds\": 19.0}",
+            "--timeout-proposal-json",
+            "{\"provider_seconds\": 120.0}",
+            "--iteration-estimate-json",
+            "{\"requested_max_iterations\": 6}",
+        ]
+    )
+
+    assert args.timeout_config_json == "{\"default_tool_seconds\": 19.0}"
+    assert args.timeout_proposal_json == "{\"provider_seconds\": 120.0}"
+    assert args.iteration_estimate_json == "{\"requested_max_iterations\": 6}"
+
+
+def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        r12_benchmark,
+        "load_provider_config",
+        lambda model, provider: BrainProviderConfig(provider="codex-cli", model=model),
+    )
+
+    def _fake_run_case(case_id: str, **kwargs: object) -> SimpleNamespace:
+        captured["case_id"] = case_id
+        captured.update(kwargs)
+        return SimpleNamespace(
+            score_report=SimpleNamespace(outcome_label="full_success", score=100),
+            case_id=case_id,
+            session_id="sess-1",
+        )
+
+    monkeypatch.setattr(r12_benchmark, "run_case", _fake_run_case)
+    monkeypatch.setattr(r11, "print_case_summary", lambda _report: None)
+
+    exit_code = r12_benchmark.main(
+        [
+            "case",
+            "--case-id",
+            "nrf52833dk__k001_reference_green",
+            "--timeout-config-json",
+            "{\"default_tool_seconds\": 19.0}",
+            "--timeout-proposal-json",
+            "{\"provider_seconds\": 120.0}",
+            "--iteration-estimate-json",
+            "{\"requested_max_iterations\": 6}",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["case_id"] == "nrf52833dk__k001_reference_green"
+    timeout_config = captured["timeout_config"]
+    assert isinstance(timeout_config, TurnkeyTimeoutConfig)
+    assert timeout_config.default_tool_seconds == 19.0
+    assert captured["timeout_proposal"] == TimeoutProposal(provider_seconds=120.0)
+    assert captured["iteration_estimate"] == IterationEstimate(requested_max_iterations=6)
 
 
 def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path) -> None:

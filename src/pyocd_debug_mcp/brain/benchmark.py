@@ -12,7 +12,14 @@ import anyio
 
 from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain.actions import TurnkeyRunResult
+from pyocd_debug_mcp.brain.cli_parsing import (
+    add_planning_hook_arguments,
+    parse_iteration_estimate_json,
+    parse_timeout_config_json,
+    parse_timeout_proposal_json,
+)
 from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
     TurnkeyMemoryMode,
     TurnkeyProviderKind,
     build_turnkey_invocation,
@@ -527,6 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
+    add_planning_hook_arguments(case_parser)
 
     suite_parser = subparsers.add_parser("suite", help="Run a named turnkey benchmark suite.")
     suite_parser.add_argument("--suite", required=True)
@@ -540,37 +548,51 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
+    add_planning_hook_arguments(suite_parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    provider_config = load_provider_config(args.model, getattr(args, "provider", None))
-    model = provider_config.model
-    provider = provider_config.provider
-    if args.mode == "case":
-        report = run_case(
-            args.case_id,
+    try:
+        timeout_config = parse_timeout_config_json(args.timeout_config_json)
+        timeout_proposal = parse_timeout_proposal_json(args.timeout_proposal_json)
+        iteration_estimate = parse_iteration_estimate_json(args.iteration_estimate_json)
+        provider_config = load_provider_config(args.model, getattr(args, "provider", None))
+        model = provider_config.model
+        provider = provider_config.provider
+        if args.mode == "case":
+            report = run_case(
+                args.case_id,
+                provider=provider,
+                model=model,
+                max_iters=args.max_iters,
+                memory_mode=args.memory_mode,
+                native_sync_every=args.native_sync_every,
+                serial_read_seconds=args.serial_read_seconds,
+                timeout_config=timeout_config,
+                timeout_proposal=timeout_proposal,
+                iteration_estimate=iteration_estimate,
+            )
+            benchmark_support.print_case_summary(report)
+            return 0 if report.score_report.outcome_label == "full_success" else 1
+
+        reports = run_suite(
+            args.suite,
             provider=provider,
             model=model,
             max_iters=args.max_iters,
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
             serial_read_seconds=args.serial_read_seconds,
+            timeout_config=timeout_config,
+            timeout_proposal=timeout_proposal,
+            iteration_estimate=iteration_estimate,
         )
-        benchmark_support.print_case_summary(report)
-        return 0 if report.score_report.outcome_label == "full_success" else 1
-
-    reports = run_suite(
-        args.suite,
-        provider=provider,
-        model=model,
-        max_iters=args.max_iters,
-        memory_mode=args.memory_mode,
-        native_sync_every=args.native_sync_every,
-        serial_read_seconds=args.serial_read_seconds,
-    )
-    for report in reports:
-        benchmark_support.print_case_summary(report)
-    benchmark_support.print_suite_summary(args.suite, reports)
-    return 0 if _suite_acceptance(args.suite, reports) else 1
+        for report in reports:
+            benchmark_support.print_case_summary(report)
+        benchmark_support.print_suite_summary(args.suite, reports)
+        return 0 if _suite_acceptance(args.suite, reports) else 1
+    except BrainConfigError as exc:
+        print(str(exc))
+        return 2
