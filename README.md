@@ -19,12 +19,14 @@ The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
 12-case Codex benchmark corpus. `R12` is now implemented in the repo as a
-turnkey product layer with one live-proven provider path and one still-open
-provider proof gap:
+turnkey product layer with one live-proven provider path, one still-open
+provider proof gap, and a new additive Pass 1 operator shell over the same
+brain/runtime:
 
 - native Python brain package
 - multi-provider decision backends
-- turnkey CLI
+- stable headless turnkey CLI
+- operator-facing `pyocd-debug` CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
 
@@ -35,9 +37,22 @@ The current live status is:
   `full_success=12`, `partial_success=0`, `fail=0`, `average_score=100.0`
 - the normal turnkey path worked from `connect(board_id=...)` with no
   hard-coded probe UID or serial-port override
+- the new `pyocd-debug` shell is now implemented on top of the same shared
+  turnkey loop with:
+  - structured brain events
+  - live tool/progress rendering
+  - evidence summaries
+  - history/show/rerun flows
+  - raw-provider-output visibility after completed turns
 - `claude-cli --model sonnet` is still failing on this host before any board
   interaction with:
   `API Error: 404 ... model: claude-sonnet-4-20250514`
+- the turnkey/runtime surface is now product-owned rather than test-owned:
+  - shared Stage 1 and benchmark helpers live under `src/pyocd_debug_mcp/`
+  - packaged installs bundle the benchmark cases, skill manifests, and
+    turnkey playbooks the runtime depends on
+  - provider/runtime failures now persist inspectable turnkey run artifacts
+    even when no board session is ever created
 
 So `R12` remains open, but only because the required second-provider proof is
 not yet green on this machine.
@@ -60,6 +75,7 @@ Today that means:
 - a shared Stage 1 smoke harness
 - a tracked Codex benchmark corpus and benchmark runner
 - a Codex-proven turnkey brain and turnkey benchmark path over the same corpus
+- an implemented Pass 1 operator-facing UX shell over the same brain
 - an open second-provider validation gap for Claude CLI on this host
 
 The official scoped board pair for the real Phase A / Phase B bench path is
@@ -113,6 +129,8 @@ Firmware-CLI/
 |   |-- README.md
 |   |-- common/
 |   `-- mcu_families/
+|-- playbooks/
+|   `-- turnkey/
 |-- tests/
 |   |-- README.md
 |   |-- fixtures/
@@ -136,11 +154,15 @@ Firmware-CLI/
 |       |   `-- recover_gate.py
 |       |-- brain/
 |       |   |-- actions.py
+|       |   |-- app.py
 |       |   |-- benchmark.py
 |       |   |-- cli.py
 |       |   |-- config.py
+|       |   |-- evidence.py
+|       |   |-- events.py
 |       |   |-- loop.py
 |       |   |-- mcp_client.py
+|       |   |-- playbooks.py
 |       |   |-- provider_anthropic.py
 |       |   |-- provider_claude_cli.py
 |       |   |-- provider_codex_cli.py
@@ -151,6 +173,13 @@ Firmware-CLI/
 |       |   |-- skills.py
 |       |   |-- state.py
 |       |   `-- workspace.py
+|       |-- ux/
+|       |   |-- artifacts.py
+|       |   |-- cli.py
+|       |   |-- commands.py
+|       |   |-- history.py
+|       |   |-- renderer.py
+|       |   `-- shell.py
 |       |-- services/
 |       |   |-- convergence_watcher.py
 |       |   |-- session_runtime.py
@@ -160,12 +189,16 @@ Firmware-CLI/
 |       |-- __init__.py
 |       |-- board_config.py
 |       |-- board_config_cli.py
+|       |-- benchmark_support.py
 |       |-- local_env.py
 |       |-- pack_index_repair.py
 |       |-- probe_inventory.py
 |       |-- reference_artifacts.py
+|       |-- reference_smoke.py
+|       |-- runtime_resources.py
 |       |-- serial_resolver.py
 |       |-- server.py
+|       |-- timeouts.py
 |       |-- zephyr_build.py
 |       `-- target_errors.py
 |-- scratch/
@@ -177,10 +210,12 @@ Firmware-CLI/
     |-- current-progress.md
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
-    |   |-- r10_contract.md
-    |   |-- r11_benchmark_spec.md
-    |   `-- r12_turnkey_spec.md
-    `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
+    |   |-- p0_foundation_spec.md
+    |   |-- p0_foundation_process.md
+    |   |-- p0-foundation_review.md
+    |   |-- r12_turnkey_spec.md
+    |   `-- things-to-change.md
+    `-- tmp/                  # historical slice docs and retired step-scoped notes
 ```
 
 ## Naming Rules
@@ -317,6 +352,15 @@ uv run python host_bootstrap.py --board-id nrf52833dk
 uv run python stage0_check.py --board-id nrf52833dk
 ```
 
+Board-scoped `host_bootstrap.py --board-id ...` behavior:
+
+- it now requires a unique matching probe for each selected board
+- it now attempts board-specific serial resolution for each selected board
+- on success it prints the matched probe UID/description and the matched serial
+  port
+- if serial matching is still ambiguous, it warns with rerun guidance using
+  `--port BOARD_ID=PORT`
+
 Run the turnkey CLI in freeform verify/diagnose mode:
 
 ```bash
@@ -324,6 +368,31 @@ uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 ```
+
+Run the operator-facing CLI over the same turnkey brain:
+
+```bash
+uv run pyocd-debug
+uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
+uv run pyocd-debug history
+```
+
+Operator-shell note:
+
+- `pyocd-debug` uses the Rich + `prompt_toolkit` shell in a real TTY and
+  falls back to plain non-live printing when stdout is not interactive
+- the REPL now defaults to summary-first output; use `/raw on` to show full
+  completed provider turns live
+- generic freeform `run --task "fix ..."` is now diagnose-first and no
+  longer pre-refuses based only on wording
+- explicit `/repair` still requires `/workspace` and `/build-command`, and
+  freeform repair context is constrained by workspace containment rather than a
+  hardcoded `src/` root
+- the REPL now supports persistent repair/artifact context and guided commands:
+  - `/workspace`, `/build-command`, `/flash-artifact`, `/elf`
+  - `/verify`, `/diagnose`, `/repair`
+  - `/prompt`, `/diff`, `/serial`, `/score`, `/events`
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
 
@@ -435,8 +504,10 @@ Current limitation:
 - Official Nordic runbook: [firmware/nrf52833dk/README.md](./firmware/nrf52833dk/README.md)
 - Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
-- `R10` contract: [markdowns/curr/r10_contract.md](./markdowns/curr/r10_contract.md)
-- `R11` benchmark contract: [markdowns/curr/r11_benchmark_spec.md](./markdowns/curr/r11_benchmark_spec.md)
+- Active P0 foundation spec: [markdowns/curr/p0_foundation_spec.md](./markdowns/curr/p0_foundation_spec.md)
+- Active P0 process ledger: [markdowns/curr/p0_foundation_process.md](./markdowns/curr/p0_foundation_process.md)
+- Historical `R10` contract: [markdowns/tmp/r10_contract.md](./markdowns/tmp/r10_contract.md)
+- Historical `R11` benchmark contract: [markdowns/tmp/r11_benchmark_spec.md](./markdowns/tmp/r11_benchmark_spec.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)
@@ -450,6 +521,12 @@ Verified:
 
 - non-hardware verification: this document's tree, command surface, and doc
   links match the current root-level scripts and docs
+- latest clean-slate rerun on the macOS mixed-board host re-proved:
+  - both scoped-board probes visible together
+  - strict `host_bootstrap.py --board-id ...` success for both scoped boards,
+    including matched probe UID + matched serial-port reporting
+  - STM32 Stage 0 + Stage 1 smoke
+  - Nordic Stage 0 + recover + Stage 1 smoke
 - hardware-backed STM32 proof on this Mac host: `nucleo_l476rg` now passes
   Stage 0 connect, flash, and UART through the shared target-control services
 - the STM32 bench truth is fully closed in repo status, including the confirmed
@@ -513,6 +590,9 @@ Verified:
 - the first `R12` code path now exists in the repo:
   `src/pyocd_debug_mcp/brain/`, `skills/`, `pyocd-debug-brain`, and
   `tests/harness/r12_turnkey_benchmark.py`
+- the first Pass 1 UX-layer code path now also exists in the repo:
+  `src/pyocd_debug_mcp/ux/`, `src/pyocd_debug_mcp/brain/events.py`, and
+  `pyocd-debug`
 - the turnkey layer no longer depends on Codex CLI or MCP registration:
   it launches the local MCP server as a subprocess and talks to it directly
 - the turnkey benchmark path reuses the frozen `pilot_v1_plus_b003_b004`
@@ -527,7 +607,7 @@ Latest turnkey verification:
 - the retained alternate Nordic profile `nrf52840dk` is now live-proven on
   this Windows host for Zephyr rebuild, Stage 0, Stage 1, and a full six-case
   alternate `R11` suite (`k001`, `b001`, `b002`, `f001`, `b003`, `b004`)
-- `markdowns/curr/r10_contract.md` is live-backed by the scoped bench proof
+- `markdowns/tmp/r10_contract.md` is live-backed by the scoped bench proof
 
 - `R12` is now live-proven through the full frozen 12-case corpus with the
   `codex-cli` provider on `nrf52833dk + nucleo_l476rg`:
@@ -545,5 +625,8 @@ Latest turnkey verification:
     `API Error: 404 ... model: claude-sonnet-4-20250514`
   - the Claude six-case pilot and full 12-case suite were therefore not run in
     this pass
+- the Pass 1 `pyocd-debug` shell is implemented and green under the local
+  non-hardware test/lint/typecheck ladder, but true provider-token streaming is
+  still intentionally deferred to the next UX follow-up
 - the broader self-contained no-`NCS` portability claim still needs true fresh
   Windows and macOS host validation

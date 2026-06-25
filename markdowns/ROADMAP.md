@@ -8,11 +8,11 @@
 > BYO-agent benchmark milestone. Read those sections as history, not as pending work. For
 > live status see `current-progress.md`; for the file map see `repo_file_index.md`.
 >
-> **Current post-fix proof boundary:** the latest STM32 Windows rerun has
-> re-proved the `R11` path and unblocked `R12` on STM32. The remaining proof
-> gaps are narrower and live in `current-progress.md`: re-run Nordic in the
-> current post-fix state, plus true fresh-machine Windows/macOS managed
-> Zephyr/no-NCS deployment validation.
+> **Current proof boundary:** the Codex-backed `R12` turnkey path is now
+> live-proven on the scoped pair through the full frozen 12-case corpus. The
+> remaining proof gaps are narrower and live in `current-progress.md`: the
+> required second-provider closure bar, plus true fresh-machine Windows/macOS
+> managed-Zephyr/no-NCS deployment validation.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
@@ -1423,7 +1423,18 @@ Simple branch schedule:
   - self-diagnose with extensive tests
   - validate against the real scoped STM32 and Nordic boards
 - serial next: `P0` foundation shared shapes and hook points
+  - completed on the merged trunk via:
+    - `markdowns/curr/p0_foundation_spec.md`
+    - `markdowns/curr/p0_foundation_process.md`
+  - deliverables:
+    - `brain/decision_types.py`
+    - expanded `brain/provider_types.py`
+    - shared turnkey timeout config/update shapes in `timeouts.py`
+    - minimal `brain/client_actions.py`
+    - compatibility-preserving hook points in `brain/actions.py`,
+      `brain/loop.py`, and `brain/cli.py`
 - parallel Wave 1:
+  - this is now the next implementation frontier
   - Branch A: provider session + tool schema prompt
   - Branch B: action boundary + batches + client actions
   - Branch C: event spine + timeout policy

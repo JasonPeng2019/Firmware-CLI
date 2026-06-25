@@ -181,14 +181,22 @@ system software / modifying user PATH (Windows).**
 ### `host_bootstrap.py` — non-destructive host readiness check
 
 Checks that the machine can run the canonical Python env, enumerate probes and serial ports, load board
-configs, and see the required pyOCD targets. **Does not flash, mass-erase, unlock, or open a long-lived
+configs, and see the required pyOCD targets. With `--board-id`, it now also
+requires a unique matching probe per selected board and a board-specific serial
+resolution result before it reports that the selected board is ready to start
+`stage0_check.py`. **Does not flash, mass-erase, unlock, or open a long-lived
 session.** Safe to rerun.
 
 - Operator-facing flags: `--board-id` (scope); `--install-missing` (reconcile the env with
   `uv sync --locked` if Python deps are missing); `--install-packs` (install missing target packs);
   `--board-config PATH` (extra board file).
-- Ready signal: `Host prerequisites and board-target support are ready for stage0_check.py` and exit `0`.
-  Exit `1` = a required check failed; exit `2` = CLI usage error.
+- Ready signal without `--board-id`: `Host prerequisites and board-target support are ready for stage0_check.py`
+  and exit `0`.
+- Ready signal with `--board-id`: `Selected board attachment and host prerequisites are ready for stage0_check.py`
+  and exit `0`, after printing the matched probe UID/description and the matched serial port for each
+  selected board.
+- Exit `1` = a required check failed or the selected board is not uniquely ready yet; exit `2` = CLI
+  usage error.
 
 ### `stage0_check.py` — board-level Stage 0 validation
 

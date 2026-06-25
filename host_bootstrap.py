@@ -2,15 +2,18 @@
 """
 Host-level readiness checks that should run before board-level Stage 0 validation.
 
-This script does not claim a board works. It only checks whether the host can:
+This script does not claim a board fully works. It only checks whether the host can:
 - run pyOCD
 - enumerate probes
 - enumerate serial ports
 - load board configs
 - check/install target packs referenced by board configs
 
-It may optionally reconcile the canonical Python environment and install missing pyOCD packs.
-It does not install OS drivers or vendor probe software.
+With `--board-id`, it also checks whether the selected board's matching probe and
+serial endpoint are visible enough to start `stage0_check.py`.
+
+It may optionally reconcile the canonical Python environment and install missing
+pyOCD packs. It does not install OS drivers or vendor probe software.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
@@ -40,8 +44,18 @@ from pyocd_debug_mcp.pack_provision import (  # noqa: E402
     discover_local_packs,
     ensure_all,
 )
-from pyocd_debug_mcp.probe_inventory import list_connected_probes  # noqa: E402
-from pyocd_debug_mcp.serial_resolver import command_exists  # noqa: E402
+from pyocd_debug_mcp.probe_inventory import (  # noqa: E402
+    list_connected_probes,
+    ProbeResolution,
+    resolve_probe_for_board,
+)
+from pyocd_debug_mcp.serial_resolver import (  # noqa: E402
+    SerialPortInfo,
+    SerialResolution,
+    command_exists,
+    list_serial_ports,
+    resolve_serial_port,
+)
 from pyocd_debug_mcp.timeouts import (  # noqa: E402
     DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
     SETUP_COMMAND_TIMEOUT_SECONDS,
@@ -90,6 +104,16 @@ DEPENDENCIES = (
         reason="required to auto-load repo-local .env defaults",
     ),
 )
+
+
+@dataclass(frozen=True)
+class BoardAttachmentStatus:
+    board: BoardConfig
+    probe_status: str
+    probe_message: str
+    serial_status: str
+    serial_message: str
+    ready: bool
 
 
 def run(
@@ -185,21 +209,6 @@ def dependency_summary(require_yaml: bool, install_missing: bool) -> dict[str, b
     return results
 
 
-def load_pyserial():
-    try:
-        from serial.tools import list_ports
-    except ImportError:
-        return None
-    return list_ports
-
-
-def list_serial_ports() -> list[str] | None:
-    list_ports = load_pyserial()
-    if list_ports is None:
-        return None
-    return [port.device for port in list_ports.comports()]
-
-
 def serial_summary(pyserial_ok: bool) -> int | None:
     header("Serial ports")
     if not pyserial_ok:
@@ -216,7 +225,7 @@ def serial_summary(pyserial_ok: bool) -> int | None:
 
     log(PASS, f"Detected {len(ports)} serial port(s)")
     for port in ports:
-        print(f"    - {port}")
+        print(f"    - {port.device}")
     return len(ports)
 
 
@@ -374,6 +383,123 @@ def vendor_serial_tool_summary(boards: list[BoardConfig]):
             )
 
 
+def _serial_status_from_resolution(resolution: SerialResolution) -> str:
+    if resolution.port is not None:
+        return PASS
+    if resolution.note.startswith("multiple matching serial ports found"):
+        return WARN
+    return FAIL
+
+
+def _format_probe_message(board: BoardConfig, resolution: ProbeResolution) -> tuple[str, str]:
+    if resolution.probe is None:
+        return FAIL, f"{board.board_id}: {resolution.note}"
+    note = f" ({resolution.note})" if resolution.note else ""
+    return (
+        PASS,
+        f"{board.board_id}: matched probe {resolution.probe.uid} :: {resolution.probe.description}{note}",
+    )
+
+
+def _format_serial_message(board: BoardConfig, resolution: SerialResolution) -> tuple[str, str]:
+    if resolution.port is not None:
+        note = f" ({resolution.note})" if resolution.note else ""
+        return PASS, f"{board.board_id}: matched serial port {resolution.port.device}{note}"
+    return _serial_status_from_resolution(resolution), f"{board.board_id}: {resolution.note}"
+
+
+def assess_board_attachment_statuses(
+    boards: list[BoardConfig],
+    *,
+    pyserial_ok: bool,
+    run_cmd: Callable[[list[str]], tuple[int, str, str]],
+) -> tuple[BoardAttachmentStatus, ...]:
+    ports: list[SerialPortInfo] | None
+    if not pyserial_ok:
+        ports = None
+    else:
+        ports = list_serial_ports()
+
+    statuses: list[BoardAttachmentStatus] = []
+    for board in boards:
+        probe_resolution = resolve_probe_for_board(
+            board,
+            run_cmd=run_cmd,
+            allow_single_fallback=True,
+        )
+        probe_status, probe_message = _format_probe_message(board, probe_resolution)
+
+        if probe_resolution.probe is None:
+            statuses.append(
+                BoardAttachmentStatus(
+                    board=board,
+                    probe_status=probe_status,
+                    probe_message=probe_message,
+                    serial_status=INFO,
+                    serial_message=f"{board.board_id}: serial check skipped until a matching probe is resolved",
+                    ready=False,
+                )
+            )
+            continue
+
+        if not pyserial_ok:
+            serial_resolution = SerialResolution(
+                None, "pyserial missing - cannot resolve board-specific serial ports"
+            )
+        elif ports is None:
+            serial_resolution = SerialResolution(
+                None, "pyserial import failed during serial enumeration"
+            )
+        elif not ports:
+            serial_resolution = SerialResolution(None, "no serial ports detected")
+        else:
+            serial_resolution = resolve_serial_port(
+                board,
+                ports,
+                probe_resolution.probe,
+                override=None,
+                allow_single_fallback=False,
+                run_cmd=run_cmd,
+                interactive=False,
+            )
+
+        serial_status, serial_message = _format_serial_message(board, serial_resolution)
+        statuses.append(
+            BoardAttachmentStatus(
+                board=board,
+                probe_status=probe_status,
+                probe_message=probe_message,
+                serial_status=serial_status,
+                serial_message=serial_message,
+                ready=probe_status == PASS and serial_status == PASS,
+            )
+        )
+
+    return tuple(statuses)
+
+
+def board_attachment_summary(
+    boards: list[BoardConfig],
+    *,
+    pyserial_ok: bool,
+    run_cmd: Callable[[list[str]], tuple[int, str, str]],
+) -> bool:
+    header("Selected-board attachment readiness")
+    if not boards:
+        log(WARN, "No board configs selected - skipping board attachment checks")
+        return False
+
+    statuses = assess_board_attachment_statuses(
+        boards,
+        pyserial_ok=pyserial_ok,
+        run_cmd=run_cmd,
+    )
+    for status in statuses:
+        log(status.probe_status, status.probe_message)
+        log(status.serial_status, status.serial_message)
+    return all(status.ready for status in statuses)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Host bootstrap before Stage 0 board checks")
     parser.add_argument(
@@ -406,9 +532,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     board_config_dir = Path(args.board_config_dir).expanduser().resolve()
     extra_paths = [Path(raw_path).expanduser().resolve() for raw_path in args.board_config]
@@ -442,8 +568,16 @@ def main():
     board_config_summary(boards)
     pack_results = target_pack_summary(boards, pyocd_ok=pyocd_ok, install_packs=args.install_packs)
     vendor_serial_tool_summary(boards)
+    selected_board_ids = [board_id.strip().lower() for board_id in args.board_id if board_id.strip()]
+    board_attachment_ready: bool | None = None
+    if selected_board_ids:
+        board_attachment_ready = board_attachment_summary(
+            boards,
+            pyserial_ok=pyserial_ok,
+            run_cmd=run,
+        )
     packs_ready = bool(boards) and all(pack_results.get(board.board_id, False) for board in boards)
-    host_ready = (
+    host_prereqs_ready = (
         pyocd_ok
         and pyserial_ok
         and board_config_ok
@@ -451,20 +585,38 @@ def main():
         and (probe_count or 0) > 0
         and (serial_count or 0) > 0
     )
+    overall_ready = (
+        host_prereqs_ready
+        if board_attachment_ready is None
+        else host_prereqs_ready and board_attachment_ready
+    )
 
     header("Summary")
-    if host_ready:
-        log(INFO, "Host prerequisites and board-target support are ready for stage0_check.py")
-    elif not pyocd_ok or not pyserial_ok or not board_config_ok or not packs_ready:
-        log(WARN, "Host is not fully ready for stage0_check.py yet")
+    if board_attachment_ready is None:
+        if overall_ready:
+            log(INFO, "Host prerequisites and board-target support are ready for stage0_check.py")
+        elif not pyocd_ok or not pyserial_ok or not board_config_ok or not packs_ready:
+            log(WARN, "Host is not fully ready for stage0_check.py yet")
+        else:
+            log(
+                WARN,
+                "Canonical env and board-target support are present, but attached hardware is not fully visible yet",
+            )
+    elif overall_ready:
+        log(INFO, "Selected board attachment and host prerequisites are ready for stage0_check.py")
+    elif not host_prereqs_ready:
+        log(
+            WARN,
+            "Host bootstrap is not sufficient yet for the selected board(s): host prerequisites are incomplete",
+        )
     else:
         log(
             WARN,
-            "Canonical env and board-target support are present, but attached hardware is not fully visible yet",
+            "Host bootstrap is not sufficient yet for the selected board(s): board attachment is not uniquely ready",
         )
     print("  This script does not verify flashing, UART behavior, or recovery on real hardware.")
-    sys.exit(0 if host_ready else 1)
+    return 0 if overall_ready else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

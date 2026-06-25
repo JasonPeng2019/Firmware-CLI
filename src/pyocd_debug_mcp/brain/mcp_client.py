@@ -194,12 +194,16 @@ class LocalMCPClient:
         repo_root: Path = REPO_ROOT,
         *,
         server_command: ServerCommand | None = None,
+        startup_timeout_seconds: float | None = None,
     ) -> None:
         self._repo_root = repo_root
         self._transport: ToolClientProtocol = StdioToolClient(
             server_command or default_server_command(repo_root)
         )
         self.available_tools: tuple[str, ...] = ()
+        self._startup_timeout_seconds = (
+            MCP_STARTUP_TIMEOUT_SECONDS if startup_timeout_seconds is None else startup_timeout_seconds
+        )
 
     async def __aenter__(self) -> "LocalMCPClient":
         await self.start()
@@ -212,13 +216,13 @@ class LocalMCPClient:
         if self.available_tools:
             return
         try:
-            with anyio.fail_after(MCP_STARTUP_TIMEOUT_SECONDS):
+            with anyio.fail_after(self._startup_timeout_seconds):
                 await self._transport.__aenter__()
                 tools = await self._transport.list_tool_names()
         except TimeoutError as exc:
             await self._transport.__aexit__(type(exc), exc, exc.__traceback__)
             raise MCPClientError(
-                f"Local MCP server startup timed out after {MCP_STARTUP_TIMEOUT_SECONDS:.0f}s."
+                f"Local MCP server startup timed out after {self._startup_timeout_seconds:.0f}s."
             ) from exc
         self.available_tools = tuple(sorted(tools))
 

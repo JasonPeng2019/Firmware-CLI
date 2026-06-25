@@ -7,6 +7,15 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pyocd_debug_mcp.brain.decision_types import (
+    ActionBatch,
+    ActionCall,
+    BoardDecision,
+    EarlyExitVerdict,
+    IterationEstimate,
+    TimeoutProposal,
+)
+
 AllowedServerToolName = Literal[
     "connect",
     "disconnect",
@@ -23,7 +32,7 @@ AllowedServerToolName = Literal[
 ]
 
 FinalStatus = Literal["fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"]
-Classification = Literal["healthy", "code_bug", "observability_fault", "physical_fault"]
+Classification = Literal["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"]
 
 
 class _StrictModel(BaseModel):
@@ -189,7 +198,7 @@ def turn_decision_output_schema() -> dict[str, object]:
                 },
                 "classification": {
                     "type": "string",
-                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault"],
+                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"],
                 },
                 "root_cause": {"type": "string", "minLength": 1},
                 "summary": {"type": "string", "minLength": 1},
@@ -206,10 +215,34 @@ def turn_decision_output_schema() -> dict[str, object]:
             "observation_summary": {"type": "string", "minLength": 1},
             "classification": {
                 "type": ["string", "null"],
-                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", None],
+                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure", None],
             },
             "hypothesis": {"type": ["string", "null"]},
             "strategy_evaluation": {"type": ["string", "null"]},
             "action": {"oneOf": action_variants},
         },
     }
+
+
+__all__ = [
+    "ActionBatch",
+    "ActionCall",
+    "AllowedServerToolName",
+    "BoardDecision",
+    "Classification",
+    "EarlyExitVerdict",
+    "FinalizeAction",
+    "IterationEstimate",
+    "ReadFileAction",
+    "ReplaceFileAction",
+    "RunBuildAction",
+    "RunGreenCheckAction",
+    "ServerToolAction",
+    "TimeoutProposal",
+    "TurnDecision",
+    "TurnkeyRunResult",
+    "VerificationSnapshot",
+    "decision_schema_text",
+    "result_schema_text",
+    "turn_decision_output_schema",
+]
