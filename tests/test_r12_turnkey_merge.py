@@ -24,7 +24,17 @@ from pyocd_debug_mcp.brain.provider_codex_cli import (
     CodexCLIDecisionProvider,
     ProviderResponseError as CodexProviderResponseError,
 )
-from pyocd_debug_mcp.brain.provider_types import ProviderTurn
+from pyocd_debug_mcp.brain.provider_openai import OpenAIDecisionProvider
+from pyocd_debug_mcp.brain.provider_anthropic import AnthropicDecisionProvider
+from pyocd_debug_mcp.brain.provider_types import (
+    ProviderCapabilities,
+    ProviderMemoryEntry,
+    ProviderMemorySummaryResult,
+    ProviderPromptBundle,
+    ProviderSessionState,
+    ProviderTurn,
+    make_provider_session_state,
+)
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain import workspace as workspace_mod
@@ -35,18 +45,66 @@ class _FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            supports_native_session=False,
+            supports_transcript_continuation=True,
+            supports_response_id_continuation=False,
+            supports_tool_schema_prompt=True,
+            continuation_mode="transcript-only",
+        )
+
+    async def next_decision(
+        self,
+        *,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
             output_text=json.dumps(decision.model_dump(mode="json")),
             response_id="resp-merge-test",
+            session_state=session_state.with_last_continuation_path(
+                "transcript-memory",
+                metadata={"continuation_kind": "merge-test-transcript-memory"},
+            ),
+            provider_metadata={
+                "continuation_kind": "merge-test-transcript-memory",
+                "continuation_path": "transcript-memory",
+                "memory_injected": True,
+            },
+        )
+
+    async def summarize_memory(
+        self,
+        *,
+        session_state: ProviderSessionState,
+        prior_summary_text: str,
+        evicted_entries: tuple[ProviderMemoryEntry, ...],
+    ) -> ProviderMemorySummaryResult:
+        return ProviderMemorySummaryResult(
+            summary_text=prior_summary_text or "- merge summary",
+            provider_metadata={"provider": "merge-fake"},
         )
 
 
 class _FakeClient:
     def __init__(self, results: dict[str, list[ToolTextResult]]) -> None:
         self._results = {name: deque(items) for name, items in results.items()}
+        self._tool_descriptors = (
+            mcp_client_mod.ToolDescriptor(
+                name="connect",
+                description="Connect to one board.",
+                input_schema={"type": "object", "properties": {"board_id": {"type": "string"}}},
+            ),
+            mcp_client_mod.ToolDescriptor(
+                name="disconnect",
+                description="Disconnect the active session.",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        )
 
     async def __aenter__(self) -> "_FakeClient":
         return self
@@ -59,6 +117,9 @@ class _FakeClient:
         if not queue:
             raise RuntimeError(f"Unexpected tool call: {tool_name}")
         return queue.popleft()
+
+    async def list_tools(self) -> tuple[mcp_client_mod.ToolDescriptor, ...]:
+        return self._tool_descriptors
 
 
 def test_default_server_command_uses_uv_run_repo_entrypoint() -> None:
@@ -76,9 +137,15 @@ def test_local_mcp_client_start_times_out(monkeypatch) -> None:
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
             return None
 
-        async def list_tool_names(self) -> set[str]:
+        async def list_tool_descriptors(self) -> tuple[mcp_client_mod.ToolDescriptor, ...]:
             await anyio.sleep(1.0)
-            return {"connect"}
+            return (
+                mcp_client_mod.ToolDescriptor(
+                    name="connect",
+                    description="Connect to one board.",
+                    input_schema={"type": "object", "properties": {"board_id": {"type": "string"}}},
+                ),
+            )
 
         async def call_tool_text(
             self,
@@ -340,13 +407,84 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model=None)
-    turn = provider._next_decision_sync("sys", "prompt")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="",
+    )
+    turn = provider._next_decision_sync(
+        bundle,
+        make_provider_session_state(
+            provider="codex-cli",
+            model=None,
+            continuation_mode="transcript-only",
+        ),
+    )
 
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
-    assert captured["input"] == "sys\n\nprompt\n"
+    assert captured["input"] == "sys\n\nmemory block\n\nprompt\n"
     assert captured["timeout"] == 300.0
+
+
+def test_openai_provider_uses_previous_response_id_and_updates_session_state(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponses:
+        def create(self, **kwargs: object) -> object:
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(
+                id="resp-next",
+                output_text=json.dumps(
+                    {
+                        "observation_summary": "connected",
+                        "classification": "healthy",
+                        "action": {
+                            "kind": "finalize",
+                            "final_status": "diagnosed_only",
+                            "classification": "healthy",
+                            "root_cause": "none",
+                            "summary": "ok",
+                        },
+                    }
+                ),
+            )
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.responses = _FakeResponses()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_openai.OpenAI", _FakeOpenAI)
+
+    provider = OpenAIDecisionProvider(api_key="test-key", model="gpt-test")
+    session_state = make_provider_session_state(
+        provider="openai-api",
+        model="gpt-test",
+        continuation_mode="native-primary",
+    ).with_native_handle_update(response_id="resp-prev")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["previous_response_id"] == "resp-prev"
+    assert turn.response_id == "resp-next"
+    assert turn.session_state.native_handle is not None
+    assert turn.session_state.native_handle.response_id == "resp-next"
+    assert turn.provider_metadata["continuation_path"] == "native"
+    assert provider.capabilities.supports_native_session is True
 
 
 def test_codex_cli_provider_surfaces_subprocess_timeout(
@@ -366,9 +504,19 @@ def test_codex_cli_provider_surfaces_subprocess_timeout(
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model=None, timeout_seconds=1.0)
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="",
+        provider_memory_text="",
+        turn_context_text="prompt",
+        turn_decision_schema_text="",
+    )
 
     with pytest.raises(CodexProviderResponseError, match="Codex CLI timed out after 1s"):
-        provider._next_decision_sync("sys", "prompt")
+        provider._next_decision_sync(
+            bundle,
+            make_provider_session_state(provider="codex-cli", model=None, continuation_mode="transcript-only"),
+        )
 
 
 def test_claude_cli_provider_uses_utf8_subprocess_capture(
@@ -414,12 +562,84 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
 
     provider = ClaudeCLIDecisionProvider(model=None)
-    turn = provider._next_decision_sync("sys", "prompt")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="",
+    )
+    turn = provider._next_decision_sync(
+        bundle,
+        make_provider_session_state(provider="claude-cli", model=None, continuation_mode="transcript-only"),
+    )
 
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
     assert captured["timeout"] == 300.0
+
+
+def test_anthropic_provider_uses_transcript_continuation_and_updates_state(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeMessages:
+        def create(self, **kwargs: object) -> object:
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(
+                id="anthropic-next",
+                content=[
+                    SimpleNamespace(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "observation_summary": "connected",
+                                "classification": "healthy",
+                                "action": {
+                                    "kind": "finalize",
+                                    "final_status": "diagnosed_only",
+                                    "classification": "healthy",
+                                    "root_cause": "none",
+                                    "summary": "ok",
+                                },
+                            }
+                        ),
+                    )
+                ],
+            )
+
+    class _FakeAnthropic:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.messages = _FakeMessages()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_anthropic.Anthropic", _FakeAnthropic)
+
+    provider = AnthropicDecisionProvider(api_key="anth-key", model="claude-test")
+    session_state = make_provider_session_state(
+        provider="anthropic-api",
+        model="claude-test",
+        continuation_mode="transcript-only",
+    )
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    message_text = kwargs["messages"][0]["content"]  # type: ignore[index]
+    assert "memory block" in message_text
+    assert turn.response_id == "anthropic-next"
+    assert turn.session_state.native_handle is None
+    assert turn.provider_metadata["continuation_path"] == "transcript-memory"
+    assert provider.capabilities.supports_transcript_continuation is True
 
 
 def test_claude_cli_provider_surfaces_subprocess_timeout(
@@ -439,6 +659,16 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
 
     provider = ClaudeCLIDecisionProvider(model=None, timeout_seconds=1.0)
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="",
+        provider_memory_text="",
+        turn_context_text="prompt",
+        turn_decision_schema_text="",
+    )
 
     with pytest.raises(ClaudeProviderResponseError, match="Claude CLI timed out after 1s"):
-        provider._next_decision_sync("sys", "prompt")
+        provider._next_decision_sync(
+            bundle,
+            make_provider_session_state(provider="claude-cli", model=None, continuation_mode="transcript-only"),
+        )

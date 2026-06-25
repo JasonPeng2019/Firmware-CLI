@@ -47,6 +47,8 @@ Slash commands:
   /board <id>
   /provider <name>
   /model <name|default>
+  /memory-mode <deterministic|model-summary>
+  /native-sync-every <0|N>
   /workspace <path|clear>
   /build-command "<cmd>"|clear
   /flash-artifact <path|default>

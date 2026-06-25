@@ -18,8 +18,8 @@ from pyocd_debug_mcp.brain.decision_types import (
 )
 from pyocd_debug_mcp.brain.provider_types import (
     ProviderProgressUpdate,
-    ProviderSessionState,
     ProviderTurn,
+    make_provider_session_state,
 )
 from pyocd_debug_mcp.timeouts import (
     TurnkeyTimeoutConfig,
@@ -79,6 +79,11 @@ def test_turnkey_timeout_update_is_partial_and_deterministic() -> None:
 
 
 def test_provider_turn_carries_optional_session_and_progress_fields() -> None:
+    session_state = make_provider_session_state(
+        provider="codex-cli",
+        model=None,
+        continuation_mode="transcript-only",
+    )
     turn = ProviderTurn(
         decision=TurnDecision(
             observation_summary="Connected cleanly.",
@@ -92,12 +97,12 @@ def test_provider_turn_carries_optional_session_and_progress_fields() -> None:
         ),
         output_text="{}",
         response_id="resp-1",
-        session_state=ProviderSessionState(provider_session_id="sess-1", response_id="resp-1", turn_index=3),
+        session_state=session_state.with_native_handle_update(response_id="resp-1"),
         progress_updates=(ProviderProgressUpdate(stage="thinking", message="provider is reasoning"),),
     )
 
-    assert turn.session_state is not None
-    assert turn.session_state.turn_index == 3
+    assert turn.session_state.native_handle is not None
+    assert turn.session_state.native_handle.response_id == "resp-1"
     assert turn.progress_updates[0].stage == "thinking"
 
 
@@ -200,6 +205,8 @@ async def test_brain_cli_run_freeform_threads_planning_hooks(
         model=None,
         max_iters=4,
         serial_read_seconds=1.0,
+        memory_mode=None,
+        native_sync_every=None,
         port=None,
         flash_artifact=None,
         elf=None,

@@ -68,18 +68,19 @@ a glance before relying on detail.
 | `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
 | `brain/evidence.py` | Typed observation/hypothesis/experiment/strategy-evaluation records persisted into turnkey state artifacts. |
 | `brain/events.py` | Structured event model + sink contract for live UX rendering and persisted `brain_events.jsonl` artifacts. |
-| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
-| `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
+| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt-bundle assembly, provider-session threading, action execution, convergence, and run-artifact capture. |
+| `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool descriptors plus parsed tool-call helpers. |
 | `brain/playbooks.py` | Loader for the internal deterministic turnkey helper playbooks stored under `playbooks/turnkey/`, resolved from repo roots in checkout mode or from bundled package data in wheel installs. |
-| `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation. |
-| `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`. |
-| `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`. |
+| `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation using the canonical local-memory session model plus optional summarizer calls for `model-summary` compaction. |
+| `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`, using the same canonical local-memory session model as the other backends. |
+| `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`, using the same canonical local-memory session model as the other backends while keeping transport invocation ephemeral. |
 | `brain/provider_factory.py` | Factory that maps provider config to the correct decision backend. |
-| `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
+| `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation with native continuation as the primary path, local-memory fallback, periodic safety sync, and optional summarizer calls for `model-summary` compaction. |
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
-| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn`, optional provider-session/progress payloads, and `DecisionProvider`. |
+| `brain/provider_types.py` | Shared hybrid provider/session contracts: provider capabilities, native-handle metadata, compact memory entries, compaction helpers, prompt bundles, `ProviderTurn`, optional progress updates, and `DecisionProvider`. |
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering; resolves skills from the live repo when present or from bundled package data when installed. |
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
+| `brain/tool_schemas.py` | Loads live MCP tool metadata, filters it to the curated allowed tool surface, and renders the stable tool-schema prompt bundle used by the brain. |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
 
 ## `playbooks/turnkey/`

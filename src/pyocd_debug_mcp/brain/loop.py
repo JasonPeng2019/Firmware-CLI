@@ -36,9 +36,25 @@ from pyocd_debug_mcp.brain.events import BrainEvent, EventSink, emit_event, even
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
-from pyocd_debug_mcp.brain.provider_types import DecisionProvider, ProviderTurn
+from pyocd_debug_mcp.brain.provider_types import (
+    advance_memory_sync_state,
+    append_memory_entry,
+    apply_deterministic_compaction,
+    apply_summary_compaction,
+    DecisionProvider,
+    plan_memory_compaction,
+    ProviderContinuationMode,
+    ProviderMemoryEntry,
+    ProviderPromptBundle,
+    ProviderSessionState,
+    ProviderTurn,
+    make_provider_session_state,
+    render_provider_memory_text,
+    provider_turn_record,
+)
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
+from pyocd_debug_mcp.brain.tool_schemas import ToolSchemaBundle, build_tool_schema_bundle
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
@@ -96,6 +112,10 @@ def _default_artifacts(invocation: TurnkeyInvocation, board: BoardConfig) -> tup
     return artifacts.flash_artifact, artifacts.symbol_artifact
 
 
+def _continuation_mode_for_provider(provider_kind: str) -> ProviderContinuationMode:
+    return "native-primary" if provider_kind == "openai-api" else "transcript-only"
+
+
 def _build_request_payload(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
@@ -111,6 +131,8 @@ def _build_request_payload(
         "case_kind": invocation.case_kind,
         "provider": invocation.provider,
         "model": invocation.model,
+        "memory_mode": invocation.memory_mode,
+        "native_sync_every": invocation.native_sync_every,
         "max_iters": invocation.max_iters,
         "serial_read_seconds": invocation.serial_read_seconds,
         "timeout_config": invocation.timeout_config.to_record(),
@@ -226,6 +248,7 @@ def _build_turn_prompt(
         f"iteration={state.iteration}\n"
         f"session_id={state.session_id or '(none)'}\n"
         f"session_ids_seen={state.session_ids_seen}\n"
+        f"provider_session={state.provider_session_state.summary_record() if state.provider_session_state is not None else '(none)'}\n"
         f"flash_count={state.flash_count}\n"
         f"build_count={state.build_count}\n"
         f"recover_count={state.recover_count}\n"
@@ -244,25 +267,57 @@ def _build_turn_prompt(
         f"experiments_recorded={len(state.experiments)}\n"
         f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
         "Selected skills:\n"
-        f"{skills_text}\n\n"
-        "Available action kinds:\n"
-        "- server_tool: connect, disconnect, get_board_info, get_state, halt, resume, reset, read_core_register, read_memory, flash_firmware, read_serial, unlock_recover\n"
-        "- read_file(path)\n"
-        "- replace_file(path, content)\n"
-        "- run_build(build_command?)\n"
-        "- run_green_check\n"
-        "- finalize(final_status, classification, root_cause, summary)\n\n"
-        "TurnDecision JSON schema:\n"
-        f"{decision_schema_text()}\n"
+        f"{skills_text}\n"
     )
 
 
-def _model_turn_record(iteration: int, provider_turn: ProviderTurn) -> dict[str, object]:
+def _build_prompt_bundle(
+    *,
+    invocation: TurnkeyInvocation,
+    board: BoardConfig,
+    state: BrainState,
+    skills_text: str,
+    workspace: WorkspaceSession | None,
+    tool_schema_bundle: ToolSchemaBundle,
+) -> ProviderPromptBundle:
+    return ProviderPromptBundle(
+        system_instructions=_build_instructions(invocation),
+        tool_schema_text=tool_schema_bundle.rendered_text,
+        provider_memory_text=render_provider_memory_text(
+            state.provider_session_state
+            or make_provider_session_state(
+                provider=invocation.provider,
+                model=invocation.model,
+                memory_mode=invocation.memory_mode,
+                continuation_mode=(
+                    state.provider_capabilities.continuation_mode
+                    if state.provider_capabilities is not None
+                    else _continuation_mode_for_provider(invocation.provider)
+                ),
+                native_sync_every=invocation.native_sync_every,
+            )
+        ),
+        turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
+        turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+    )
+
+
+def _model_turn_record(
+    iteration: int,
+    provider_turn: ProviderTurn,
+    prompt_bundle: ProviderPromptBundle,
+    *,
+    committed_session_state: ProviderSessionState,
+    compaction_record: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "iteration": iteration,
-        "response_id": provider_turn.response_id,
+        **provider_turn_record(provider_turn),
+        "committed_session_state": committed_session_state.summary_record(),
         "output_text": provider_turn.output_text,
         "decision": provider_turn.decision.model_dump(mode="json"),
+        "prompt_bundle": prompt_bundle.to_record(),
+        "compaction": dict(compaction_record or {}),
     }
 
 
@@ -446,6 +501,168 @@ def _record_decision_evidence(
             outcome=decision.strategy_evaluation,
             next_action=decision.action.kind,
         )
+
+
+def _verification_snapshot_text(snapshot: VerificationSnapshot) -> str:
+    return (
+        f"flash={snapshot.flash_ok} "
+        f"uart={snapshot.uart_ok} "
+        f"symbol={snapshot.symbol_ok} "
+        f"green={snapshot.green_check_ok}"
+    )
+
+
+def _compact_turn_text(text: str | None, *, limit: int = 320) -> str:
+    value = (text or "").strip()
+    if len(value) <= limit:
+        return value
+    if limit <= 3:
+        return value[:limit]
+    return value[: limit - 3].rstrip() + "..."
+
+
+def _build_provider_memory_entry(
+    *,
+    session_state: ProviderSessionState,
+    state: BrainState,
+    decision: TurnDecision,
+    result_text: str,
+) -> ProviderMemoryEntry:
+    return ProviderMemoryEntry(
+        turn_index=session_state.next_turn_index(),
+        classification=decision.classification or state.last_classification,
+        observation_summary=_compact_turn_text(decision.observation_summary),
+        hypothesis=_compact_turn_text(decision.hypothesis) if decision.hypothesis else None,
+        action_kind=decision.action.kind,
+        action_summary=_compact_turn_text(state.last_action_summary or decision.action.kind),
+        result_summary=_compact_turn_text(result_text),
+        verification_snapshot=_verification_snapshot_text(state.verification),
+    )
+
+
+async def _commit_provider_memory(
+    *,
+    provider: DecisionProvider,
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    decision: TurnDecision,
+    result_text: str,
+    provider_metadata: dict[str, object],
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+) -> dict[str, object]:
+    current_session = state.provider_session_state
+    if current_session is None:
+        raise TurnkeyLoopError("Provider session state was missing during memory commit.")
+    memory_entry = _build_provider_memory_entry(
+        session_state=current_session,
+        state=state,
+        decision=decision,
+        result_text=result_text,
+    )
+    updated_session = append_memory_entry(current_session, memory_entry)
+    compaction_plan = plan_memory_compaction(updated_session)
+    model_summary_fallback = False
+    summarizer_metadata: dict[str, object] | None = None
+    fallback_reason: str | None = None
+    if compaction_plan is not None:
+        if updated_session.memory_mode == "model-summary":
+            try:
+                prior_summary_text = (
+                    updated_session.memory_summary.summary_text
+                    if updated_session.memory_summary is not None
+                    else ""
+                )
+                summary_result = await provider.summarize_memory(
+                    session_state=updated_session,
+                    prior_summary_text=prior_summary_text,
+                    evicted_entries=compaction_plan.evicted_entries,
+                )
+                summarizer_metadata = dict(summary_result.provider_metadata)
+                updated_session = apply_summary_compaction(
+                    updated_session,
+                    compaction_plan,
+                    summary_text=summary_result.summary_text,
+                    source="model-summary",
+                )
+            except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
+                model_summary_fallback = True
+                fallback_reason = f"{type(exc).__name__}: {exc}"
+                updated_session = apply_deterministic_compaction(
+                    updated_session,
+                    compaction_plan,
+                    source="deterministic-fallback",
+                )
+        else:
+            updated_session = apply_deterministic_compaction(
+                updated_session,
+                compaction_plan,
+                source="deterministic",
+            )
+    memory_rendered_this_turn = bool(provider_metadata.get("memory_injected"))
+    updated_session = advance_memory_sync_state(
+        updated_session,
+        memory_rendered_this_turn=memory_rendered_this_turn,
+    )
+    compaction_record: dict[str, object] = {
+        "memory_mode": updated_session.memory_mode,
+        "continuation_mode": updated_session.continuation_mode,
+        "continuation_path": updated_session.last_continuation_path,
+        "memory_entry_turn_index": memory_entry.turn_index,
+        "memory_rendered_this_turn": memory_rendered_this_turn,
+        "recent_memory_entry_count": len(updated_session.recent_memory_entries),
+        "native_sync_every": updated_session.native_sync_every,
+        "turns_since_last_memory_sync": updated_session.turns_since_last_memory_sync,
+        "compaction_ran": compaction_plan is not None,
+        "compaction_plan": compaction_plan.to_record() if compaction_plan is not None else None,
+        "summary_source": (
+            updated_session.memory_summary.source
+            if updated_session.memory_summary is not None
+            else None
+        ),
+        "summary_covered_through_turn": (
+            updated_session.memory_summary.covered_through_turn
+            if updated_session.memory_summary is not None
+            else None
+        ),
+        "summary_char_count": (
+            updated_session.memory_summary.char_count
+            if updated_session.memory_summary is not None
+            else 0
+        ),
+        "model_summary_fallback": model_summary_fallback,
+        "summarizer": summarizer_metadata,
+        "fallback_reason": fallback_reason,
+    }
+    updated_session = updated_session.with_updated_metadata(
+        {
+            "last_memory_entry_turn_index": memory_entry.turn_index,
+            "last_memory_mode": updated_session.memory_mode,
+            "last_continuation_path": updated_session.last_continuation_path,
+            "last_memory_rendered": memory_rendered_this_turn,
+            "last_compaction_ran": compaction_plan is not None,
+            "last_model_summary_fallback": model_summary_fallback,
+            "last_compaction_summary_source": compaction_record["summary_source"],
+            "last_compaction_summary_char_count": compaction_record["summary_char_count"],
+            "last_summarizer": summarizer_metadata,
+            "last_summarizer_fallback_reason": fallback_reason,
+        }
+    )
+    state.provider_session_state = updated_session
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind="provider_memory_update",
+        message=f"Provider memory committed for turn {memory_entry.turn_index}.",
+        details={
+            "provider_session": updated_session.summary_record(),
+            "memory_entry": memory_entry.to_record(),
+            "compaction": compaction_record,
+        },
+    )
+    return compaction_record
 
 
 def _update_build_failure_state(
@@ -1095,8 +1312,21 @@ async def _tooling_failure_execution(
         case_id=invocation.case_id,
         case_kind=invocation.case_kind,
         selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
+        provider_session_state=make_provider_session_state(
+            provider=invocation.provider,
+            model=invocation.model,
+            memory_mode=invocation.memory_mode,
+            continuation_mode=_continuation_mode_for_provider(invocation.provider),
+            native_sync_every=invocation.native_sync_every,
+        ),
     )
-    prompt_text = _build_turn_prompt(invocation, board, state, skills_text, workspace)
+    prompt_bundle = ProviderPromptBundle(
+        system_instructions=_build_instructions(invocation),
+        tool_schema_text="Curated MCP tool surface:\n(tool metadata unavailable because the run failed before MCP startup)",
+        provider_memory_text="",
+        turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
+        turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+    )
     brain_events: list[dict[str, object]] = []
     run_root = _prepare_run_root(_provisional_run_id())
     await _record_brain_event(
@@ -1141,7 +1371,7 @@ async def _tooling_failure_execution(
         result=result,
         state=state,
         run_root=run_root,
-        prompt_text=f"{_build_instructions(invocation)}\n\n{prompt_text}",
+        prompt_text=prompt_bundle.full_prompt_text(),
         request_payload=request_payload,
         selected_skills=selected_skills,
         model_turns=(),
@@ -1178,21 +1408,6 @@ async def run_turnkey(
         else None
     )
     request_payload = _build_request_payload(invocation, board, selected_skills)
-    prompt_text = _build_turn_prompt(
-        invocation,
-        board,
-        BrainState(
-            run_mode=invocation.mode,
-            board_id=board.board_id,
-            task=invocation.task,
-            case_id=invocation.case_id,
-            case_kind=invocation.case_kind,
-            selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
-        ),
-        skills_text,
-        workspace,
-    )
-    instructions = _build_instructions(invocation)
     state = BrainState(
         run_mode=invocation.mode,
         board_id=board.board_id,
@@ -1200,6 +1415,14 @@ async def run_turnkey(
         case_id=invocation.case_id,
         case_kind=invocation.case_kind,
         selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
+        provider_session_state=make_provider_session_state(
+            provider=invocation.provider,
+            model=invocation.model,
+            memory_mode=invocation.memory_mode,
+            continuation_mode=provider.capabilities.continuation_mode,
+            native_sync_every=invocation.native_sync_every,
+        ),
+        provider_capabilities=provider.capabilities,
     )
     result: TurnkeyRunResult | None = None
     model_turns: list[dict[str, object]] = []
@@ -1209,6 +1432,7 @@ async def run_turnkey(
     resolved_client_factory = client_factory or (
         lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
     )
+    initial_prompt_text = ""
 
     await _record_brain_event(
         sink=event_sink,
@@ -1228,9 +1452,20 @@ async def run_turnkey(
 
     try:
         async with resolved_client_factory() as client:
+            tool_schema_bundle = build_tool_schema_bundle(await client.list_tools())
+            state.tool_schema_summary = tool_schema_bundle.to_record()
             for iteration in range(1, invocation.max_iters + 1):
                 state.iteration = iteration
-                turn_prompt = _build_turn_prompt(invocation, board, state, skills_text, workspace)
+                prompt_bundle = _build_prompt_bundle(
+                    invocation=invocation,
+                    board=board,
+                    state=state,
+                    skills_text=skills_text,
+                    workspace=workspace,
+                    tool_schema_bundle=tool_schema_bundle,
+                )
+                if not initial_prompt_text:
+                    initial_prompt_text = prompt_bundle.full_prompt_text()
                 await _record_brain_event(
                     sink=event_sink,
                     records=brain_events,
@@ -1238,13 +1473,26 @@ async def run_turnkey(
                     state=state,
                     event_kind="provider_turn_start",
                     message=f"Provider turn {iteration} started.",
-                    details={"turn_prompt_length": len(turn_prompt)},
+                    details={
+                        "turn_prompt_length": len(prompt_bundle.turn_context_text),
+                        "tool_schema_hash": tool_schema_bundle.schema_hash,
+                        "provider_session": state.provider_session_state.summary_record()
+                        if state.provider_session_state is not None
+                        else None,
+                    },
                 )
                 provider_started = time.perf_counter()
                 try:
                     provider_turn = await provider.next_decision(
-                        instructions=instructions,
-                        turn_prompt=turn_prompt,
+                        prompt_bundle=prompt_bundle,
+                        session_state=state.provider_session_state
+                        or make_provider_session_state(
+                            provider=invocation.provider,
+                            model=invocation.model,
+                            memory_mode=invocation.memory_mode,
+                            continuation_mode=provider.capabilities.continuation_mode,
+                            native_sync_every=invocation.native_sync_every,
+                        ),
                     )
                 except Exception as exc:  # noqa: BLE001 - provider/runtime failures become saved runs
                     result = _tooling_failure_result(
@@ -1263,7 +1511,7 @@ async def run_turnkey(
                     )
                     break
                 provider_duration_ms = int((time.perf_counter() - provider_started) * 1000)
-                model_turns.append(_model_turn_record(iteration, provider_turn))
+                state.provider_session_state = provider_turn.session_state
                 decision = provider_turn.decision
                 await _record_brain_event(
                     sink=event_sink,
@@ -1275,11 +1523,15 @@ async def run_turnkey(
                     details={
                         "duration_ms": provider_duration_ms,
                         "response_id": provider_turn.response_id,
+                        "provider_metadata": provider_turn.provider_metadata,
+                        "provider_session": provider_turn.session_state.summary_record(),
+                        "tool_schema_hash": tool_schema_bundle.schema_hash,
                         "raw_output": provider_turn.output_text,
                         "decision": provider_turn.decision.model_dump(mode="json"),
                     },
                 )
 
+                force_break_after_commit = False
                 try:
                     action = decision.action
                     action_started = time.perf_counter()
@@ -1359,7 +1611,7 @@ async def run_turnkey(
                                 message=result.summary,
                                 details={"action_family": action.tool_name, "code": "benchmark/reconnect-not-allowed"},
                             )
-                            break
+                            force_break_after_commit = True
                         if action.tool_name == "flash_firmware" and action_result.text.startswith("Flashed "):
                             await _record_verification_event(
                                 sink=event_sink,
@@ -1475,15 +1727,7 @@ async def run_turnkey(
                         )
                     elif isinstance(action, FinalizeAction):
                         result = _final_result_from_action(state, action, workspace)
-                        _record_decision_evidence(state, decision, result_text=result.summary)
-                        brain_trace.append(
-                            _brain_trace_record(
-                                iteration=iteration,
-                                action_kind=action.kind,
-                                payload=action.model_dump(mode="json"),
-                                result_text=result.summary,
-                            )
-                        )
+                        result_text = result.summary
                         await _record_brain_event(
                             sink=event_sink,
                             records=brain_events,
@@ -1493,7 +1737,7 @@ async def run_turnkey(
                             message=f"Run finalized as {result.final_status}.",
                             details={"result": result.model_dump(mode="json")},
                         )
-                        break
+                        force_break_after_commit = True
                     else:
                         raise TurnkeyLoopError(f"Unhandled action kind: {action.kind}")
                 except TurnkeyRefusal as exc:
@@ -1545,6 +1789,25 @@ async def run_turnkey(
                 )
                 _record_decision_evidence(state, decision, result_text=result_text)
                 _update_observation_state(state, decision, result_text)
+                compaction_record = await _commit_provider_memory(
+                    provider=provider,
+                    invocation=invocation,
+                    state=state,
+                    decision=decision,
+                    result_text=result_text,
+                    provider_metadata=provider_turn.provider_metadata,
+                    sink=event_sink,
+                    records=brain_events,
+                )
+                model_turns.append(
+                    _model_turn_record(
+                        iteration,
+                        provider_turn,
+                        prompt_bundle,
+                        committed_session_state=state.provider_session_state,
+                        compaction_record=compaction_record,
+                    )
+                )
                 blocked = _check_local_convergence(state)
                 if blocked is not None:
                     result = blocked
@@ -1557,6 +1820,8 @@ async def run_turnkey(
                         message=blocked.summary,
                         details={"code": blocked.summary.split("]:", 1)[0].replace("Blocked [", "")},
                     )
+                    break
+                if force_break_after_commit:
                     break
 
             if result is None:
@@ -1632,13 +1897,22 @@ async def run_turnkey(
             details={"result": result.model_dump(mode="json")},
         )
 
+    if not initial_prompt_text:
+        initial_prompt_text = ProviderPromptBundle(
+            system_instructions=_build_instructions(invocation),
+            tool_schema_text="Curated MCP tool surface:\n(tool metadata unavailable because MCP startup did not complete)",
+            provider_memory_text="",
+            turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
+            turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+        ).full_prompt_text()
+
     execution = TurnkeyExecution(
         invocation=invocation,
         board=board,
         result=result,
         state=state,
         run_root=run_root,
-        prompt_text=f"{instructions}\n\n{prompt_text}",
+        prompt_text=initial_prompt_text,
         request_payload=request_payload,
         selected_skills=selected_skills,
         model_turns=tuple(model_turns),
