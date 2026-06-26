@@ -86,11 +86,17 @@ class CodexCLIDecisionProvider:
         retry_count = 0
         base_prompt = prompt_bundle.full_prompt_text(include_memory=True)
         current_prompt = base_prompt
+        current_memory_injected = bool(prompt_bundle.provider_memory_text.strip())
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
                 message="Dispatching ephemeral Codex CLI turn from canonical local memory.",
-                details={"continuation_path": "transcript-memory", "cli_mode": "ephemeral"},
+                details={
+                    "continuation_path": "transcript-memory",
+                    "cli_mode": "ephemeral",
+                    "prompt_render_mode": "bootstrap/full",
+                    "memory_injected": current_memory_injected,
+                },
             )
         ]
         for _attempt in range(2):
@@ -168,7 +174,7 @@ class CodexCLIDecisionProvider:
                         "continuation_kind": "transcript-memory",
                         "continuation_mode": self.capabilities.continuation_mode,
                         "continuation_path": "transcript-memory",
-                        "memory_injected": True,
+                        "memory_injected": current_memory_injected,
                         "cli_mode": "ephemeral",
                         "prompt_render_mode": "bootstrap/full",
                         "static_tool_schema_injected": True,

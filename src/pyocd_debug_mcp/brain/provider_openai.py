@@ -115,17 +115,19 @@ class OpenAIDecisionProvider:
             current_prompt = prompt_bundle.render_native_sync_text(include_memory=use_local_memory)
         else:
             current_prompt = prompt_bundle.render_bootstrap_text(include_memory=use_local_memory)
-        static_tool_schema_injected = prompt_render_mode != "native-delta"
-        decision_schema_injected = prompt_render_mode != "native-delta"
+        current_prompt_render_mode = prompt_render_mode
+        current_memory_injected = use_local_memory
+        current_static_tool_schema_injected = prompt_render_mode != "native-delta"
+        current_decision_schema_injected = prompt_render_mode != "native-delta"
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
                 message="Dispatching OpenAI Responses turn.",
                 details={
                     "continuation_path": continuation_path,
-                    "prompt_render_mode": prompt_render_mode,
+                    "prompt_render_mode": current_prompt_render_mode,
                     "native_response_id_present": previous_response_id is not None,
-                    "memory_injected": use_local_memory,
+                    "memory_injected": current_memory_injected,
                 },
             )
         ]
@@ -188,6 +190,10 @@ class OpenAIDecisionProvider:
                 current_prompt = prompt_bundle.render_retry_text(
                     "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
                 )
+                current_prompt_render_mode = "retry"
+                current_memory_injected = False
+                current_static_tool_schema_injected = False
+                current_decision_schema_injected = True
                 progress_updates.append(
                     ProviderProgressUpdate(
                         stage="provider_retry",
@@ -210,22 +216,22 @@ class OpenAIDecisionProvider:
                         "continuation_path": continuation_path,
                         "native_response_id_present": response_id is not None,
                         "native_session_used": bool(previous_response_id),
-                        "memory_injected": use_local_memory,
+                        "memory_injected": current_memory_injected,
                         "native_sync_used": native_sync_used,
-                        "prompt_render_mode": prompt_render_mode,
-                        "static_tool_schema_injected": static_tool_schema_injected,
-                        "decision_schema_injected": decision_schema_injected,
+                        "prompt_render_mode": current_prompt_render_mode,
+                        "static_tool_schema_injected": current_static_tool_schema_injected,
+                        "decision_schema_injected": current_decision_schema_injected,
                         "retry_count": retry_count,
                     },
                 ),
                 provider_metadata={
                     "continuation_mode": self.capabilities.continuation_mode,
                     "continuation_path": continuation_path,
-                    "memory_injected": use_local_memory,
+                    "memory_injected": current_memory_injected,
                     "native_sync_used": native_sync_used,
-                    "prompt_render_mode": prompt_render_mode,
-                    "static_tool_schema_injected": static_tool_schema_injected,
-                    "decision_schema_injected": decision_schema_injected,
+                    "prompt_render_mode": current_prompt_render_mode,
+                    "static_tool_schema_injected": current_static_tool_schema_injected,
+                    "decision_schema_injected": current_decision_schema_injected,
                     "retry_count": retry_count,
                 },
                 progress_updates=tuple(progress_updates),

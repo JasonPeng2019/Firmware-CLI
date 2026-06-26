@@ -86,11 +86,20 @@ class ClaudeCLIDecisionProvider:
         retry_count = 0
         base_prompt = prompt_bundle.render_bootstrap_text(include_memory=True)
         current_prompt = base_prompt
+        current_prompt_render_mode = "bootstrap/full"
+        current_memory_injected = bool(prompt_bundle.provider_memory_text.strip())
+        current_static_tool_schema_injected = True
+        current_decision_schema_injected = True
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
                 message="Dispatching Claude CLI turn from canonical local memory.",
-                details={"continuation_path": "transcript-memory", "cli_mode": "print"},
+                details={
+                    "continuation_path": "transcript-memory",
+                    "cli_mode": "print",
+                    "prompt_render_mode": current_prompt_render_mode,
+                    "memory_injected": current_memory_injected,
+                },
             )
         ]
         for _attempt in range(2):
@@ -121,6 +130,10 @@ class ClaudeCLIDecisionProvider:
                     current_prompt = prompt_bundle.render_retry_text(
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
                     )
+                    current_prompt_render_mode = "retry"
+                    current_memory_injected = False
+                    current_static_tool_schema_injected = False
+                    current_decision_schema_injected = True
                     progress_updates.append(
                         ProviderProgressUpdate(
                             stage="provider_retry",
@@ -137,6 +150,10 @@ class ClaudeCLIDecisionProvider:
                     current_prompt = prompt_bundle.render_retry_text(
                         "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
                     )
+                    current_prompt_render_mode = "retry"
+                    current_memory_injected = False
+                    current_static_tool_schema_injected = False
+                    current_decision_schema_injected = True
                     progress_updates.append(
                         ProviderProgressUpdate(
                             stage="provider_retry",
@@ -161,11 +178,11 @@ class ClaudeCLIDecisionProvider:
                         "continuation_kind": "transcript-memory",
                         "continuation_mode": self.capabilities.continuation_mode,
                         "continuation_path": "transcript-memory",
-                        "memory_injected": True,
+                        "memory_injected": current_memory_injected,
                         "cli_mode": "print",
-                        "prompt_render_mode": "bootstrap/full",
-                        "static_tool_schema_injected": True,
-                        "decision_schema_injected": True,
+                        "prompt_render_mode": current_prompt_render_mode,
+                        "static_tool_schema_injected": current_static_tool_schema_injected,
+                        "decision_schema_injected": current_decision_schema_injected,
                         "retry_count": retry_count,
                     },
                     progress_updates=tuple(progress_updates),

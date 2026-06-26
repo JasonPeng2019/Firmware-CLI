@@ -646,6 +646,70 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     assert provider.capabilities.supports_native_session is True
 
 
+def test_openai_provider_retry_updates_prompt_metadata(
+    monkeypatch,
+) -> None:
+    call_inputs: list[dict[str, object]] = []
+
+    class _FakeResponses:
+        def __init__(self) -> None:
+            self._outputs = iter(
+                (
+                    "not json",
+                    json.dumps(
+                        {
+                            "observation_summary": "connected",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "none",
+                                "summary": "ok",
+                            },
+                        }
+                    ),
+                )
+            )
+
+        def create(self, **kwargs: object) -> object:
+            call_inputs.append(dict(kwargs))
+            return SimpleNamespace(id="resp-retry", output_text=next(self._outputs))
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.responses = _FakeResponses()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_openai.OpenAI", _FakeOpenAI)
+
+    provider = OpenAIDecisionProvider(api_key="test-key", model="gpt-test")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(
+        bundle,
+        make_provider_session_state(
+            provider="openai-api",
+            model="gpt-test",
+            continuation_mode="native-primary",
+        ),
+    )
+
+    assert len(call_inputs) == 2
+    assert call_inputs[0]["input"] == "tool schema\n\nturn context\n\ndecision schema"
+    assert call_inputs[1]["input"] == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    assert turn.provider_metadata["prompt_render_mode"] == "retry"
+    assert turn.provider_metadata["memory_injected"] is False
+    assert turn.provider_metadata["static_tool_schema_injected"] is False
+    assert turn.provider_metadata["decision_schema_injected"] is True
+    assert turn.provider_metadata["retry_count"] == 1
+
+
 def test_codex_cli_provider_surfaces_subprocess_timeout(
     monkeypatch,
 ) -> None:
@@ -798,7 +862,75 @@ def test_anthropic_provider_uses_transcript_continuation_and_updates_state(
     assert turn.response_id == "anthropic-next"
     assert turn.session_state.native_handle is None
     assert turn.provider_metadata["continuation_path"] == "transcript-memory"
+    assert turn.provider_metadata["memory_injected"] is True
     assert provider.capabilities.supports_transcript_continuation is True
+
+
+def test_anthropic_provider_retry_updates_prompt_metadata(
+    monkeypatch,
+) -> None:
+    captured_messages: list[str] = []
+
+    class _FakeMessages:
+        def __init__(self) -> None:
+            self._outputs = iter(
+                (
+                    "not json",
+                    json.dumps(
+                        {
+                            "observation_summary": "connected",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "none",
+                                "summary": "ok",
+                            },
+                        }
+                    ),
+                )
+            )
+
+        def create(self, **kwargs: object) -> object:
+            captured_messages.append(kwargs["messages"][0]["content"])  # type: ignore[index]
+            return SimpleNamespace(
+                id="anthropic-retry",
+                content=[SimpleNamespace(type="text", text=next(self._outputs))],
+            )
+
+    class _FakeAnthropic:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.messages = _FakeMessages()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_anthropic.Anthropic", _FakeAnthropic)
+
+    provider = AnthropicDecisionProvider(api_key="anth-key", model="claude-test")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(
+        bundle,
+        make_provider_session_state(
+            provider="anthropic-api",
+            model="claude-test",
+            continuation_mode="transcript-only",
+        ),
+    )
+
+    assert len(captured_messages) == 2
+    assert captured_messages[0] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+    assert captured_messages[1] == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    assert turn.provider_metadata["prompt_render_mode"] == "retry"
+    assert turn.provider_metadata["memory_injected"] is False
+    assert turn.provider_metadata["static_tool_schema_injected"] is False
+    assert turn.provider_metadata["decision_schema_injected"] is True
+    assert turn.provider_metadata["retry_count"] == 1
 
 
 def test_claude_cli_provider_surfaces_subprocess_timeout(
@@ -831,3 +963,56 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
             bundle,
             make_provider_session_state(provider="claude-cli", model=None, continuation_mode="transcript-only"),
         )
+
+
+def test_codex_cli_provider_reports_memory_injected_only_when_memory_block_exists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "codex-provider-empty-memory"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    class _TempDir:
+        def __enter__(self) -> str:
+            return str(output_dir)
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        (output_dir / "turn_decision.json").write_text(
+            json.dumps(
+                {
+                    "observation_summary": "connected",
+                    "classification": "healthy",
+                    "action": {
+                        "kind": "finalize",
+                        "final_status": "diagnosed_only",
+                        "classification": "healthy",
+                        "root_cause": "none",
+                        "summary": "ok",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
+
+    provider = CodexCLIDecisionProvider(model=None)
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(
+        bundle,
+        make_provider_session_state(provider="codex-cli", model=None, continuation_mode="transcript-only"),
+    )
+
+    assert turn.provider_metadata["memory_injected"] is False
