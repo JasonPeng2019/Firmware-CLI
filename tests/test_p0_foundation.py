@@ -17,8 +17,8 @@ from pyocd_debug_mcp.brain.decision_types import (
     TimeoutProposal,
 )
 from pyocd_debug_mcp.brain.provider_types import (
+    make_provider_session_state,
     ProviderProgressUpdate,
-    ProviderSessionState,
     ProviderTurn,
 )
 from pyocd_debug_mcp.timeouts import (
@@ -92,12 +92,16 @@ def test_provider_turn_carries_optional_session_and_progress_fields() -> None:
         ),
         output_text="{}",
         response_id="resp-1",
-        session_state=ProviderSessionState(provider_session_id="sess-1", response_id="resp-1", turn_index=3),
+        session_state=make_provider_session_state(
+            provider="codex-cli",
+            model=None,
+            continuation_mode="transcript-only",
+        ),
         progress_updates=(ProviderProgressUpdate(stage="thinking", message="provider is reasoning"),),
     )
 
     assert turn.session_state is not None
-    assert turn.session_state.turn_index == 3
+    assert turn.session_state.provider == "codex-cli"
     assert turn.progress_updates[0].stage == "thinking"
 
 

@@ -47,6 +47,9 @@ class ToolClientProtocol(Protocol):
     async def list_tool_descriptors(self) -> tuple["ToolDescriptor", ...]:
         """Return the currently available tool metadata."""
 
+    async def list_tool_names(self) -> set[str]:
+        """Return the currently available tool names."""
+
     async def call_tool_text(
         self,
         name: str,
@@ -232,6 +235,10 @@ class StdioToolClient:
             )
             for tool in tools.tools
         )
+
+    async def list_tool_names(self) -> set[str]:
+        descriptors = await self.list_tool_descriptors()
+        return {descriptor.name for descriptor in descriptors}
 
     async def call_tool_text(
         self,
