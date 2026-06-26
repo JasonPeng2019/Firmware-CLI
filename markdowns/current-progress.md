@@ -31,6 +31,11 @@ through Stage 0 and Stage 1. That means the remaining work is no longer in the
 shared hardware substrate; it is in the turnkey product layer and the broader
 cross-host portability claims.
 
+Unless a later status entry explicitly widens it, the portability claim should
+be read as post-bootstrap portability: supported hosts plus supported boards
+after a short documented developer bootstrap equivalent to normal manual-debug
+setup, not "every board on every machine with zero manual setup."
+
 That means the following are already implemented, and at least historically
 live-proven on the scoped pair:
 

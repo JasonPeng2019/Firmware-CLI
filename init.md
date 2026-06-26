@@ -1,7 +1,7 @@
 # Environment Bootstrap
 
-This is the operator-facing bootstrap guide for getting a fresh machine to the
-point where the repo scripts can mostly self-pilot.
+This is the operator-facing bootstrap guide for getting a machine to the point
+where the repo scripts can mostly self-pilot after a short developer setup.
 
 The root [README.md](./README.md) is the canonical layout and naming reference.
 This file goes deeper on first-run setup, local overrides, and the command
@@ -62,7 +62,14 @@ These scripts can:
   repo-owned firmware rebuilds when you pass `-EnsureZephyrBuildEnv` on Windows
   or `--ensure-zephyr-build-env` on macOS
 
-If the selected board needs Nordic `nrfjprog` and the Windows script cannot
+This bootstrap is intentionally narrower than a "fully self-installing fresh
+machine" claim. It may still rely on one-time manual vendor-driver or
+vendor-tool setup that an engineer would already need for normal board
+debugging. After that bootstrap, the repo-owned readiness checks, Stage 0
+validation, MCP server, and turnkey runtime are expected to behave portably on
+the supported host and board matrix.
+
+If you want the optional Nordic `nrfjprog` helper and the Windows script cannot
 complete that installer because the host requires admin approval, do the
 one-time manual Windows fallback:
 
@@ -77,6 +84,10 @@ Then reopen the terminal and rerun:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup_host.ps1 -BoardId nrf52833dk
 ```
+
+`nrfjprog` improves Nordic serial auto-detect and provides a fallback flashing
+path, but it is not the core prerequisite for normal J-Link-based Stage 0
+bring-up. The core prerequisite is a working SEGGER J-Link install/driver path.
 
 ### 3. Do not create or activate a venv manually
 
@@ -131,7 +142,8 @@ SDK resolution follows the same policy:
 - reuse `ZEPHYR_SDK_INSTALL_DIR`
 - reuse a workspace-adjacent SDK such as `ncs/toolchains/.../opt/zephyr-sdk`
 - reuse a standard Zephyr SDK location already on disk
-- otherwise install a managed SDK into the local cache with `west sdk install`
+- otherwise install a managed SDK into the local cache through the repo
+  helper's own archive-download and setup flow
 
 Current support boundary:
 

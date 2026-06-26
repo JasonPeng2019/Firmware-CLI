@@ -184,39 +184,35 @@ It should not mean:
 - a claim that the repo can replace the normal one-time embedded-toolchain setup
   an engineer would already need
 
-Current code-visible gaps against that narrower contract:
+Remaining gaps against that narrower contract after the current implementation
+pass:
 
-1. `setup_host.ps1` and `setup_host.sh` still treat Nordic `nrfjprog` as a
-   required setup success path for Nordic J-Link boards, even though the shared
-   runtime degrades gracefully without it through generic matching or manual
-   `--port` selection. This overstates the bootstrap requirement relative to the
-   actual runtime contract.
-   Fixability: high. Detectable now from code only and fixable on the current
-   Windows host.
+1. `agent_portability_playbook.md` still encodes the stricter absent-stranger /
+   self-installing framing. The repo-level product docs and bootstrap/runtime
+   code now align better with the narrower post-bootstrap contract, but the
+   higher-level portability playbook is still in tension with that position.
+   Fixability: medium, but this is a repo-governance decision and should not be
+   changed silently.
 
-2. `stage0_check.py`, `target_control.py`, and the guardrails still phrase
-   `manual_only` recover as "automate later" instead of clearly treating it as a
-   support-boundary decision for unsupported recover families.
-   Fixability: high. Mostly wording / policy cleanup, no new hardware needed.
+2. `setup_host.sh` still does not explicitly detect or warn on a missing SEGGER
+   J-Link install for Nordic J-Link boards the way the Windows helper does. The
+   narrower contract allows that prerequisite to remain manual, but the macOS
+   bootstrap helper could surface it more directly.
+   Fixability: medium from code alone, but pending macOS verification.
 
-3. The docs and helper behavior still mix "fresh-machine self-installing" and
-   "short developer bootstrap" language, which makes the claim hard to state
-   precisely.
-   Fixability: high. Mostly documentation sync.
-
-4. macOS Intel managed SDK install remains outside the helper's supported
+3. macOS Intel managed SDK install remains outside the helper's supported
    no-bootstrap path because of the upstream Zephyr support boundary.
    Fixability: low from repo code alone. This is mostly an upstream/toolchain
    limitation, not a local bug.
 
-5. STM32CubeProgrammer unattended install is still not a verified setup-helper
-   path on Windows or macOS. Under this narrower contract that is acceptable,
-   but the setup scripts should classify it as an allowed manual prerequisite
-   rather than implying incomplete portability.
-   Fixability: medium. Messaging/path-policy fix is easy; verified unattended
-   automation is probably unnecessary for the intended contract.
+4. STM32CubeProgrammer unattended install is still not a verified setup-helper
+   path on Windows or macOS. Under this narrower contract that is acceptable and
+   now documented as an allowed manual prerequisite, but it remains a known
+   limitation of helper automation.
+   Fixability: medium if the team later decides it is worth pursuing; not
+   required for the current contract.
 
-6. The supported-board claim and the currently attached-board proof surface are
+5. The supported-board claim and the currently attached-board proof surface are
    different: the public contract still wants `nrf52833dk + nucleo_l476rg`,
    while the currently attached Windows alternate Nordic proof uses
    `nrf52840dk + nucleo_l476rg`.

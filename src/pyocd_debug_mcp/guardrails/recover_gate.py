@@ -57,7 +57,7 @@ def authorize_recover(
     if board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
         raise _refuse(
             "recover/manual-only",
-            f"{board.display_name} uses manual_only recover handling.",
+            f"{board.display_name} requires a manual recover procedure for this family; this repo does not automate recover_mode=manual_only.",
             action_context,
         )
 

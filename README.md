@@ -15,6 +15,11 @@ shared board-validation logic that is callable from `stage0_check.py`, future
 MCP tools, and local programmer flows; only raw host bootstrap remains
 pre-server.
 
+The portability contract for this repo is post-bootstrap, not universal:
+supported hosts plus supported boards, after a short documented developer
+bootstrap equivalent to the setup needed for normal manual board debugging.
+That bootstrap may still include vendor-driver or vendor-tool installation.
+
 The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
