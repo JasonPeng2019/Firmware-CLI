@@ -17,8 +17,10 @@ from pyocd_debug_mcp.brain.config import (
     build_turnkey_invocation,
     load_provider_config,
 )
+from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
+from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 DEFAULT_MAX_ITERS = 18
 
@@ -283,6 +285,9 @@ async def run_case_async(
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> benchmark_support.CaseRunReport:
     case = benchmark_support.load_case(case_id)
     if case.scoring_profile != benchmark_support.DEFAULT_SCORING_PROFILE:
@@ -290,7 +295,14 @@ async def run_case_async(
 
     prepared = benchmark_support._prepare_case(case)
     benchmark_support._prepare_target_state(prepared)
-    provider_config = load_provider_config(model, provider)
+    if timeout_config is None:
+        provider_config = load_provider_config(model, provider)
+    else:
+        provider_config = load_provider_config(
+            model,
+            provider,
+            provider_timeout_seconds=timeout_config.provider_seconds,
+        )
     invocation = build_turnkey_invocation(
         mode="benchmark",
         provider=provider_config.provider,
@@ -311,6 +323,9 @@ async def run_case_async(
         code_edits_allowed=case.allowed_actions.code_edits_allowed,
         allowed_edit_roots=case.allowed_actions.allowed_edit_roots,
         recover_allowed=case.allowed_actions.recover_allowed,
+        timeout_config=timeout_config,
+        timeout_proposal=timeout_proposal,
+        iteration_estimate=iteration_estimate,
     )
     before_session_dirs = benchmark_support._session_dirs()
     execution = await run_turnkey_with_provider(
@@ -436,6 +451,9 @@ def run_case(
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> benchmark_support.CaseRunReport:
     return anyio.run(
         lambda: run_case_async(
@@ -445,6 +463,9 @@ def run_case(
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
             event_sink=event_sink,
+            timeout_config=timeout_config,
+            timeout_proposal=timeout_proposal,
+            iteration_estimate=iteration_estimate,
         )
     )
 
@@ -457,6 +478,9 @@ def run_suite(
     max_iters: int = DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> list[benchmark_support.CaseRunReport]:
     return [
         run_case(
@@ -466,6 +490,9 @@ def run_suite(
             max_iters=max_iters,
             serial_read_seconds=serial_read_seconds,
             event_sink=event_sink,
+            timeout_config=timeout_config,
+            timeout_proposal=timeout_proposal,
+            iteration_estimate=iteration_estimate,
         )
         for case in benchmark_support.load_suite(suite_name)
     ]

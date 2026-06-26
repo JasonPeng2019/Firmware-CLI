@@ -11,8 +11,10 @@ from pyocd_debug_mcp.brain.config import (
     build_turnkey_invocation,
     load_provider_config,
 )
+from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
+from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 
 async def run_freeform_task(
@@ -29,8 +31,18 @@ async def run_freeform_task(
     workspace_root: str | None = None,
     build_command: str | None = None,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> TurnkeyExecution:
-    provider_config = load_provider_config(model, provider)
+    if timeout_config is None:
+        provider_config = load_provider_config(model, provider)
+    else:
+        provider_config = load_provider_config(
+            model,
+            provider,
+            provider_timeout_seconds=timeout_config.provider_seconds,
+        )
     invocation = build_turnkey_invocation(
         mode="freeform",
         provider=provider_config.provider,
@@ -47,6 +59,9 @@ async def run_freeform_task(
         code_edits_allowed=bool(workspace_root and build_command),
         allowed_edit_roots=(),
         recover_allowed=True,
+        timeout_config=timeout_config,
+        timeout_proposal=timeout_proposal,
+        iteration_estimate=iteration_estimate,
     )
     return await run_turnkey_with_provider(
         invocation,
@@ -63,8 +78,18 @@ def run_benchmark_case(
     max_iters: int = r12_benchmark.DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> benchmark_support.CaseRunReport:
-    provider_config = load_provider_config(model, provider)
+    if timeout_config is None:
+        provider_config = load_provider_config(model, provider)
+    else:
+        provider_config = load_provider_config(
+            model,
+            provider,
+            provider_timeout_seconds=timeout_config.provider_seconds,
+        )
     return r12_benchmark.run_case(
         case_id,
         provider=provider_config.provider,
@@ -72,6 +97,9 @@ def run_benchmark_case(
         max_iters=max_iters,
         serial_read_seconds=serial_read_seconds,
         event_sink=event_sink,
+        timeout_config=timeout_config,
+        timeout_proposal=timeout_proposal,
+        iteration_estimate=iteration_estimate,
     )
 
 
@@ -83,8 +111,18 @@ def run_benchmark_suite(
     max_iters: int = r12_benchmark.DEFAULT_MAX_ITERS,
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     event_sink: EventSink | None = None,
+    timeout_config: TurnkeyTimeoutConfig | None = None,
+    timeout_proposal: TimeoutProposal | None = None,
+    iteration_estimate: IterationEstimate | None = None,
 ) -> list[benchmark_support.CaseRunReport]:
-    provider_config = load_provider_config(model, provider)
+    if timeout_config is None:
+        provider_config = load_provider_config(model, provider)
+    else:
+        provider_config = load_provider_config(
+            model,
+            provider,
+            provider_timeout_seconds=timeout_config.provider_seconds,
+        )
     reports: list[benchmark_support.CaseRunReport] = []
     for case in benchmark_support.load_suite(suite_name):
         reports.append(
@@ -95,6 +133,9 @@ def run_benchmark_suite(
                 max_iters=max_iters,
                 serial_read_seconds=serial_read_seconds,
                 event_sink=event_sink,
+                timeout_config=timeout_config,
+                timeout_proposal=timeout_proposal,
+                iteration_estimate=iteration_estimate,
             )
         )
     return reports

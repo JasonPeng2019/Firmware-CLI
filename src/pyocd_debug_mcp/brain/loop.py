@@ -43,12 +43,6 @@ from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, pr
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
-from pyocd_debug_mcp.timeouts import (
-    TURNKEY_CONNECT_TIMEOUT_SECONDS,
-    TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
-    TURNKEY_FLASH_TIMEOUT_SECONDS,
-    TURNKEY_RECOVER_TIMEOUT_SECONDS,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -118,6 +112,13 @@ def _build_request_payload(
         "model": invocation.model,
         "max_iters": invocation.max_iters,
         "serial_read_seconds": invocation.serial_read_seconds,
+        "timeout_config": invocation.timeout_config.to_record(),
+        "timeout_proposal": invocation.timeout_proposal.model_dump(mode="json")
+        if invocation.timeout_proposal is not None
+        else None,
+        "iteration_estimate": invocation.iteration_estimate.model_dump(mode="json")
+        if invocation.iteration_estimate is not None
+        else None,
         "port_override": invocation.port,
         "flash_artifact": str(flash_artifact),
         "symbol_artifact": str(symbol_artifact),
@@ -599,13 +600,13 @@ async def _call_tool_with_timeout(
         signature = inspect.signature(call_tool)
     except (TypeError, ValueError):
         signature = None
-    if signature is not None and "timeout_seconds" in signature.parameters:
-        return cast(
-            ToolTextResult,
-            await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
-        )
     try:
         with anyio.fail_after(timeout_seconds):
+            if signature is not None and "timeout_seconds" in signature.parameters:
+                return cast(
+                    ToolTextResult,
+                    await call_tool(tool_name, arguments, timeout_seconds=timeout_seconds),
+                )
             return cast(ToolTextResult, await call_tool(tool_name, arguments))
     except TimeoutError as exc:
         raise MCPClientError(
@@ -614,15 +615,10 @@ async def _call_tool_with_timeout(
 
 
 def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:
-    if tool_name == "connect":
-        return TURNKEY_CONNECT_TIMEOUT_SECONDS
-    if tool_name == "flash_firmware":
-        return TURNKEY_FLASH_TIMEOUT_SECONDS
-    if tool_name == "unlock_recover":
-        return TURNKEY_RECOVER_TIMEOUT_SECONDS
-    if tool_name == "read_serial":
-        return max(TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS, invocation.serial_read_seconds + 12.0)
-    return TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
+    return invocation.timeout_config.tool_timeout_seconds(
+        tool_name,
+        serial_read_seconds=invocation.serial_read_seconds,
+    )
 
 
 async def _execute_server_tool(
@@ -785,6 +781,7 @@ def _execute_build(
     workspace: WorkspaceSession | None,
     action: RunBuildAction,
     state: BrainState,
+    invocation: TurnkeyInvocation,
 ) -> str:
     if workspace is None:
         raise TurnkeyRefusal(
@@ -793,7 +790,10 @@ def _execute_build(
         )
     state.register_build()
     state.pending_fix_evaluation = True
-    build = workspace.run_build(action.build_command)
+    build = workspace.run_build(
+        action.build_command,
+        timeout_seconds=invocation.timeout_config.build_seconds,
+    )
     state.actions_taken.append("run_build")
     state.last_action_summary = f"run_build({action.build_command or workspace.build_command})"
     if build.exit_code == 0:
@@ -835,7 +835,7 @@ async def _execute_green_check(
         client,
         "flash_firmware",
         {"path": str(flash_artifact), "halt_after_reset": True},
-        timeout_seconds=TURNKEY_FLASH_TIMEOUT_SECONDS,
+        timeout_seconds=_tool_timeout_seconds("flash_firmware", invocation),
     )
     if flash_result.refusal_code or flash_result.blocked_code:
         state.last_result_text = flash_result.text
@@ -845,7 +845,7 @@ async def _execute_green_check(
         client,
         "read_core_register",
         {"name": "pc"},
-        timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+        timeout_seconds=invocation.timeout_config.default_tool_seconds,
     )
     if pc_result.refusal_code or pc_result.blocked_code:
         state.last_result_text = pc_result.text
@@ -865,7 +865,7 @@ async def _execute_green_check(
                 "address": f"0x{resolved_symbol.address:08X}",
                 "word_size": 32,
             },
-            timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+            timeout_seconds=invocation.timeout_config.default_tool_seconds,
         )
         if value_result.refusal_code or value_result.blocked_code:
             state.last_result_text = value_result.text
@@ -905,10 +905,7 @@ async def _execute_green_check(
         client,
         "read_serial",
         read_serial_args,
-        timeout_seconds=max(
-            TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
-            invocation.serial_read_seconds + 12.0,
-        ),
+        timeout_seconds=_tool_timeout_seconds("read_serial", invocation),
     )
     if serial_result.refusal_code or serial_result.blocked_code:
         state.last_result_text = serial_result.text
@@ -1158,7 +1155,7 @@ async def run_turnkey(
     invocation: TurnkeyInvocation,
     *,
     provider: DecisionProvider,
-    client_factory: Callable[[], LocalMCPClient] = LocalMCPClient,
+    client_factory: Callable[[], LocalMCPClient] | None = None,
     event_sink: EventSink | None = None,
 ) -> TurnkeyExecution:
     board = load_board(invocation.board_id)
@@ -1208,6 +1205,9 @@ async def run_turnkey(
     brain_trace: list[dict[str, object]] = []
     brain_events: list[dict[str, object]] = []
     run_root = _prepare_run_root(_provisional_run_id())
+    resolved_client_factory = client_factory or (
+        lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
+    )
 
     await _record_brain_event(
         sink=event_sink,
@@ -1226,7 +1226,7 @@ async def run_turnkey(
     )
 
     try:
-        async with client_factory() as client:
+        async with resolved_client_factory() as client:
             for iteration in range(1, invocation.max_iters + 1):
                 state.iteration = iteration
                 turn_prompt = _build_turn_prompt(invocation, board, state, skills_text, workspace)
@@ -1401,7 +1401,7 @@ async def run_turnkey(
                             message="Starting local build.",
                             details={"build_command": action.build_command or (workspace.build_command if workspace else None)},
                         )
-                        result_text = _execute_build(workspace, action, state)
+                        result_text = _execute_build(workspace, action, state, invocation)
                         duration_ms = int((time.perf_counter() - action_started) * 1000)
                         await _record_brain_event(
                             sink=event_sink,
@@ -1582,7 +1582,7 @@ async def run_turnkey(
                         client,
                         "disconnect",
                         {},
-                        timeout_seconds=TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+                        timeout_seconds=invocation.timeout_config.default_tool_seconds,
                     )
                     state.register_disconnect()
                     await _record_brain_event(

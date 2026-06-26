@@ -139,7 +139,7 @@ def test_stlink_resolves_from_cubeprogrammer(monkeypatch) -> None:
         make_port(
             "COM9",
             "STMicroelectronics STLink Virtual COM Port",
-            serial_number="002B00213037510B35333131",
+            serial_number="",
         ),
         make_port("COM10", "USB Serial Device", serial_number="other"),
     ]
@@ -173,6 +173,44 @@ Manufacturer: STMicroelectronics
     assert result.port is not None
     assert result.port.device == "COM9"
     assert "STM32_Programmer_CLI" in result.note
+
+
+def test_probe_linked_metadata_match_bypasses_vendor_helper(monkeypatch) -> None:
+    board = FakeBoard(
+        "nucleo_l476rg", "Nucleo-L476RG", "stm32l476", "stlink", ("st-link", "stm32")
+    )
+    probe = FakeProbe("002B00213037510B35333131")
+    ports = [
+        make_port(
+            "COM9",
+            "STMicroelectronics STLink Virtual COM Port",
+            serial_number="002B00213037510B35333131",
+        ),
+        make_port("COM10", "USB Serial Device", serial_number="other"),
+    ]
+
+    monkeypatch.setattr(
+        serial_resolver,
+        "resolve_command_path",
+        lambda name: "STM32_Programmer_CLI" if name == "STM32_Programmer_CLI" else None,
+    )
+
+    calls: list[list[str]] = []
+
+    result = resolve_serial_port(
+        board=board,
+        ports=ports,
+        probe=probe,
+        override=None,
+        allow_single_fallback=False,
+        run_cmd=lambda cmd: (calls.append(cmd) or True) and (0, "", ""),
+        interactive=False,
+    )
+
+    assert result.port is not None
+    assert result.port.device == "COM9"
+    assert result.note == "resolved from serial-port metadata"
+    assert calls == []
 
 
 def test_vendor_tool_missing_falls_back_to_generic(monkeypatch) -> None:

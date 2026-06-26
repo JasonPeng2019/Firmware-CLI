@@ -11,9 +11,10 @@ import sys
 import time
 
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT
+from pyocd_debug_mcp.timeouts import TURNKEY_BUILD_TIMEOUT_SECONDS
 
 SNAPSHOT_ROOT = RUNS_ROOT / "_r12_snapshots"  # PROJECT-DEFINED (turnkey scratch area)
-DEFAULT_BUILD_TIMEOUT_SECONDS = 1800.0  # PROJECT-DEFINED (allow real builds, but not indefinite hangs)
+DEFAULT_BUILD_TIMEOUT_SECONDS = TURNKEY_BUILD_TIMEOUT_SECONDS
 
 
 class WorkspaceError(RuntimeError):

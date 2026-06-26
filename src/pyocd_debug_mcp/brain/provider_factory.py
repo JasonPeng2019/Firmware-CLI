@@ -14,17 +14,25 @@ def create_decision_provider(config: BrainProviderConfig) -> DecisionProvider:
     if config.provider == "openai-api":
         if config.api_key is None or config.model is None:
             raise RuntimeError("OpenAI API provider requires both api_key and model.")
-        return OpenAIDecisionProvider(api_key=config.api_key, model=config.model)
+        return OpenAIDecisionProvider(
+            api_key=config.api_key,
+            model=config.model,
+            timeout_seconds=config.timeout_seconds,
+        )
 
     if config.provider == "anthropic-api":
         if config.api_key is None or config.model is None:
             raise RuntimeError("Anthropic API provider requires both api_key and model.")
-        return AnthropicDecisionProvider(api_key=config.api_key, model=config.model)
+        return AnthropicDecisionProvider(
+            api_key=config.api_key,
+            model=config.model,
+            timeout_seconds=config.timeout_seconds,
+        )
 
     if config.provider == "codex-cli":
-        return CodexCLIDecisionProvider(model=config.model)
+        return CodexCLIDecisionProvider(model=config.model, timeout_seconds=config.timeout_seconds)
 
     if config.provider == "claude-cli":
-        return ClaudeCLIDecisionProvider(model=config.model)
+        return ClaudeCLIDecisionProvider(model=config.model, timeout_seconds=config.timeout_seconds)
 
     raise RuntimeError(f"Unsupported turnkey provider: {config.provider}")
