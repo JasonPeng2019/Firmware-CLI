@@ -168,7 +168,10 @@ def test_run_recover_test_surfaces_policy_refusal(monkeypatch, capsys) -> None:
         stage0_check,
         "authorize_recover",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            PolicyRefusal("recover/manual-only", "nRF52833 DK uses manual_only recover handling.")
+            PolicyRefusal(
+                "recover/manual-only",
+                "nRF52833 DK requires a manual recover procedure for this family; this repo does not automate recover_mode=manual_only.",
+            )
         ),
     )
 

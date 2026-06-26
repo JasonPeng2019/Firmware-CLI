@@ -16,6 +16,30 @@ MCP_STARTUP_TIMEOUT_SECONDS = 30.0
 # PROJECT-DEFINED (model providers can be slow, but must not block forever).
 PROVIDER_REQUEST_TIMEOUT_SECONDS = 300.0
 
+# PROJECT-DEFINED (default turnkey client timeout for ordinary MCP tool calls).
+TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
+
+# PROJECT-DEFINED (turnkey connect needs a longer ceiling than ordinary reads).
+TURNKEY_CONNECT_TIMEOUT_SECONDS = 60.0
+
+# PROJECT-DEFINED (turnkey flash can legitimately take much longer than reads).
+TURNKEY_FLASH_TIMEOUT_SECONDS = 240.0
+
+# PROJECT-DEFINED (turnkey recover/unlock can legitimately take much longer than reads).
+TURNKEY_RECOVER_TIMEOUT_SECONDS = 180.0
+
+# PROJECT-DEFINED (default UART read wall-clock floor for turnkey client reads).
+TURNKEY_UART_TIMEOUT_SECONDS = 30.0
+
+# PROJECT-DEFINED (extra wall-clock budget over the requested UART read window).
+TURNKEY_UART_READ_GRACE_SECONDS = 12.0
+
+# PROJECT-DEFINED (allow real workspace builds, but not indefinite hangs).
+TURNKEY_BUILD_TIMEOUT_SECONDS = 1800.0
+
+# PROJECT-DEFINED (a batch may include one full build/flash/verify cycle).
+TURNKEY_BATCH_TIMEOUT_SECONDS = 1800.0
+
 # PROJECT-DEFINED (explicit pyOCD operation ceilings; mirrors/tightens pyOCD defaults).
 PYOCD_STEP_TIMEOUT_SECONDS = 2.0
 PYOCD_RESET_HALT_TIMEOUT_SECONDS = 2.0
@@ -26,17 +50,6 @@ PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS = 10.0
 PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS = 10.0
 PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS = 240.0
 PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS = 30.0
-
-# PROJECT-DEFINED (current turnkey client-side backstop defaults).
-TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
-TURNKEY_CONNECT_TIMEOUT_SECONDS = 60.0
-TURNKEY_FLASH_TIMEOUT_SECONDS = 240.0
-TURNKEY_RECOVER_TIMEOUT_SECONDS = 180.0
-TURNKEY_UART_TIMEOUT_SECONDS = 30.0
-TURNKEY_UART_READ_GRACE_SECONDS = 12.0  # PROJECT-DEFINED (extra wall-clock budget over the requested UART read window)
-TURNKEY_BUILD_TIMEOUT_SECONDS = 1800.0  # PROJECT-DEFINED (allow real workspace builds, but not indefinite hangs)
-TURNKEY_BATCH_TIMEOUT_SECONDS = 1800.0  # PROJECT-DEFINED (a batch may include one full build/flash/verify cycle)
-
 
 @dataclass(frozen=True)
 class TurnkeyTimeoutConfig:

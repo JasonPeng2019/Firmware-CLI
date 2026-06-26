@@ -7,15 +7,23 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
 import pytest
 
 from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
 from pyocd_debug_mcp.brain import mcp_client as mcp_client_mod
-from pyocd_debug_mcp.brain.config import build_turnkey_invocation
+from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.loop import run_turnkey
-from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult, default_server_command
+from pyocd_debug_mcp.brain.mcp_client import (
+    LocalMCPClient,
+    MCPClientError,
+    StdioToolClient,
+    ToolTextResult,
+    default_server_command,
+)
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     ClaudeCLIDecisionProvider,
     ProviderResponseError as ClaudeProviderResponseError,
@@ -164,6 +172,123 @@ def test_local_mcp_client_start_times_out(monkeypatch) -> None:
         anyio.run(client.start)
 
 
+def test_local_mcp_client_cleans_up_on_non_timeout_start_failure() -> None:
+    class FailingStartupTransport:
+        def __init__(self) -> None:
+            self.exit_calls: list[tuple[object, object, object]] = []
+
+        async def __aenter__(self) -> "FailingStartupTransport":
+            return self
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            self.exit_calls.append((exc_type, exc, tb))
+            return None
+
+        async def list_tool_names(self) -> set[str]:
+            raise RuntimeError("tool listing failed")
+
+        async def call_tool_text(
+            self,
+            name: str,
+            arguments: dict[str, object] | None,
+            *,
+            timeout_seconds: float | None = None,
+        ) -> ToolTextResult:
+            return ToolTextResult(tool_name=name, text="ok")
+
+    transport = FailingStartupTransport()
+    client = LocalMCPClient()
+    client._transport = transport  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="tool listing failed"):
+        anyio.run(client.start)
+
+    assert len(transport.exit_calls) == 1
+    assert transport.exit_calls[0][0] is RuntimeError
+    assert client.available_tools == ()
+
+
+def test_stdio_tool_client_cleans_up_when_initialize_fails(monkeypatch) -> None:
+    events: list[str] = []
+
+    class FakeStdioManager:
+        async def __aenter__(self) -> tuple[object, object]:
+            events.append("manager-enter")
+            return object(), object()
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            events.append(f"manager-exit:{getattr(exc_type, '__name__', exc_type)}")
+            return None
+
+    class FakeSession:
+        def __init__(self, read_stream: object, write_stream: object) -> None:
+            del read_stream, write_stream
+
+        async def __aenter__(self) -> None:
+            events.append("session-enter")
+            return None
+
+        async def initialize(self) -> None:
+            events.append("session-initialize")
+            raise RuntimeError("initialize failed")
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            events.append(f"session-exit:{getattr(exc_type, '__name__', exc_type)}")
+            return None
+
+    monkeypatch.setattr(mcp_client_mod, "stdio_client", lambda params: FakeStdioManager())
+    monkeypatch.setattr(mcp_client_mod, "ClientSession", FakeSession)
+
+    client = StdioToolClient(default_server_command())
+
+    with pytest.raises(RuntimeError, match="initialize failed"):
+        anyio.run(client.__aenter__)
+
+    assert events == [
+        "manager-enter",
+        "session-enter",
+        "session-initialize",
+        "session-exit:RuntimeError",
+        "manager-exit:RuntimeError",
+    ]
+
+
+def test_stdio_tool_client_suppresses_expected_cleanup_errors() -> None:
+    class NoisyCloser:
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            raise anyio.BrokenResourceError
+
+    client = StdioToolClient(default_server_command())
+    client._session = NoisyCloser()  # type: ignore[assignment]
+    client._stdio_manager = NoisyCloser()
+
+    anyio.run(lambda: client.__aexit__(None, None, None))
+
+    assert client._session is None
+    assert client._stdio_manager is None
+
+
+def test_stdio_tool_client_maps_mcp_timeout_to_mcp_client_error() -> None:
+    class FakeSession:
+        async def call_tool(
+            self,
+            name: str,
+            *,
+            arguments: dict[str, object] | None,
+            read_timeout_seconds: object = None,
+        ) -> object:
+            del name, arguments, read_timeout_seconds
+            raise McpError(
+                ErrorData(code=408, message="Timed out while waiting for response to CallToolRequest. Waited 0.01 seconds.")
+            )
+
+    client = StdioToolClient(default_server_command())
+    client._session = FakeSession()  # type: ignore[assignment]
+
+    with pytest.raises(MCPClientError, match="Tool 'read_serial' timed out after 0s"):
+        anyio.run(lambda: client.call_tool_text("read_serial", {"read_seconds": 1.0}, timeout_seconds=0.01))
+
+
 def test_run_local_command_uses_windows_shell_on_windows(
     monkeypatch,
     tmp_path: Path,
@@ -188,6 +313,32 @@ def test_run_local_command_uses_windows_shell_on_windows(
     assert captured["errors"] == "replace"
     assert result.exit_code == 0
     assert result.stdout == "ok\n"
+
+
+def test_build_turnkey_invocation_rejects_nonpositive_max_iters() -> None:
+    with pytest.raises(BrainConfigError, match="max_iters must be > 0"):
+        build_turnkey_invocation(
+            mode="freeform",
+            provider="codex-cli",
+            board_id="nrf52840dk",
+            task="verify",
+            model=None,
+            max_iters=0,
+            serial_read_seconds=3.0,
+        )
+
+
+def test_build_turnkey_invocation_rejects_nonpositive_serial_read_seconds() -> None:
+    with pytest.raises(BrainConfigError, match="serial_read_seconds must be > 0"):
+        build_turnkey_invocation(
+            mode="freeform",
+            provider="codex-cli",
+            board_id="nrf52840dk",
+            task="verify",
+            model=None,
+            max_iters=4,
+            serial_read_seconds=0.0,
+        )
 
 
 def test_brain_state_to_record_includes_typed_evidence() -> None:

@@ -164,17 +164,23 @@ full list), and what its "ready/done" signal looks like.
 
 ### `setup_host.ps1` / `setup_host.sh` — first-run host automation
 
-Installs or repairs the canonical environment and board-family vendor tooling on a fresh machine, then
-runs `host_bootstrap.py --install-packs` unless skipped. **Destructive only in the sense of installing
-system software / modifying user PATH (Windows).**
+Installs or repairs the canonical environment and the subset of vendor tooling
+the repo can reasonably help with, then runs `host_bootstrap.py --install-packs`
+unless skipped. This script is the "short developer bootstrap" layer, not a
+promise to silently install every proprietary driver or probe package. It is
+**destructive only in the sense of installing system software / modifying user
+PATH (Windows).**
 
 - Operator-facing flags: `-BoardId`/`--board-id` (scope to the attached board); `-SkipHostBootstrap`/
   `--skip-host-bootstrap`; `-SkipUvSync`/`--skip-uv-sync`; `-EnsureZephyrBuildEnv`/
   `--ensure-zephyr-build-env` (also provision the Zephyr workspace/SDK used for local firmware rebuilds);
   `-DryRun`/`--dry-run` (print intended actions, change nothing).
-- Windows additionally automates: Python 3.12 via `winget`, `uv` via `pip`, PATH repair, SEGGER J-Link,
-  Nordic nRF Command Line Tools; attempts PATH repair for an existing STM32CubeProgrammer install.
-- macOS additionally automates: Homebrew, `uv`, `libusb`, Nordic tools via cask; attempts ST PATH repair.
+- Windows additionally automates: Python 3.12 via `winget`, `uv` via `pip`,
+  PATH repair, SEGGER J-Link, and an optional best-effort Nordic `nrfjprog`
+  install; attempts PATH repair for an existing STM32CubeProgrammer install.
+- macOS additionally automates: Homebrew, `uv`, `libusb`, an optional
+  best-effort Nordic `nrfjprog` install via cask, and ST PATH repair where an
+  existing STM32CubeProgrammer install is already present.
 - Ready signal: `... host setup script completed.` and exit `0`. Exit `1` = script-level failure;
   `setup_host.sh` exit `2` = invalid CLI option.
 
@@ -295,7 +301,8 @@ sequence it appears.
 | `setup_host.ps1 currently supports Windows host automation only.` / `setup_host.sh currently supports macOS only.` | Wrong setup script for this OS | Run the OS-matching setup script |
 | `winget is required ... but was not found.` (Windows) | Unattended install path unavailable | Install Python/vendor tools manually -> rerun `setup_host.ps1` |
 | `Python install completed but no python launcher was found on PATH.` / `uv install completed but uv was not found on PATH.` | Install succeeded but PATH is stale | Reopen the shell -> rerun the setup script |
-| `[WARN] STM32_Programmer_CLI not found ...` | ST tool missing; no verified silent ST installer | Install STM32CubeProgrammer manually -> rerun `setup_host` or `host_bootstrap.py` |
+| `[WARN] STM32_Programmer_CLI not found ...` | ST helper tool missing; the repo accepts this as a manual prerequisite on hosts that need it | Install STM32CubeProgrammer manually -> rerun `setup_host` or `host_bootstrap.py` |
+| `[WARN] nrfjprog not found ... Continuing because this helper is optional ...` | Nordic optional helper missing; normal J-Link bring-up may still work | Continue if the board is otherwise debug-ready, or install `nrfjprog` and rerun if you want the helper features |
 | `host_bootstrap.py reported that setup is still incomplete.` | Env repaired but probe/serial/pack readiness still failed | Read the `host_bootstrap.py` output, fix the named blocker -> rerun `host_bootstrap.py` |
 | `[FAIL] pyOCD not found - run: uv sync` / `pyocd missing` / `pyserial missing` / `pyOCD not found` / `pyserial not found` | Repo environment incomplete | `uv sync` (or `host_bootstrap.py --install-missing`) -> rerun the same script |
 | `[FAIL] <path> is missing required field ...` | Invalid board config | Correct the board YAML -> rerun |
@@ -311,7 +318,7 @@ sequence it appears.
 | `Reference firmware file does not exist: ...` | Bad runtime artifact path | Correct the path -> rerun with `--reference-firmware <board>=<path>` |
 | `[FAIL] Flash failed for <path>` | Probe lost, target pack missing, or chip access-protected | Confirm prior checks pass (connection first), recover if locked -> rerun flash |
 | `UART output did not match expected text` / `UART produced no output` / `Unable to read <port> at <baud> baud` | Wrong firmware, wrong `--expect`, wrong port/baud, busy port, or too-short read window | Flash the intended image, fix `--expect`/`--port`/`--baudrate`, or raise `--serial-read-seconds` -> rerun |
-| `Skipped - this board's recover_mode is manual_only` | Board needs recover validation but has no Stage 0 automation for its family yet | Perform the recover proof manually, record it -> rerun the normal check |
+| `Skipped - this board's recover_mode is manual_only` | Board needs recover validation but this repo intentionally treats that family as a manual recover step | Perform the recover proof manually, record it -> rerun the normal check |
 | nRF identity/connection fails again after a power cycle | Flashed firmware is likely re-enabling APPROTECT on boot | Rerun `--recover-test <board>` then the normal check; if it repeats every cycle, the firmware is re-locking |
 
 When a tool says "fix host visibility," go back to `setup_host` / `host_bootstrap.py` — do not guess at

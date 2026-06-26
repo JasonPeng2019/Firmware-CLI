@@ -261,19 +261,20 @@ function Ensure-JLink {
     }
 }
 
-function Ensure-Nrfjprog {
-    Write-Section 'Nordic nRF Command Line Tools'
+function Ensure-NrfjprogOptional {
+    Write-Section 'Nordic nRF Command Line Tools (optional helper)'
     $knownPaths = @(
         (Join-Path $NordicNrfCommandLineToolsBin 'nrfjprog.exe'),
         (Find-ExecutableInRoots -Roots @('C:\Program Files', 'C:\Program Files (x86)') -Filter 'nrfjprog.exe')
     ) | Where-Object { $_ }
 
     if (Repair-ExecutablePath -CommandName 'nrfjprog' -CandidateFiles $knownPaths) {
-        return
+        Write-Status 'PASS' 'nrfjprog available for Nordic serial auto-detect and fallback flashing'
+        return $true
     }
 
     $installerPath = Join-Path $env:TEMP 'nrf-command-line-tools-10.24.2-x64.exe'
-    Write-Status 'WARN' 'nrfjprog not found - attempting official Nordic installer download'
+    Write-Status 'WARN' 'nrfjprog not found - attempting optional official Nordic installer download'
     Invoke-Step "Download nRF Command Line Tools installer to $installerPath" {
         Invoke-WebRequest -UseBasicParsing $NordicNrfCommandLineToolsUrl -OutFile $installerPath
     }
@@ -286,16 +287,18 @@ function Ensure-Nrfjprog {
 
     if ($DryRun) {
         Write-Status 'INFO' 'DRY RUN: skipping post-install nrfjprog verification'
-        return
+        return $true
     }
 
     Add-PathEntryCurrent -Entry $NordicNrfCommandLineToolsBin
     Add-PathEntryUser -Entry $NordicNrfCommandLineToolsBin
-    Ensure-JLink
 
     if (-not (Repair-ExecutablePath -CommandName 'nrfjprog' -CandidateFiles $knownPaths)) {
-        throw 'nRF Command Line Tools install completed but nrfjprog was not found.'
+        Write-Status 'WARN' 'nRF Command Line Tools install did not produce a usable nrfjprog on PATH. Continuing because this helper is optional after normal probe setup.'
+        return $false
     }
+    Write-Status 'PASS' 'nrfjprog available for Nordic serial auto-detect and fallback flashing'
+    return $true
 }
 
 function Ensure-Stm32CubeProgrammerPath {
@@ -375,7 +378,8 @@ try {
     $needsStlink = $boards | Where-Object { $_.probe_family -eq 'stlink' }
 
     if ($needsNordicJlink) {
-        Ensure-Nrfjprog
+        Ensure-JLink
+        [void](Ensure-NrfjprogOptional)
     }
 
     if ($needsStlink) {

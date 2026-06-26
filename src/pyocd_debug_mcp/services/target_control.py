@@ -101,7 +101,9 @@ def recover_target(handle: TargetSessionHandle) -> str:
     if not board.recover_mode:
         raise RuntimeError(f"{board.display_name} does not define a recover mode.")
     if board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
-        raise RuntimeError(f"{board.display_name} uses manual_only recover handling.")
+        raise RuntimeError(
+            f"{board.display_name} requires a manual recover procedure for this family; this repo does not automate recover_mode=manual_only."
+        )
     if board.recover_mode == RECOVER_MODE_NRF_PYOCD_UNLOCK:
         _BACKEND.recover(handle)
         return "pyOCD API mass erase"

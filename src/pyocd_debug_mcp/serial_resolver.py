@@ -473,13 +473,21 @@ def resolve_serial_port(
             return SerialResolution(port, "")
         return SerialResolution(None, f"override port '{override}' not found")
 
+    candidates = _generic_candidates(board, ports, probe)
+    if len(candidates) == 1 and probe and probe.uid:
+        candidate = candidates[0]
+        if probe_uid_matches_serial(probe.uid, candidate.serial_number) or (
+            _normalized_probe_uid(probe.uid)
+            and _normalized_probe_uid(probe.uid) in candidate.searchable_text
+        ):
+            return SerialResolution(candidate, "resolved from serial-port metadata")
+
     vendor_resolution = _resolve_nordic_serial(board, ports, probe, run_cmd)
     if vendor_resolution is None:
         vendor_resolution = _resolve_stlink_serial(board, ports, probe, run_cmd)
     if vendor_resolution is not None:
         return vendor_resolution
 
-    candidates = _generic_candidates(board, ports, probe)
     if len(candidates) == 1:
         return SerialResolution(candidates[0], "")
 

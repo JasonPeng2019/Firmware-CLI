@@ -197,18 +197,18 @@ ensure_libusb() {
 }
 
 ensure_nordic_tools() {
-  section "Nordic tools"
+  section "Nordic tools (optional helper)"
   if command_exists nrfjprog; then
-    status "PASS" "nrfjprog already found on PATH"
+    status "PASS" "nrfjprog available for Nordic serial auto-detect and fallback flashing"
     return
   fi
-  status "WARN" "nrfjprog not found - attempting Homebrew cask install"
+  status "WARN" "nrfjprog not found - attempting optional Homebrew cask install"
   brew_install "brew install --cask nordic-nrf-command-line-tools" install --cask nordic-nrf-command-line-tools
   if ! command_exists nrfjprog; then
-    echo "nordic-nrf-command-line-tools install completed but nrfjprog was not found." >&2
-    exit 1
+    status "WARN" "nordic-nrf-command-line-tools install did not produce a usable nrfjprog on PATH. Continuing because this helper is optional after normal probe setup."
+    return
   fi
-  status "PASS" "nrfjprog installed"
+  status "PASS" "nrfjprog available for Nordic serial auto-detect and fallback flashing"
 }
 
 ensure_stm32_cubeprogrammer_path() {

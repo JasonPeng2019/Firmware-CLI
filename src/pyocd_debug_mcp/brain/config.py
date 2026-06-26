@@ -210,6 +210,10 @@ def build_turnkey_invocation(
     timeout_proposal: TimeoutProposal | None = None,
     iteration_estimate: IterationEstimate | None = None,
 ) -> TurnkeyInvocation:
+    if max_iters <= 0:
+        raise BrainConfigError("max_iters must be > 0.")
+    if serial_read_seconds <= 0:
+        raise BrainConfigError("serial_read_seconds must be > 0.")
     normalized_model = model.strip() if model is not None and model.strip() else None
     return TurnkeyInvocation(
         mode=mode,

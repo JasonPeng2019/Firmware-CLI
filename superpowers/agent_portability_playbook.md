@@ -1,127 +1,172 @@
-# Portability & Self-Setup Playbook — Build for the Absent Stranger
+# Portability & Bootstrap Playbook - Portable After Short Developer Bootstrap
 
-> **Why this exists.** The agent keeps building for *this developer's bench* — assuming someone is
-> present to install tools, add config, or run endless manual steps. That is the wrong audience. This product
-> ships to **arbitrary users on arbitrary machines (macOS + Windows) with arbitrary supported boards**,
-> who install a CLI and expect it to **mostly self-pilot once the agent is running.** Every sprawling
-> manual "now go download X and keep debugging your machine forever" step
-> the agent emits is a defect, not a handoff.
+> **Why this exists.** The agent keeps drifting toward one of two bad extremes:
+> building only for this developer's bench, or overclaiming a fantasy "fresh
+> stranger machine with zero manual setup" product. The current product
+> contract is narrower and more useful: Firmware-CLI should work across the
+> supported host + supported board matrix after a short documented bootstrap
+> equivalent to the setup an engineer would already need for normal manual
+> board debugging. After that bootstrap, the repo-owned scripts, MCP server,
+> and agent runtime should self-pilot as much as possible.
 >
-> **Read this at the start of any task that touches setup, installation, dependencies, config, paths,
-> or first-run behavior.** It governs how code must be written to be portable and self-installing.
+> **Read this at the start of any task that touches setup, installation,
+> dependencies, config, paths, or first-run behavior.** It governs how code
+> must be written to be portable within that post-bootstrap contract.
 
 ---
 
-## 0. THE AUDIENCE (the reframe that fixes everything)
+## 0. THE AUDIENCE
 
-You are **never** writing for the developer at this desk. You are writing for an **absent stranger**:
-- on a machine you've never seen (macOS or Windows, no Linux assumption either way),
-- with one of the supported boards plugged in,
-- who may follow a short, explicit bootstrap checklist before the agent starts,
-- who will **not** keep manually debugging setup once the guided agent is running,
-- who installs the CLI and expects the guided agent to do the rest after the initial bootstrap.
+You are writing for a developer on a supported Windows or macOS machine, with
+one of the supported boards, who is willing to do a short documented bootstrap
+first and then expects the repo and agent to carry the rest.
 
-If a step requires that stranger to keep doing setup work manually after the initial bootstrap, it has
-failed — unless it's genuinely impossible to automate (see §3), in which case you STOP and tell the
-human author first.
+That means:
+- do not build only for the current bench
+- do not assume arbitrary unsupported boards or arbitrary host states
+- do allow a bounded bootstrap for OS drivers, proprietary probe software,
+  permissions, and comparable manual-debug prerequisites
+- do expect the guided runtime to stop pushing setup labor back onto the human
+  once that bootstrap is complete
 
-**Mental test before writing any setup/install/config code:** "If I handed this to someone who will
-follow a short, documented bootstrap and then expect the agent to take over, would it work on their
-machine, with their board, on first run?" If no, it's not done.
+If a workflow still requires repeated manual setup or repeated environment
+debugging after bootstrap, it is not done.
 
----
-
-## 1. EVERYTHING that can live in a script, MUST live in a script
-
-- **Dependency installation should prefer a setup script**, not scattered README instructions. A short
-  `init.md` bootstrap is acceptable before the agent starts, but repetitive or vendor-specific setup
-  should be moved into a script whenever that can be done safely.
-- **First-run setup → automated bootstrap.** Board detection, port discovery, target-pack fetching,
-  config scaffolding — all automatic on first run, not manual prerequisites.
-- **Per-OS differences → handled in code where practical.** macOS and Windows setup helpers are better
-  than prose-only guidance. A concise `init.md` fallback is acceptable before the agent starts.
-- **No manual config editing.** Config is generated/scaffolded by the tool with sane defaults and
-  discovered values (ports via enumeration, board via detection). If the user must set something, the
-  tool prompts for it interactively or accepts a flag — never "open this file and edit it."
-- **Idempotent + re-runnable.** Setup scripts must be safe to run twice (check-then-act), so a partial
-  or repeated setup self-heals rather than breaking.
-
-**The bar:** bootstrap the CLI with a short, explicit setup flow → run it → the guided agent and scripts
-handle environment drift, board/port discovery, and config with minimal further manual work.
+**Mental test before writing setup/install/config code:** "After the documented
+bootstrap is complete, would this run cleanly on another supported machine with
+the same supported board?" If no, it is not done.
 
 ---
 
-## 2. SELF-HOSTED, SELF-CONTAINED, PORTABLE BY DEFAULT
+## 1. SCRIPT WHAT IS REPEATABLE; DOCUMENT WHAT IS A TRUE BOOTSTRAP STEP
 
-- **No dependency on anything specific to the author's machine** — not a hardcoded path, port, env var,
-  toolchain location, or "it's already installed here" assumption. (Ties to the no-hardcoding rule in
-  the Coding Guidelines and the cross-platform Scope Assumptions.)
-- **Discover, don't assume:** serial ports via pyserial enumeration; board/target via detection or the
-  board-config the user selected; never a baked-in `COM3` / `/dev/tty…`.
-- **Bundle what you can legally bundle; declare-and-auto-install the rest.** Python deps travel with the
-  package (pyproject/lockfile). Permissively-licensed binaries *may* be bundled. Proprietary drivers
-  (SEGGER/ST) cannot be redistributed → the script detects their absence and **automates the install
-  invocation** (runs the vendor installer / driver-association step) rather than telling the user to do
-  it by hand; only if even that is impossible does it fall to §3.
-- **The hardware-touching server runs locally on the user's machine** (it must, to reach the USB board)
-  — so "self-hosted" is the default and the architecture already requires it. Don't design anything that
-  assumes a service you host centrally for the hardware path.
-- **Test mentally on a fresh machine, not yours.** Before declaring setup code done, trace it on a
-  hypothetical clean macOS and clean Windows box with nothing pre-installed.
+- **Dependency installation should prefer a setup script**, not scattered README
+  instructions. A short `init.md` bootstrap is acceptable before the agent
+  starts, but repetitive setup should move into a script whenever that can be
+  done safely.
+- **First-run setup -> automated bootstrap where practical.** Board detection,
+  port discovery, target-pack fetching, and config scaffolding should be
+  automatic on first run rather than manual configuration work.
+- **Per-OS differences -> handled in code where practical.** macOS and Windows
+  setup helpers are better than prose-only guidance. A concise `init.md`
+  fallback is acceptable before the agent starts.
+- **No manual config editing.** Config is generated or scaffolded by the tool
+  with sane defaults and discovered values. If the user must set something, the
+  tool prompts for it interactively or accepts a flag; never "open this file
+  and edit it."
+- **Idempotent + re-runnable.** Setup scripts must be safe to run twice
+  (check-then-act), so a partial or repeated setup self-heals rather than
+  breaking.
 
----
+Vendor and OS realities:
 
-## 3. THE INSTALL RULE: automate it, or STOP and tell the human FIRST
+- proprietary probe drivers and vendor tools may remain part of the documented
+  bootstrap when redistribution or silent install is not realistic
+- best-effort helper scripts are good; fake "fully automatic" claims are not
+- if a vendor prerequisite remains manual, say so explicitly and keep the
+  runtime behavior clean once it is present
 
-The one hard rule that fixes the "agent keeps telling me to download stuff" problem:
-
-- **You may NOT emit a vague manual "the user must install/download X somehow" step as the solution.**
-  If a manual bootstrap step remains, it must be explicit, bounded, and part of the documented first-run
-  path.
-- **If something must be installed, prefer a SCRIPT that installs it** (OS-detecting, idempotent), so the
-  user does as little as possible by hand before the agent takes over.
-- **If an install genuinely CANNOT be scripted/automated** (e.g. a proprietary tool with no silent
-  installer, a license click-through, an OS permission that requires user action), either:
-  1. document it as a bounded pre-agent setup step, if that matches product expectations, or
-  2. **STOP BEFORE WRITING CODE** and tell the human author:
-  > ⚠️ UNAUTOMATABLE SETUP: `<thing>` is required but cannot be installed by script because `<reason>`.
-  > Options: (a) <bundle / alternative tool / scripted workaround>, (b) accept a one-time manual step.
-  > How do you want to handle this before I build around it?
-- **Never silently bake in a manual step and move on.** The choice between "automate it," "bundle it,"
-  or "accept an unavoidable pre-agent manual step" is the human author's to make — surface it, don't
-  hide it in vague download instructions.
-
-**Why STOP-first matters:** if the agent builds assuming a manual install, the whole setup flow is
-designed around a defect. Catching "this can't be automated" *before* writing code lets the author pick
-a portable alternative (a different tool, a bundleable binary) instead of discovering the wall later.
+**The bar:** short bootstrap, then repo-owned operation.
 
 ---
 
-## 4. THE GUIDED-AGENT EXPERIENCE (the human does nothing manual)
+## 2. PORTABLE BY DEFAULT INSIDE THE SUPPORTED MATRIX
 
-- The product is driven by a **guided agent** that walks the user through use — the user's actions are
-  *choices and confirmations*, not setup labor.
-- **Destructive/irreversible actions still gate** (flash, unlock/mass-erase) — "no manual setup" does
-  NOT mean "no confirmations for dangerous operations." Automate setup; still gate destruction.
-  (Consistent with the safety gates in `build_plan_concrete`.)
-- **Failures must self-diagnose, not dump a manual chore on the user.** If the board isn't found, the
-  tool says what it detected and offers an automated retry/fix — it doesn't say "go install drivers and
-  figure it out." (The fault-vs-wiring diagnosis is a product feature; apply it to setup too.)
+- **No dependency on anything specific to the author's machine** - not a
+  hardcoded path, port, env var, toolchain location, or "it's already
+  installed here" assumption.
+- **Discover, don't assume:** serial ports via pyserial enumeration;
+  board/target via detection or the board-config the user selected; never a
+  baked-in `COM3` or `/dev/tty...`.
+- **Bundle what you can legally bundle; script what you can safely script;
+  document the rest as bootstrap.** Python deps travel with the package.
+  Permissively licensed binaries may be bundled. Proprietary drivers or probe
+  packages usually stay outside the repo and may remain a one-time documented
+  bootstrap prerequisite.
+- **The hardware-touching server runs locally on the user's machine** because
+  it must reach the USB board. Do not design anything that assumes a centrally
+  hosted hardware path.
+- **Test mentally on a supported machine, not yours.** Before declaring setup
+  code done, trace it on a clean supported macOS and clean supported Windows
+  box with only the documented bootstrap completed.
 
 ---
 
-## 5. Pre-commit portability check (run before any setup/install/config commit)
-- [ ] Wrote for the absent stranger on a fresh macOS/Windows box, not this bench (§0)
-- [ ] Every high-friction or repeatable install/setup/config step lives in an OS-detecting, idempotent script where practical (§1)
-- [ ] No machine-specific paths/ports/assumptions; values discovered, not baked in (§2)
-- [ ] Did NOT emit a vague manual "user must download/install X" instruction as a solution (§3)
-- [ ] For anything unautomatable: STOPPED and asked the author before building around it (§3)
-- [ ] Destructive actions still gated; failures self-diagnose rather than dumping chores (§4)
-- [ ] Traced the flow mentally on a clean machine with nothing pre-installed (§2)
+## 3. THE INSTALL RULE: AUTOMATE LOW-FRICTION PATHS, EXPLICITLY BOUND THE REST
+
+The rule that fixes the "agent keeps telling me to download stuff" problem:
+
+- **You may not emit a vague manual "the user must install/download X somehow"
+  step as the solution.** If a manual bootstrap step remains, it must be
+  explicit, bounded, and part of the documented first-run path.
+- **If something must be installed, prefer a script that installs it**
+  (OS-detecting, idempotent), so the user does as little as possible by hand
+  before the agent takes over.
+- **If an install genuinely cannot or should not be scripted** - for example:
+  proprietary tool with a brittle or interactive installer, license
+  click-through, OS-level approval, or a prerequisite the engineer would
+  already need for manual debugging - either:
+  1. document it as a bounded bootstrap step and make the post-bootstrap
+     runtime behave cleanly, or
+  2. **STOP BEFORE WRITING CODE** and tell the human author if the remaining
+     manual step would conflict with the product claim or create repeated
+     operator burden:
+
+     > WARNING: BOOTSTRAP CONTRACT CONFLICT: `<thing>` is required but cannot
+     > be cleanly repo-owned because `<reason>`.
+     > Options: (a) keep it as an explicit bootstrap prerequisite,
+     > (b) choose a different tool or packaging path,
+     > (c) narrow the support claim.
+     > Which contract do you want before I build around it?
+
+- **Never silently bake in a manual step and move on.** The choice between
+  "automate it," "bundle it," or "accept a bounded pre-agent bootstrap step" is
+  the human author's to make - surface it, do not hide it in vague
+  instructions.
+
+**Why this matters:** the defect is not that a bounded bootstrap exists. The
+defect is hiding an unstable or repeated manual dependency inside what should
+already be repo-owned runtime behavior.
+
+---
+
+## 4. THE GUIDED-AGENT EXPERIENCE AFTER BOOTSTRAP
+
+- The product is driven by a **guided agent** that walks the user through use -
+  the user's actions are choices and confirmations, not repeated setup labor.
+- **Destructive or irreversible actions still gate** (flash, unlock,
+  mass-erase). Automate setup where appropriate; still gate destruction.
+- **Failures must self-diagnose, not dump a manual chore on the user.** If the
+  board is not found, the tool should say what it detected and offer an
+  automated retry or a bounded prerequisite reminder. It should not collapse
+  into aimless setup guessing.
+
+---
+
+## 5. Pre-commit portability check
+
+- [ ] Wrote for another supported machine after the documented bootstrap, not
+      this bench alone
+- [ ] Every repeatable install/setup/config step lives in an OS-detecting,
+      idempotent script where practical
+- [ ] No machine-specific paths, ports, or assumptions; values discovered, not
+      baked in
+- [ ] Did not emit a vague manual "user must download/install X" instruction as
+      a solution
+- [ ] Any remaining manual step is explicitly documented as bootstrap, not
+      leaked into runtime
+- [ ] For any contract conflict: STOPPED and asked the author before building
+      around it
+- [ ] Destructive actions still gated; failures self-diagnose rather than
+      dumping chores
+- [ ] Traced the flow mentally on a clean supported machine with the documented
+      bootstrap completed
 
 ---
 
 ## The one-sentence version
-**Write for an absent stranger on a fresh machine: keep pre-agent setup short and explicit, script the
-high-friction parts, and make the agent self-pilot after bootstrap instead of leaving the user to keep
-debugging their environment by hand.**
+
+**Write for a supported machine after a short explicit bootstrap: script the
+repeatable parts, bound the true prerequisites, and make the agent self-pilot
+after bootstrap instead of leaving the user to keep debugging the environment
+by hand.**

@@ -502,6 +502,16 @@ The prototype capability increment additionally proves:
 - the operator can see progress and inspect brain/provider/server traffic while
   long work is still running
 
+Prototype proof boundary for the next phase:
+
+- required baseline: Codex-backed turnkey path on the currently validated host
+  and scoped pair
+- deferred, unverified prototype risk: second-provider full official-pair
+  parity and true fresh-machine portability proof
+
+Those deferred items are not treated as blockers for starting the prototype
+increment unless the roadmap explicitly promotes them back to hard gates.
+
 ## Acceptance Threshold
 
 The first `R12` closure target is:

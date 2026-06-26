@@ -280,6 +280,31 @@ def test_operator_shell_defaults_to_summary_first_raw_mode() -> None:
     assert shell.context.raw_output == "off"
 
 
+def test_operator_shell_falls_back_to_dummy_output_without_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoConsoleError(RuntimeError):
+        pass
+
+    calls: list[dict[str, object]] = []
+
+    def fake_prompt_session(*args: object, **kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        if "output" not in kwargs:
+            raise NoConsoleError("no console")
+        return SimpleNamespace(prompt=lambda *p_args, **p_kwargs: "/quit")
+
+    monkeypatch.setattr(ux_shell, "_NO_CONSOLE_ERRORS", (NoConsoleError,))
+    monkeypatch.setattr(ux_shell, "PromptSession", fake_prompt_session)
+
+    shell = _make_shell()
+
+    assert len(calls) == 2
+    assert calls[0] == {}
+    assert isinstance(calls[1]["output"], ux_shell.DummyOutput)
+    assert shell._session is not None
+
+
 def test_parse_shell_input_preserves_raw_arg_text_for_build_command() -> None:
     parsed = parse_shell_input('/build-command "west build -b nucleo_l476rg"')
     assert parsed == SlashCommand(
@@ -299,7 +324,7 @@ def test_shell_workspace_and_build_context_commands_persist_state(tmp_path: Path
     symbol_artifact = tmp_path / "firmware.sym.elf"
     symbol_artifact.write_text("sym", encoding="utf-8")
 
-    assert shell._dispatch_command(parse_shell_input(f"/workspace {workspace_root}") ) is True
+    assert shell._dispatch_command(parse_shell_input(f"/workspace {workspace_root}")) is True
     assert shell.context.workspace_root == str(workspace_root.resolve())
 
     assert shell._dispatch_command(parse_shell_input('/build-command "west build -b nucleo_l476rg"')) is True

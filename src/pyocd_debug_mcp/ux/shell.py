@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 
 import anyio
 from prompt_toolkit import PromptSession
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import patch_stdout
+
+if sys.platform == "win32":  # pragma: no cover - Windows import path only
+    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError as _NoConsoleScreenBufferError
+else:  # pragma: no cover - non-Windows hosts
+    _NO_CONSOLE_ERROR_TYPE: type[BaseException] = RuntimeError
+    _NO_CONSOLE_ERRORS: tuple[type[BaseException], ...] = (_NO_CONSOLE_ERROR_TYPE,)
+
+if sys.platform == "win32":  # pragma: no cover - Windows import path only
+    _NO_CONSOLE_ERRORS = (_NoConsoleScreenBufferError,)
 
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
 from pyocd_debug_mcp.brain.config import (
@@ -128,7 +138,7 @@ class OperatorShell:
     def _build_prompt_session() -> PromptSession[str]:
         try:
             return PromptSession()
-        except Exception:  # pragma: no cover - prompt_toolkit console discovery is host-specific
+        except _NO_CONSOLE_ERRORS:
             return PromptSession(output=DummyOutput())
 
     def run(self) -> int:

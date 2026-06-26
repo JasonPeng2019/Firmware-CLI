@@ -441,7 +441,9 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
         for _, recover_cmd in build_recover_attempts(board, probe):
             print(f"      Recover with: {' '.join(recover_cmd)}")
         if board.requires_recover_validation and board.recover_mode == RECOVER_MODE_MANUAL_ONLY:
-            print("      Recover mode for this board is manual_only; automate this later in code.")
+            print(
+                "      Recover mode for this board is manual_only; this repo treats recover as a manual bench step for this family."
+            )
         return False
 
     if isinstance(result.error, TargetConnectionError):

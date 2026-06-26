@@ -57,7 +57,13 @@ from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.tool_schemas import build_tool_schema_bundle
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
-from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
+from pyocd_debug_mcp.timeouts import (
+    TURNKEY_CONNECT_TIMEOUT_SECONDS,
+    TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
+    TURNKEY_FLASH_TIMEOUT_SECONDS,
+    TURNKEY_RECOVER_TIMEOUT_SECONDS,
+    TurnkeyTimeoutConfig,
+)
 
 
 class FakeProvider:
@@ -215,6 +221,36 @@ def test_load_provider_config_supports_cli_providers_without_model(
     assert claude.provider == "claude-cli"
     assert claude.api_key is None
     assert claude.model is None
+
+
+def test_turnkey_loop_uses_shared_timeout_constants() -> None:
+    from pyocd_debug_mcp.brain.loop import _tool_timeout_seconds
+
+    ordinary = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify the board.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=3.0,
+    )
+    long_serial = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify the board.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=45.0,
+    )
+
+    assert _tool_timeout_seconds("connect", ordinary) == TURNKEY_CONNECT_TIMEOUT_SECONDS
+    assert _tool_timeout_seconds("flash_firmware", ordinary) == TURNKEY_FLASH_TIMEOUT_SECONDS
+    assert _tool_timeout_seconds("unlock_recover", ordinary) == TURNKEY_RECOVER_TIMEOUT_SECONDS
+    assert _tool_timeout_seconds("get_state", ordinary) == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
+    assert _tool_timeout_seconds("read_serial", ordinary) == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
+    assert _tool_timeout_seconds("read_serial", long_serial) == 57.0
 
 
 def test_provider_session_state_serialization_and_deterministic_compaction() -> None:

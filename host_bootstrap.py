@@ -13,7 +13,9 @@ With `--board-id`, it also checks whether the selected board's matching probe an
 serial endpoint are visible enough to start `stage0_check.py`.
 
 It may optionally reconcile the canonical Python environment and install missing
-pyOCD packs. It does not install OS drivers or vendor probe software.
+pyOCD packs. By design, it does not install OS drivers or proprietary vendor
+probe software; those remain part of the short developer bootstrap this repo
+expects before post-bootstrap automation takes over.
 """
 
 from __future__ import annotations
@@ -367,7 +369,7 @@ def vendor_serial_tool_summary(boards: list[BoardConfig]):
         else:
             log(
                 WARN,
-                "nrfjprog not found - Nordic J-Link serial auto-detect will fall back to generic matching or manual --port",
+                "nrfjprog not found - Nordic J-Link serial auto-detect helper is unavailable; falling back to generic matching or manual --port",
             )
 
     if needs_stm32_cli:
@@ -379,7 +381,7 @@ def vendor_serial_tool_summary(boards: list[BoardConfig]):
         else:
             log(
                 WARN,
-                "STM32_Programmer_CLI not found - ST-LINK serial auto-detect will fall back to generic matching or manual --port",
+                "STM32_Programmer_CLI not found - ST-LINK serial auto-detect helper is unavailable; falling back to generic matching or manual --port",
             )
 
 

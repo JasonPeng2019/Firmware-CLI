@@ -18,12 +18,12 @@ a glance before relying on detail.
 | `.python-version` | Pins the team interpreter to Python 3.12. |
 | `.env.example` | Template for the gitignored `.env` (probe UID, target, optional board id/config, turnkey BYOK settings). |
 | `.gitignore` | Ignore rules (`.venv/`, `runs/` output, caches, local overrides). |
-| `README.md` | Canonical repo-layout + naming reference, environment standard, main workflows, verification status, and the new Pass 1 operator-facing `pyocd-debug` shell. |
+| `README.md` | Canonical repo-layout + naming reference, environment standard, main workflows, verification status, and the operator-facing `pyocd-debug` shell. |
 | `init.md` | Setup/bootstrap walkthrough referenced by the README. `(by name — verify scope)` |
 | `stage0_setup.md` | Single operator guide for the bench bring-up scripts (`setup_host`, `host_bootstrap`, `stage0_check`). |
 | `setup_host.ps1` | Windows unattended host-bootstrap entry point. `(by name)` |
 | `setup_host.sh` | macOS host-bootstrap entry point. `(by name)` |
-| `host_bootstrap.py` | Host-level readiness checks (pyOCD runs, probes/serial enumerate, board configs load, packs present/installable). In `--board-id` mode it now also requires a uniquely matched probe and board-specific serial result for each selected board before it reports Stage 0 readiness. Does not flash or install OS drivers. |
+| `host_bootstrap.py` | Host-level readiness checks (pyOCD runs, probes/serial enumerate, board configs load, packs present/installable). In `--board-id` mode it also requires a uniquely matched probe and a board-specific serial result before reporting Stage 0 readiness. Does not flash or install OS drivers. |
 | `stage0_check.py` | Stage 0 board/toolchain validation CLI; data-driven from board configs; now a thin frontend over the shared services. |
 
 ## `skills/`
@@ -60,7 +60,7 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
-| `brain/decision_types.py` | Shared future-facing prototype decision/planning shapes: timeout proposals, iteration estimates, early-exit verdicts, future board-decision envelopes, and batch/action-call containers. |
+| `brain/decision_types.py` | Shared future-facing prototype decision/planning shapes: timeout proposals, iteration estimates, early-exit verdicts, and batch/action-call containers. |
 | `brain/app.py` | Shared run/benchmark invocation helpers reused by both the headless brain CLI and the operator-facing UX CLI. |
 | `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
 | `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
@@ -83,12 +83,6 @@ a glance before relying on detail.
 | `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
 | `brain/tool_schemas.py` | Loads live MCP tool metadata, filters it to the curated allowed tool surface, and renders the stable tool-schema prompt bundle plus curated response/refusal semantics used by the brain. |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
-
-## `playbooks/turnkey/`
-
-| Path | What it is / does |
-|---|---|
-| `playbooks/turnkey/*.yaml` | Internal deterministic helper playbooks used by the turnkey brain for reference health, diagnosis, repair, and Nordic recover-cycle guidance. |
 
 ### `ux/` — operator-facing turnkey shell
 
@@ -134,8 +128,8 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `harness/stage1_smoke.py` | Thin CLI wrapper over `src/pyocd_debug_mcp/reference_smoke.py`. |
-| `harness/r11_benchmark.py` | Thin CLI wrapper over `src/pyocd_debug_mcp/benchmark_support.py`. |
+| `harness/stage1_smoke.py` | Stage 1 end-to-end smoke harness (config → artifacts → serial → session → flash → reset/halt → PC → symbol → memory readback → UART `boot ok`); passes on both scoped boards. |
+| `harness/r11_benchmark.py` | R11 Codex-driven benchmark runner (single-case + suite). |
 | `harness/r12_turnkey_benchmark.py` | Thin CLI wrapper for the R12 turnkey benchmark path. |
 | `test_board_configs.py` | Board-config loader/schema tests. `(by name)` |
 | `test_serial_resolver.py` | Serial resolution tests. `(by name)` |
@@ -154,7 +148,7 @@ a glance before relying on detail.
 | `test_server_runtime_tools.py` | Server runtime tool-surface tests. `(by name)` |
 | `cases/<case_id>/case.yaml` + `prompt.md` | R11/R12 benchmark cases: known-good `k001`, injected-bug `b001/b002/b003/b004`, and observability-fault `f001`, mirrored across the scoped pair. |
 | `cases/r11_result_schema.json` | JSON schema for Codex benchmark results. |
-| `cases/suites.yaml` | Benchmark suite ordering (`pilot_v1`, `pilot_v1_plus_b003_b004`, retained alternate-board suites). |
+| `cases/suites.yaml` | Benchmark suite ordering (`pilot_v1`, `pilot_v1_plus_b003_b004`, and retained alternate-board suites). |
 | `cases/README.md`, `tests/README.md` | Case-format and test-layout docs. |
 | `fixtures/`, `cases/`, `harness/` `.gitkeep` | Tracked empty-dir placeholders. |
 
@@ -192,22 +186,26 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
-| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current active R12 frontier. *Design/plan doc - see status banner.* |
-| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0 clean slate, serial P0, parallel Branches A/B/C, parallel Branches D/E/F, merge-back rules, and serial final integration. |
+| `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0/P0.0 clean-slate validation, serial P0, parallel Branches A/B/C, parallel Branches D/E/F, merge-back rules, and serial final integration. |
 | `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
-| `UXLayer.md` | UX-layer design/implementation note for the additive `pyocd-debug` operator shell; Pass 1 is implemented, with richer streaming/checkpoint work still deferred. |
-| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 closure boundary. *Design/plan doc - see status banner.* |
+| `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
+| `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
-| `current-progress.md` | Live repo status, current proof boundary, exact rerun ladder, expected outputs, and the remaining open work. |
+| `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 status/prototype caveats. |
 | `repo_file_index.md` | This file. |
 
-### `markdowns/curr/` - step-scoped docs for the current/active step (graduate to `tmp/` when done)
+### `markdowns/curr/` — step-scoped docs for the current/active step (graduate to `tmp/` when done)
 
 | Path | What it is / does |
 |---|---|
-| `p0_foundation_spec.md`, `p0_foundation_process.md` | The active serial P0 foundation contract and process ledger for the R12 prototype. |
-| `r12_turnkey_spec.md` | The broader R12 prototype contract that P0 is preparing the codebase to support. |
-| `things-to-change.md` | Active R12 prototype backlog and priority ordering. |
+| `p0-0-doc-sync-superpowers-audit_spec.md` | Active Wave 0 follow-up spec for markdown cleanup, superpowers audit, and code/doc compliance fixes after the merge-validation pass. |
+| `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
+| `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
+| `p0-0-static-audit-fix_spec.md` | Active Wave 0 static-audit fix spec for repo/runtime hardening issues found before the latest merge-validation pass. |
+| `p0_0_layered_validation_plan.md` | Wave 0/P0.0 clean-slate validation ladder: repo hygiene, non-hardware checks, timeout/hang negative tests, real-board proof, MCP smoke, turnkey smoke, benchmark slice, and soak criteria before branching P0. |
+| `p0_0_validation_report.md` | Evidence-backed execution report for the P0.0 validation ladder, including merge fixes, real-board results, and deferred-risk notes. |
+| `uxlayer_gap_checklist.md` | Current-state Pass 1 vs Pass 2 checklist for the operator shell implementation. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
@@ -216,14 +214,14 @@ a glance before relying on detail.
 | `audit_and_validation_plan.md` | The audit + nRF52840 validation + Mac re-proof execution plan (Phase 0 complete). |
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
-| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 branch reconciliation; superseded by the current roadmap/spec where prototype scope differs. |
-| `r10_contract.md`, `r11_benchmark_spec.md` | Older slice contracts retained for historical traceability, not current-step authority. |
-| `r12-ben-mainline-merge_process.md`, `r12_ben_mainline_merge_spec.md` | Completed Ben mainline merge process/spec docs. |
-| `r12-nucleo-reproof_spec.md`, `r12-windows-cmdline-bug_spec.md` | Completed focused R12 follow-up specs. |
-| `runtime-timeout-audit_spec.md` | Historical timeout-hardening audit/spec. |
-| `stm32-build-r11-turnkey_process.md`, `stm32-build-r11-turnkey_spec.md`, `stm32-r11-windows-retest_spec.md` | Older STM32-centric benchmark/process docs. |
-| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained exploratory STM32-only scaffold spec. |
-| `uxlayer_gap_checklist.md` | Historical UX gap audit after the first shipped shell pass. |
+| `p0-0-src-audit_review.md` | Completed independent review of the earlier `src/` audit/fix pass. |
+| `p0-foundation_review.md` | Historical independent review for the serial P0 foundation landing from the mainline branch. |
+| `p0_foundation_process.md` | Historical process ledger for the serial P0 foundation landing from the mainline branch. |
+| `p0_foundation_spec.md` | Historical implementation spec for the serial P0 foundation landing from the mainline branch. |
+| `p0-wave0-main-reconcile_spec.md` | Completed Wave 0 branch-reconciliation spec for the `main` into `P-Wave-0` merge. |
+| `threadx_nucleo_l476rg_button_blink_spec.md` | Retained ThreadX STM32 scaffold proposal that is intentionally outside the active prototype gate. |
+| `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
+| `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
 
 ## `superpowers/` — internal authoring playbooks
 
@@ -242,3 +240,14 @@ a glance before relying on detail.
 |---|---|
 | `runs/README.md` | Explains the per-session runtime-output tree (`runs/<session_id>/...`); contents are gitignored. |
 | `scratch/README.md` | Throwaway-experiments policy; the old Step 1.0d API harness was retired here once `tests/harness/stage1_smoke.py` replaced it. |
+
+## Verified
+
+- This index now reflects the current `markdowns/curr/` folder after the Wave 0
+  merge-validation pass and the moved completed docs under `markdowns/tmp/`.
+- The current `markdowns/curr/p0_0_validation_report.md` is listed as the
+  executed Wave 0 / `P0.0` validation report.
+
+## Pending Verification
+
+- This index update is documentation-only.
