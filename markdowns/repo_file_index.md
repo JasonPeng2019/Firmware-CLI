@@ -192,6 +192,9 @@ a glance before relying on detail.
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
 | `p0-0-src-audit_review.md` | Completed independent review of the earlier `src/` audit/fix pass. |
+| `p0-foundation_review.md` | Historical independent review for the serial P0 foundation landing from the mainline branch. |
+| `p0_foundation_process.md` | Historical process ledger for the serial P0 foundation landing from the mainline branch. |
+| `p0_foundation_spec.md` | Historical implementation spec for the serial P0 foundation landing from the mainline branch. |
 | `p0-wave0-main-reconcile_spec.md` | Completed Wave 0 branch-reconciliation spec for the `main` into `P-Wave-0` merge. |
 | `threadx_nucleo_l476rg_button_blink_spec.md` | Retained ThreadX STM32 scaffold proposal that is intentionally outside the active prototype gate. |
 | `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
