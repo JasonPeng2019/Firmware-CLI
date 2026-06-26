@@ -135,6 +135,33 @@ model-made flipped tests, and stream checkpoints for UART/build/client-action
 flows. Those items are planned prototype work unless a later status entry says
 they have been implemented and verified.
 
+On the current `P-Wave-C` prototype branch, the first Branch C slice is now
+implemented on top of the P0 baseline:
+
+- `brain/events.py` now owns the canonical turnkey event taxonomy plus fanout
+  and JSONL sink helpers
+- `brain/timeout_policy.py` now evaluates invocation-time and live per-turn
+  timeout/iteration proposals into effective budgets
+- `timeouts.py` now centralizes both high-level turnkey timeout clamps and the
+  staged low-level pyOCD connect-time timeout defaults
+- the server now has a brain-owned staged timeout-sync path that applies
+  partial low-level timeout defaults on the next `connect`
+
+Current Branch C proof on this host:
+
+- the full non-hardware ladder passes:
+  `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src`, and
+  `uv run python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
+- the official scoped pair Wave 0 rerun passes:
+  strict `host_bootstrap.py --board-id ...`, `stage0_check.py`, and
+  `tests.harness.stage1_smoke` all passed on `nucleo_l476rg` and `nrf52833dk`
+- the Branch C hardening pass fixed:
+  cumulative pending staged timeout sync, centralized event constants, and the
+  internal-tool doc leak
+
+This branch still intentionally does **not** include Branch A provider-session
+or tool-schema work.
+
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower and currently deferred for the prototype:
 

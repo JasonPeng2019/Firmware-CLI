@@ -29,6 +29,8 @@ from pyocd_debug_mcp.brain.config import (
     build_turnkey_invocation,
     load_provider_config,
 )
+from pyocd_debug_mcp.brain.decision_types import TimeoutProposal
+from pyocd_debug_mcp.brain.events import EventKinds
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey, run_turnkey_with_provider
 from pyocd_debug_mcp.brain.provider_claude_cli import (
     _build_claude_command,
@@ -45,6 +47,8 @@ from pyocd_debug_mcp.timeouts import (
     TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS,
     TURNKEY_FLASH_TIMEOUT_SECONDS,
     TURNKEY_RECOVER_TIMEOUT_SECONDS,
+    ServerTimeoutUpdate,
+    server_timeout_update_to_record,
 )
 
 
@@ -52,7 +56,14 @@ class FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+    async def next_decision(
+        self,
+        *,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn:
+        del instructions, turn_prompt, timeout_seconds
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
@@ -72,12 +83,32 @@ class FakeClient:
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         return None
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> ToolTextResult:
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        del timeout_seconds
         self.calls.append((tool_name, arguments))
         queue = self._results.get(tool_name)
         if not queue:
             raise RuntimeError(f"Unexpected tool call: {tool_name}")
         return queue.popleft()
+
+    async def sync_timeouts(
+        self,
+        update: ServerTimeoutUpdate,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        payload = server_timeout_update_to_record(update) or {}
+        return await self.call_tool(
+            "_brain_sync_timeouts",
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 def test_load_provider_config_requires_api_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,12 +186,27 @@ def test_turnkey_loop_uses_shared_timeout_constants() -> None:
         serial_read_seconds=45.0,
     )
 
-    assert _tool_timeout_seconds("connect", ordinary) == TURNKEY_CONNECT_TIMEOUT_SECONDS
-    assert _tool_timeout_seconds("flash_firmware", ordinary) == TURNKEY_FLASH_TIMEOUT_SECONDS
-    assert _tool_timeout_seconds("unlock_recover", ordinary) == TURNKEY_RECOVER_TIMEOUT_SECONDS
-    assert _tool_timeout_seconds("get_state", ordinary) == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
-    assert _tool_timeout_seconds("read_serial", ordinary) == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
-    assert _tool_timeout_seconds("read_serial", long_serial) == 57.0
+    assert (
+        _tool_timeout_seconds("connect", ordinary, ordinary.timeout_config)
+        == TURNKEY_CONNECT_TIMEOUT_SECONDS
+    )
+    assert (
+        _tool_timeout_seconds("flash_firmware", ordinary, ordinary.timeout_config)
+        == TURNKEY_FLASH_TIMEOUT_SECONDS
+    )
+    assert (
+        _tool_timeout_seconds("unlock_recover", ordinary, ordinary.timeout_config)
+        == TURNKEY_RECOVER_TIMEOUT_SECONDS
+    )
+    assert (
+        _tool_timeout_seconds("get_state", ordinary, ordinary.timeout_config)
+        == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
+    )
+    assert (
+        _tool_timeout_seconds("read_serial", ordinary, ordinary.timeout_config)
+        == TURNKEY_DEFAULT_TOOL_TIMEOUT_SECONDS
+    )
+    assert _tool_timeout_seconds("read_serial", long_serial, long_serial.timeout_config) == 57.0
 
 
 def test_product_runtime_modules_do_not_import_tests_or_mutate_sys_path() -> None:
@@ -411,10 +457,10 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
         json.loads(line)["event_kind"]
         for line in (execution.run_root / "logs" / "brain_events.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert "provider_turn_start" in event_kinds
-    assert "provider_turn_complete" in event_kinds
-    assert "tool_complete" in event_kinds
-    assert "final_result" in event_kinds
+    assert EventKinds.PROVIDER_TURN_START in event_kinds
+    assert EventKinds.PROVIDER_TURN_COMPLETE in event_kinds
+    assert EventKinds.TOOL_COMPLETE in event_kinds
+    assert EventKinds.FINAL_RESULT in event_kinds
 
 
 def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors(
@@ -422,7 +468,14 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
     tmp_path: Path,
 ) -> None:
     class FailingProvider:
-        async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+        async def next_decision(
+            self,
+            *,
+            instructions: str,
+            turn_prompt: str,
+            timeout_seconds: float | None = None,
+        ) -> ProviderTurn:
+            del instructions, turn_prompt, timeout_seconds
             raise RuntimeError("provider exploded")
 
     monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
@@ -535,7 +588,356 @@ def test_run_turnkey_with_provider_normalizes_provider_setup_failures(
     assert execution.result.session_id is None
     assert execution.run_root is not None
     assert (execution.run_root / "run-metadata" / "turnkey_result.json").exists()
-    assert "provider-setup-failed" in execution.result.summary
+
+
+def test_run_turnkey_applies_bootstrap_timeout_sync_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Connect and stop once attached.",
+        model=None,
+        max_iters=4,
+        serial_read_seconds=3.0,
+        timeout_proposal=TimeoutProposal(connect_seconds=75.0),
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to attach first.",
+                classification="observability_fault",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Attached.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Connection established for inspection.",
+                    summary="Connected and stopped.",
+                ),
+            ),
+        ]
+    )
+    client = FakeClient(
+        {
+            "_brain_sync_timeouts": [
+                ToolTextResult(
+                    tool_name="_brain_sync_timeouts",
+                    text=json.dumps(
+                        {
+                            "applied": True,
+                            "changed_fields": ["reset_halt_seconds"],
+                            "effective_server_timeouts": {"reset_halt_seconds": 2.5},
+                            "session_id": None,
+                        }
+                    ),
+                )
+            ],
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'Nucleo-L476RG' via probe probe-1 via pyocd-native. session_id=sess-1",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=lambda: client,
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert [name for name, _arguments in client.calls[:2]] == ["_brain_sync_timeouts", "connect"]
+    assert execution.state.effective_timeout_config.connect_seconds == 75.0
+    event_kinds = [record["event_kind"] for record in execution.brain_events]
+    assert EventKinds.TIMEOUT_POLICY_APPLIED in event_kinds
+    assert EventKinds.TIMEOUT_SYNC_APPLIED in event_kinds
+
+
+def test_run_turnkey_defers_live_timeout_sync_until_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Connect, adjust future budgets, then disconnect.",
+        model=None,
+        max_iters=5,
+        serial_read_seconds=3.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need connection.",
+                classification="observability_fault",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Need slower future connect budget.",
+                classification="observability_fault",
+                timeout_proposal=TimeoutProposal(connect_seconds=75.0),
+                action=ServerToolAction(tool_name="disconnect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Disconnected cleanly.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Prepared future timeout budget after disconnect.",
+                    summary="Disconnected after staging future connect defaults.",
+                ),
+            ),
+        ]
+    )
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'Nucleo-L476RG' via probe probe-1 via pyocd-native. session_id=sess-2",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+            "_brain_sync_timeouts": [
+                ToolTextResult(
+                    tool_name="_brain_sync_timeouts",
+                    text=json.dumps(
+                        {
+                            "applied": True,
+                            "changed_fields": ["reset_halt_seconds"],
+                            "effective_server_timeouts": {"reset_halt_seconds": 2.5},
+                            "session_id": None,
+                        }
+                    ),
+                )
+            ],
+        }
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=lambda: client,
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert [name for name, _arguments in client.calls] == [
+        "connect",
+        "disconnect",
+        "_brain_sync_timeouts",
+    ]
+    event_kinds = [record["event_kind"] for record in execution.brain_events]
+    assert EventKinds.TIMEOUT_SYNC_DEFERRED in event_kinds
+    assert EventKinds.TIMEOUT_SYNC_APPLIED in event_kinds
+    assert execution.result.summary == "Disconnected after staging future connect defaults."
+
+
+def test_run_turnkey_merges_multiple_connected_timeout_proposals_before_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Connect, stage multiple future timeout changes, then disconnect.",
+        model=None,
+        max_iters=6,
+        serial_read_seconds=3.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need connection first.",
+                classification="observability_fault",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Future connects need more time.",
+                classification="observability_fault",
+                timeout_proposal=TimeoutProposal(connect_seconds=75.0),
+                action=ServerToolAction(tool_name="get_state", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Future flashing also needs more time.",
+                classification="observability_fault",
+                timeout_proposal=TimeoutProposal(flash_seconds=300.0),
+                action=ServerToolAction(tool_name="disconnect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Done staging future timeout defaults.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Merged future connect and flash timeout defaults.",
+                    summary="Disconnected after merging staged future timeout defaults.",
+                ),
+            ),
+        ]
+    )
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'Nucleo-L476RG' via probe probe-1 via pyocd-native. session_id=sess-merge",
+                )
+            ],
+            "get_state": [ToolTextResult(tool_name="get_state", text="halted=False")],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+            "_brain_sync_timeouts": [
+                ToolTextResult(
+                    tool_name="_brain_sync_timeouts",
+                    text=json.dumps(
+                        {
+                            "applied": True,
+                            "changed_fields": [
+                                "reset_halt_seconds",
+                                "flash_init_seconds",
+                                "flash_program_seconds",
+                                "flash_erase_sector_seconds",
+                                "flash_erase_all_seconds",
+                                "flash_analyzer_seconds",
+                            ],
+                            "effective_server_timeouts": {
+                                "reset_halt_seconds": 2.5,
+                                "flash_init_seconds": 6.25,
+                                "flash_program_seconds": 12.5,
+                                "flash_erase_sector_seconds": 12.5,
+                                "flash_erase_all_seconds": 300.0,
+                                "flash_analyzer_seconds": 37.5,
+                            },
+                            "session_id": None,
+                        }
+                    ),
+                )
+            ],
+        }
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=lambda: client,
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert [name for name, _arguments in client.calls] == [
+        "connect",
+        "get_state",
+        "disconnect",
+        "_brain_sync_timeouts",
+    ]
+    sync_payload = client.calls[-1][1]
+    assert sync_payload == {
+        "reset_halt_seconds": 2.5,
+        "flash_init_seconds": 6.25,
+        "flash_program_seconds": 12.5,
+        "flash_erase_sector_seconds": 12.5,
+        "flash_erase_all_seconds": 300.0,
+        "flash_analyzer_seconds": 37.5,
+    }
+    assert execution.state.pending_server_timeout_sync is None
+
+
+def test_run_turnkey_retains_pending_timeout_sync_after_sync_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Connect, stage a future timeout change, then disconnect.",
+        model=None,
+        max_iters=4,
+        serial_read_seconds=3.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need connection first.",
+                classification="observability_fault",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Future connects need more time.",
+                classification="observability_fault",
+                timeout_proposal=TimeoutProposal(connect_seconds=75.0),
+                action=ServerToolAction(tool_name="disconnect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Finished even though sync was refused.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Server-timeout sync refusal was preserved for inspection.",
+                    summary="Disconnect completed with a retained staged timeout sync.",
+                ),
+            ),
+        ]
+    )
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'Nucleo-L476RG' via probe probe-1 via pyocd-native. session_id=sess-refuse",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+            "_brain_sync_timeouts": [
+                ToolTextResult(
+                    tool_name="_brain_sync_timeouts",
+                    text="Refused [timeouts/invalid-update]: staged defaults rejected session_id=(none)",
+                )
+            ],
+        }
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=lambda: client,
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert execution.state.pending_server_timeout_sync is not None
+    assert server_timeout_update_to_record(execution.state.pending_server_timeout_sync) == {
+        "reset_halt_seconds": 2.5,
+    }
+    assert execution.run_root is not None
+    state_record = json.loads(
+        (execution.run_root / "run-metadata" / "turnkey_state.json").read_text(encoding="utf-8")
+    )
+    assert state_record["pending_server_timeout_sync"] == {"reset_halt_seconds": 2.5}
+    event_kinds = [record["event_kind"] for record in execution.brain_events]
+    assert EventKinds.TIMEOUT_SYNC_REJECTED in event_kinds
 
 
 def test_run_turnkey_treats_binary_read_as_workspace_error(

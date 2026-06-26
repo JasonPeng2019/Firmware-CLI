@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,10 @@ from pyocd_debug_mcp.services.convergence_watcher import UART_TOOL
 from pyocd_debug_mcp.services.session_runtime import InMemorySessionStore
 from pyocd_debug_mcp.services.symbols import ResolvedSymbol
 from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult
+from pyocd_debug_mcp.timeouts import (
+    ServerTimeoutConfig,
+    default_server_timeout_config,
+)
 
 
 def make_board() -> BoardConfig:
@@ -53,15 +58,18 @@ def restore_session_handle(tmp_path: Path):
     original_handle = server._session_handle
     original_runtime = server._runtime_session
     original_store = server._session_store
+    original_staged_timeouts = server._staged_server_timeouts
     server._session_handle = None
     server._runtime_session = None
     server._session_store = InMemorySessionStore(tmp_path / "runs")
+    server._staged_server_timeouts = default_server_timeout_config()
     try:
         yield
     finally:
         server._session_handle = original_handle
         server._runtime_session = original_runtime
         server._session_store = original_store
+        server._staged_server_timeouts = original_staged_timeouts
 
 
 def test_flash_firmware_uses_default_board_artifact(monkeypatch, tmp_path: Path) -> None:
@@ -113,6 +121,56 @@ def test_flash_firmware_uses_default_board_artifact(monkeypatch, tmp_path: Path)
     assert seen["path"] == artifact
     assert seen["halt_after_reset"] is False
     assert result == f"Flashed {artifact} via pyocd-native; target left running."
+
+
+def test_brain_sync_timeouts_updates_staged_defaults() -> None:
+    result = server._brain_sync_timeouts(
+        reset_halt_seconds=4.0,
+        flash_program_seconds=22.0,
+    )
+
+    payload = json.loads(result)
+    assert payload["applied"] is True
+    assert payload["changed_fields"] == ["reset_halt_seconds", "flash_program_seconds"]
+    assert payload["effective_server_timeouts"]["reset_halt_seconds"] == 4.0
+    assert payload["effective_server_timeouts"]["flash_program_seconds"] == 22.0
+    assert server._staged_server_timeouts == ServerTimeoutConfig(
+        reset_halt_seconds=4.0,
+        flash_program_seconds=22.0,
+    )
+
+
+def test_brain_sync_timeouts_refuses_out_of_range_value() -> None:
+    result = server._brain_sync_timeouts(step_instruction_seconds=9.0)
+
+    assert result == (
+        "Refused [timeouts/invalid-update]: "
+        "step_instruction_seconds must be within 0.5..5 seconds session_id=(none)"
+    )
+
+
+def test_connect_uses_staged_server_timeouts(monkeypatch) -> None:
+    board = make_board()
+    handle = make_handle(board)
+    seen: dict[str, object] = {}
+
+    server._staged_server_timeouts = ServerTimeoutConfig(reset_halt_seconds=6.0)
+    monkeypatch.setattr(server, "resolve_board_config", lambda board_id, board_config: board)
+    monkeypatch.setattr(server, "_resolve_probe_uid_for_connect", lambda board_arg, unique_id: "probe-123")
+
+    def fake_open_session(*, board, unique_id=None, target=None, server_timeouts=None):
+        seen["board"] = board
+        seen["unique_id"] = unique_id
+        seen["target"] = target
+        seen["server_timeouts"] = server_timeouts
+        return handle
+
+    monkeypatch.setattr(server.target_control, "open_session", fake_open_session)
+
+    result = server.connect(board_id=board.board_id)
+
+    assert "Connected to board" in result
+    assert seen["server_timeouts"] == ServerTimeoutConfig(reset_halt_seconds=6.0)
 
 
 def test_flash_firmware_uses_explicit_path_without_board_config(
@@ -469,7 +527,8 @@ def test_connect_autoresolves_jlink_probe_on_non_windows_when_uid_is_implicit(
         )(),
     )
 
-    def fake_open_session(*, board, unique_id, target):
+    def fake_open_session(*, board, unique_id, target, server_timeouts=None):
+        seen["server_timeouts"] = server_timeouts
         seen["board"] = board
         seen["unique_id"] = unique_id
         seen["target"] = target
@@ -515,7 +574,8 @@ def test_connect_autoresolves_jlink_probe_on_windows_when_multiple_probes_are_at
         )(),
     )
 
-    def fake_open_session(*, board, unique_id, target):
+    def fake_open_session(*, board, unique_id, target, server_timeouts=None):
+        seen["server_timeouts"] = server_timeouts
         seen["board"] = board
         seen["unique_id"] = unique_id
         seen["target"] = target

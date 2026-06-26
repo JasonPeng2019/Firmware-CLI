@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import anyio
 from mcp import types
@@ -17,6 +17,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.exceptions import McpError
 
 from pyocd_debug_mcp.timeouts import MCP_STARTUP_TIMEOUT_SECONDS
+from pyocd_debug_mcp.timeouts import ServerTimeoutUpdate, server_timeout_update_to_record
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SESSION_ID_PATTERN = re.compile(r"session_id=([A-Za-z0-9T\-]+)")
@@ -330,6 +331,19 @@ class LocalMCPClient:
 
     async def disconnect(self) -> ToolTextResult:
         return await self.call_tool("disconnect", {})
+
+    async def sync_timeouts(
+        self,
+        update: ServerTimeoutUpdate,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        payload = cast(dict[str, object], server_timeout_update_to_record(update) or {})
+        return await self.call_tool(
+            "_brain_sync_timeouts",
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
 
     async def get_board_info(self) -> ToolTextResult:
         return await self.call_tool("get_board_info", {})

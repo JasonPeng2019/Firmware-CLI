@@ -40,7 +40,7 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `__init__.py` | Package marker. |
-| `server.py` | FastMCP stdio server. Every tool thin-wraps `services/` + `guardrails/`; owns session lifecycle, refusal/block formatting, and the tool surface (connect/disconnect, state/halt/resume/step/reset, register+memory r/w, breakpoints, `flash_firmware`, `read_serial`, `unlock_recover`, `get_board_info`). |
+| `server.py` | FastMCP stdio server. Every tool thin-wraps `services/` + `guardrails/`; owns session lifecycle, refusal/block formatting, and the tool surface (connect/disconnect, state/halt/resume/step/reset, register+memory r/w, breakpoints, `flash_firmware`, `read_serial`, `unlock_recover`, `get_board_info`) plus the internal brain-owned staged timeout-sync path used before future `connect` operations. |
 | `board_config.py` | Board YAML/JSON schema (`BoardConfig`), loader, validation, recover-mode vocabulary; the single board-facts source for all frontends. |
 | `board_config_cli.py` | Small CLI to resolve/inspect tracked board configs through the shared loader. |
 | `local_env.py` | Auto-loads `.env` when present. |
@@ -55,21 +55,23 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
-| `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
+| `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result) plus optional live timeout/iteration proposal fields on `TurnDecision`. |
+| `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract, and now accepts the same planning-hook JSON inputs as the main headless CLI. |
 | `brain/cli.py` | `pyocd-debug-brain` entrypoint; exposes `run` and `benchmark` modes. |
 | `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
-| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, and run-artifact capture. |
-| `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers. |
+| `brain/events.py` | Canonical turnkey event taxonomy (`EventKind`, `BrainEvent`) plus sink helpers (`emit_brain_event`, fanout, JSONL persistence). |
+| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt assembly, action execution, convergence, run-artifact capture, and Branch C timeout-policy application/sync staging. |
+| `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool-call helpers, including the internal server-timeout sync call used by Branch C. |
 | `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation. |
 | `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`. |
 | `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`. |
 | `brain/provider_factory.py` | Factory that maps provider config to the correct decision backend. |
 | `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation. |
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
-| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn` and `DecisionProvider`. |
+| `brain/provider_types.py` | Shared provider contracts: `ProviderTurn`, `DecisionProvider`, and the P0 session/progress seam with per-call timeout override support. |
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering. |
-| `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
+| `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations, and effective timeout/pending sync state). |
+| `brain/timeout_policy.py` | Branch C timeout/iteration policy layer: proposal evaluation, clamp/apply logic, effective iteration-budget derivation, and staged server-timeout sync planning. |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
 
 ### `adapters/` — backend-neutral transport contracts + backends

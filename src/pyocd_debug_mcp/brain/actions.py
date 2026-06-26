@@ -96,6 +96,8 @@ class TurnDecision(_StrictModel):
     classification: Classification | None = None
     hypothesis: str | None = None
     strategy_evaluation: str | None = None
+    timeout_proposal: TimeoutProposal | None = None
+    iteration_estimate: IterationEstimate | None = None
     action: ActionUnion
 
 
@@ -123,6 +125,8 @@ def result_schema_text() -> str:
 
 
 def turn_decision_output_schema() -> dict[str, object]:
+    timeout_proposal_schema = TimeoutProposal.model_json_schema()
+    iteration_estimate_schema = IterationEstimate.model_json_schema()
     action_variants: list[dict[str, object]] = [
         {
             "type": "object",
@@ -219,6 +223,12 @@ def turn_decision_output_schema() -> dict[str, object]:
             },
             "hypothesis": {"type": ["string", "null"]},
             "strategy_evaluation": {"type": ["string", "null"]},
+            "timeout_proposal": {
+                "anyOf": [timeout_proposal_schema, {"type": "null"}],
+            },
+            "iteration_estimate": {
+                "anyOf": [iteration_estimate_schema, {"type": "null"}],
+            },
             "action": {"oneOf": action_variants},
         },
     }

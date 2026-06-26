@@ -29,10 +29,28 @@ class ClaudeCLIDecisionProvider:
         self._model = model
         self._timeout_seconds = timeout_seconds
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
-        return await anyio.to_thread.run_sync(self._next_decision_sync, instructions, turn_prompt)
+    async def next_decision(
+        self,
+        *,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn:
+        effective_timeout = self._timeout_seconds if timeout_seconds is None else timeout_seconds
+        return await anyio.to_thread.run_sync(
+            self._next_decision_sync,
+            instructions,
+            turn_prompt,
+            effective_timeout,
+        )
 
-    def _next_decision_sync(self, instructions: str, turn_prompt: str) -> ProviderTurn:
+    def _next_decision_sync(
+        self,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn:
+        effective_timeout = self._timeout_seconds if timeout_seconds is None else timeout_seconds
         last_error: Exception | None = None
         current_prompt = turn_prompt
         for _attempt in range(2):
@@ -46,11 +64,11 @@ class ClaudeCLIDecisionProvider:
                         capture_output=True,
                         cwd=tmpdir,
                         check=False,
-                        timeout=self._timeout_seconds,
+                        timeout=effective_timeout,
                     )
                 except subprocess.TimeoutExpired as exc:
                     raise ProviderResponseError(
-                        f"Claude CLI timed out after {self._timeout_seconds:.0f}s."
+                        f"Claude CLI timed out after {effective_timeout:.0f}s."
                     ) from exc
                 output_text, command_error = _extract_claude_output_text(result)
                 if command_error is not None:

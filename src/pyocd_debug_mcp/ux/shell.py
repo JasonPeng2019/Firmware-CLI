@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 
 import anyio
 from prompt_toolkit import PromptSession
@@ -17,12 +18,12 @@ from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashComma
 from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
 from pyocd_debug_mcp.ux.renderer import RawOutputPolicy, UXRenderer
 
-try:  # pragma: no cover - import path differs by host platform
+if sys.platform == "win32":  # pragma: no cover - import path differs by host platform
     from prompt_toolkit.output.win32 import NoConsoleScreenBufferError as _NoConsoleScreenBufferError
-except ImportError:  # pragma: no cover - non-Windows hosts
-    _NO_CONSOLE_ERROR_TYPE: type[BaseException] = RuntimeError
 else:  # pragma: no cover - Windows import path only
-    _NO_CONSOLE_ERROR_TYPE = _NoConsoleScreenBufferError
+    _NoConsoleScreenBufferError = RuntimeError
+
+_NO_CONSOLE_ERROR_TYPE: type[BaseException] = _NoConsoleScreenBufferError
 
 _NO_CONSOLE_ERRORS: tuple[type[BaseException], ...] = (_NO_CONSOLE_ERROR_TYPE,)
 

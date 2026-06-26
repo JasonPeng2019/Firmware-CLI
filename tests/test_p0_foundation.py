@@ -5,6 +5,7 @@ import argparse
 import pytest
 
 from pyocd_debug_mcp.brain import cli as brain_cli
+from pyocd_debug_mcp.brain import benchmark as brain_benchmark
 from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
 from pyocd_debug_mcp.brain.client_actions import ClientActionRecord, InMemoryClientActionStore
 from pyocd_debug_mcp.brain.config import build_turnkey_invocation
@@ -21,10 +22,13 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderSessionState,
     ProviderTurn,
 )
+from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, ToolTextResult
 from pyocd_debug_mcp.timeouts import (
+    ServerTimeoutUpdate,
     TurnkeyTimeoutConfig,
     TurnkeyTimeoutUpdate,
     apply_turnkey_timeout_update,
+    server_timeout_update_to_record,
 )
 
 
@@ -153,6 +157,28 @@ def test_brain_cli_parser_accepts_planning_hook_arguments() -> None:
     assert args.iteration_estimate_json == "{\"requested_max_iterations\": 7}"
 
 
+def test_benchmark_parser_accepts_planning_hook_arguments() -> None:
+    parser = brain_benchmark.build_parser()
+
+    args = parser.parse_args(
+        [
+            "case",
+            "--case-id",
+            "nucleo_l476rg__k001_reference_green",
+            "--timeout-config-json",
+            "{\"connect_seconds\": 42.0}",
+            "--timeout-proposal-json",
+            "{\"provider_seconds\": 120.0}",
+            "--iteration-estimate-json",
+            "{\"requested_max_iterations\": 7}",
+        ]
+    )
+
+    assert args.timeout_config_json == "{\"connect_seconds\": 42.0}"
+    assert args.timeout_proposal_json == "{\"provider_seconds\": 120.0}"
+    assert args.iteration_estimate_json == "{\"requested_max_iterations\": 7}"
+
+
 def test_brain_cli_timeout_config_json_applies_partial_override() -> None:
     config = brain_cli._parse_timeout_config_json("{\"connect_seconds\": 42.0}")
 
@@ -164,6 +190,11 @@ def test_brain_cli_timeout_config_json_applies_partial_override() -> None:
 def test_brain_cli_rejects_unknown_timeout_override_keys() -> None:
     with pytest.raises(Exception, match="unsupported keys"):
         brain_cli._parse_timeout_config_json("{\"not_real\": 1}")
+
+
+def test_brain_cli_rejects_out_of_range_timeout_override() -> None:
+    with pytest.raises(Exception, match="within 15..180 seconds"):
+        brain_cli._parse_timeout_config_json("{\"connect_seconds\": 1000.0}")
 
 
 @pytest.mark.anyio
@@ -218,3 +249,30 @@ async def test_brain_cli_run_freeform_threads_planning_hooks(
     assert timeout_config.provider_seconds == 111.0
     assert captured["timeout_proposal"] == TimeoutProposal(provider_seconds=120.0)
     assert captured["iteration_estimate"] == IterationEstimate(requested_max_iterations=7)
+
+
+@pytest.mark.anyio
+async def test_local_mcp_client_sync_timeouts_uses_shared_serialization_helper() -> None:
+    client = LocalMCPClient()
+    update = ServerTimeoutUpdate(flash_program_seconds=25.0)
+    captured: dict[str, object] = {}
+
+    async def _fake_call_tool(
+        tool_name: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        captured["tool_name"] = tool_name
+        captured["arguments"] = arguments
+        captured["timeout_seconds"] = timeout_seconds
+        return ToolTextResult(tool_name=tool_name, text='{"applied": true}')
+
+    client.available_tools = ("_brain_sync_timeouts",)
+    client.call_tool = _fake_call_tool  # type: ignore[method-assign]
+
+    await client.sync_timeouts(update, timeout_seconds=12.0)
+
+    assert captured["tool_name"] == "_brain_sync_timeouts"
+    assert captured["arguments"] == server_timeout_update_to_record(update)
+    assert captured["timeout_seconds"] == 12.0

@@ -16,6 +16,7 @@ Design notes
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import subprocess
@@ -74,7 +75,11 @@ from pyocd_debug_mcp.target_errors import (
 )
 from pyocd_debug_mcp.timeouts import (
     DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
+    ServerTimeoutUpdate,
+    apply_server_timeout_update,
+    default_server_timeout_config,
     subprocess_timeout_stream_text,
+    validate_server_timeout_update,
 )
 
 load_local_env()
@@ -88,6 +93,7 @@ _session_handle: TargetSessionHandle | None = None
 _runtime_session: SessionRecord | None = None
 _session_store = InMemorySessionStore()
 _watcher = ConvergenceWatcher()
+_staged_server_timeouts = default_server_timeout_config()
 NO_BOARD_CONFIG_MESSAGE = (
     "No board config loaded for this session. Pass `board_id` to `connect` "
     "(or set PYOCD_BOARD_ID) to load boards/<board>.yaml facts."
@@ -312,9 +318,16 @@ def format_board_info(b: BoardConfig) -> str:
     return "\n".join(lines)
 
 
-def build_session_options(board: BoardConfig | None, target: str | None) -> dict[str, object] | None:
+def build_session_options(
+    board: BoardConfig | None,
+    target: str | None,
+) -> dict[str, object] | None:
     """Compatibility wrapper around the shared target-control option builder."""
-    return target_control.build_session_options(board, target)
+    return target_control.build_session_options(
+        board,
+        target,
+        server_timeouts=_staged_server_timeouts,
+    )
 
 
 def _should_bypass_jlink_probe_resolution(
@@ -435,7 +448,12 @@ def connect(
                 or os.environ.get("PYOCD_TARGET")
                 or None
             )
-            handle = target_control.open_session(board=board, unique_id=uid, target=tgt)
+            handle = target_control.open_session(
+                board=board,
+                unique_id=uid,
+                target=tgt,
+                server_timeouts=_staged_server_timeouts,
+            )
         except Exception as exc:  # noqa: BLE001 - preserve the original connect error
             _record_event(
                 "connect",
@@ -523,6 +541,100 @@ def disconnect() -> str:
         _session_handle = None
         _runtime_session = None
         return "Disconnected."
+
+
+@mcp.tool()
+def _brain_sync_timeouts(
+    step_instruction_seconds: float | None = None,
+    reset_halt_seconds: float | None = None,
+    dap_recover_seconds: float | None = None,
+    core_recover_seconds: float | None = None,
+    flash_init_seconds: float | None = None,
+    flash_program_seconds: float | None = None,
+    flash_erase_sector_seconds: float | None = None,
+    flash_erase_all_seconds: float | None = None,
+    flash_analyzer_seconds: float | None = None,
+) -> str:
+    """Stage low-level pyOCD timeout defaults for future `connect` calls.
+
+    This tool is brain-only. It accepts any subset of the staged server-timeout
+    fields and applies them to the server's connect-time defaults after
+    validation. It does not mutate an already-open pyOCD session.
+
+    Returns JSON text with:
+    - `applied`: whether any field changed
+    - `changed_fields`: the field names updated by this request
+    - `effective_server_timeouts`: the full staged timeout set now in force for
+      future connects
+    - `session_id`: the currently active MCP session id, if one exists
+
+    Invalid values return `Refused [timeouts/invalid-update]: ...`.
+    """
+
+    global _staged_server_timeouts
+    with _lock:
+        started = time.monotonic()
+        normalized_args: dict[str, object] = {
+            "step_instruction_seconds": step_instruction_seconds,
+            "reset_halt_seconds": reset_halt_seconds,
+            "dap_recover_seconds": dap_recover_seconds,
+            "core_recover_seconds": core_recover_seconds,
+            "flash_init_seconds": flash_init_seconds,
+            "flash_program_seconds": flash_program_seconds,
+            "flash_erase_sector_seconds": flash_erase_sector_seconds,
+            "flash_erase_all_seconds": flash_erase_all_seconds,
+            "flash_analyzer_seconds": flash_analyzer_seconds,
+        }
+        update = ServerTimeoutUpdate(
+            step_instruction_seconds=step_instruction_seconds,
+            reset_halt_seconds=reset_halt_seconds,
+            dap_recover_seconds=dap_recover_seconds,
+            core_recover_seconds=core_recover_seconds,
+            flash_init_seconds=flash_init_seconds,
+            flash_program_seconds=flash_program_seconds,
+            flash_erase_sector_seconds=flash_erase_sector_seconds,
+            flash_erase_all_seconds=flash_erase_all_seconds,
+            flash_analyzer_seconds=flash_analyzer_seconds,
+        )
+        try:
+            validate_server_timeout_update(update)
+            _staged_server_timeouts = apply_server_timeout_update(_staged_server_timeouts, update)
+        except ValueError as exc:
+            refusal = PolicyRefusal("timeouts/invalid-update", str(exc))
+            _record_event(
+                "_brain_sync_timeouts",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=refusal.code,
+                duration_ms=_duration_ms(started),
+                details={"message": refusal.message},
+                session=_runtime_session,
+            )
+            return _format_refusal(refusal, session_id=_active_session_id())
+
+        changed_fields = list(update.changed_fields())
+        result = json.dumps(
+            {
+                "applied": bool(changed_fields),
+                "changed_fields": changed_fields,
+                "effective_server_timeouts": _staged_server_timeouts.to_record(),
+                "session_id": _active_session_id(),
+            },
+            sort_keys=True,
+        )
+        _record_event(
+            "_brain_sync_timeouts",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            details={
+                "changed_fields": changed_fields,
+                "effective_server_timeouts": _staged_server_timeouts.to_record(),
+            },
+            session=_runtime_session,
+        )
+        return result
 
 
 @mcp.tool()

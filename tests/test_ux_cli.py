@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from pyocd_debug_mcp.brain.events import BrainEvent
+from pyocd_debug_mcp.brain.events import BrainEvent, EventKinds
 from pyocd_debug_mcp.ux import cli as ux_cli
 from pyocd_debug_mcp.ux import shell as ux_shell
 from pyocd_debug_mcp.ux.artifacts import artifact_entries
@@ -177,7 +177,7 @@ def test_renderer_non_tty_fallback_prints_status_lines() -> None:
     renderer = UXRenderer(console=Console(file=stream, force_terminal=False, color_system=None))
     renderer.emit(
         BrainEvent(
-            event_kind="provider_turn_start",
+            event_kind=EventKinds.PROVIDER_TURN_START,
             timestamp="2026-06-23T00:00:00Z",
             board_id="nrf52833dk",
             iteration=1,

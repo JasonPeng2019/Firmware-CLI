@@ -6,13 +6,16 @@ import argparse
 import json
 import math
 from dataclasses import asdict, replace
+from dataclasses import fields
 from pathlib import Path
+from typing import Any, cast
 
 import anyio
 
 from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain.actions import TurnkeyRunResult
 from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
     TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
@@ -20,9 +23,76 @@ from pyocd_debug_mcp.brain.config import (
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
-from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
+from pyocd_debug_mcp.timeouts import (
+    TurnkeyTimeoutConfig,
+    TurnkeyTimeoutUpdate,
+    apply_turnkey_timeout_update,
+    default_turnkey_timeout_config,
+)
 
 DEFAULT_MAX_ITERS = 18
+
+
+def _parse_json_object(raw: str, *, flag_name: str) -> dict[str, object]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise BrainConfigError(f"{flag_name} must be valid JSON: {exc.msg}") from exc
+    if not isinstance(payload, dict):
+        raise BrainConfigError(f"{flag_name} must decode to a JSON object.")
+    return payload
+
+
+def _parse_timeout_config_json(raw: str | None) -> TurnkeyTimeoutConfig | None:
+    if raw is None:
+        return None
+    payload = _parse_json_object(raw, flag_name="--timeout-config-json")
+    allowed_fields = {field.name for field in fields(TurnkeyTimeoutUpdate)}
+    unknown_fields = sorted(set(payload) - allowed_fields)
+    if unknown_fields:
+        raise BrainConfigError(
+            "--timeout-config-json contains unsupported keys: " + ", ".join(unknown_fields)
+        )
+    try:
+        update = TurnkeyTimeoutUpdate(**cast(dict[str, Any], payload))
+        return apply_turnkey_timeout_update(default_turnkey_timeout_config(), update)
+    except (TypeError, ValueError) as exc:
+        raise BrainConfigError(f"--timeout-config-json is invalid: {exc}") from exc
+
+
+def _parse_timeout_proposal_json(raw: str | None) -> TimeoutProposal | None:
+    if raw is None:
+        return None
+    payload = _parse_json_object(raw, flag_name="--timeout-proposal-json")
+    try:
+        return TimeoutProposal.model_validate(payload)
+    except Exception as exc:
+        raise BrainConfigError(f"--timeout-proposal-json is invalid: {exc}") from exc
+
+
+def _parse_iteration_estimate_json(raw: str | None) -> IterationEstimate | None:
+    if raw is None:
+        return None
+    payload = _parse_json_object(raw, flag_name="--iteration-estimate-json")
+    try:
+        return IterationEstimate.model_validate(payload)
+    except Exception as exc:
+        raise BrainConfigError(f"--iteration-estimate-json is invalid: {exc}") from exc
+
+
+def _add_planning_hook_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--timeout-config-json",
+        help="Optional JSON object of turnkey timeout overrides applied over repo defaults.",
+    )
+    parser.add_argument(
+        "--timeout-proposal-json",
+        help="Optional JSON object carrying the future model timeout proposal shape.",
+    )
+    parser.add_argument(
+        "--iteration-estimate-json",
+        help="Optional JSON object carrying the future model iteration-estimate shape.",
+    )
 
 
 def _render_case_task(case: benchmark_support.BenchmarkCase) -> str:
@@ -512,6 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
+    _add_planning_hook_arguments(case_parser)
 
     suite_parser = subparsers.add_parser("suite", help="Run a named turnkey benchmark suite.")
     suite_parser.add_argument("--suite", required=True)
@@ -523,33 +594,47 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     )
+    _add_planning_hook_arguments(suite_parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    provider_config = load_provider_config(args.model, getattr(args, "provider", None))
-    model = provider_config.model
-    provider = provider_config.provider
-    if args.mode == "case":
-        report = run_case(
-            args.case_id,
+    try:
+        provider_config = load_provider_config(args.model, getattr(args, "provider", None))
+        timeout_config = _parse_timeout_config_json(args.timeout_config_json)
+        timeout_proposal = _parse_timeout_proposal_json(args.timeout_proposal_json)
+        iteration_estimate = _parse_iteration_estimate_json(args.iteration_estimate_json)
+        model = provider_config.model
+        provider = provider_config.provider
+        if args.mode == "case":
+            report = run_case(
+                args.case_id,
+                provider=provider,
+                model=model,
+                max_iters=args.max_iters,
+                serial_read_seconds=args.serial_read_seconds,
+                timeout_config=timeout_config,
+                timeout_proposal=timeout_proposal,
+                iteration_estimate=iteration_estimate,
+            )
+            benchmark_support.print_case_summary(report)
+            return 0 if report.score_report.outcome_label == "full_success" else 1
+
+        reports = run_suite(
+            args.suite,
             provider=provider,
             model=model,
             max_iters=args.max_iters,
             serial_read_seconds=args.serial_read_seconds,
+            timeout_config=timeout_config,
+            timeout_proposal=timeout_proposal,
+            iteration_estimate=iteration_estimate,
         )
-        benchmark_support.print_case_summary(report)
-        return 0 if report.score_report.outcome_label == "full_success" else 1
-
-    reports = run_suite(
-        args.suite,
-        provider=provider,
-        model=model,
-        max_iters=args.max_iters,
-        serial_read_seconds=args.serial_read_seconds,
-    )
-    for report in reports:
-        benchmark_support.print_case_summary(report)
-    benchmark_support.print_suite_summary(args.suite, reports)
-    return 0 if _suite_acceptance(args.suite, reports) else 1
+        for report in reports:
+            benchmark_support.print_case_summary(report)
+        benchmark_support.print_suite_summary(args.suite, reports)
+        return 0 if _suite_acceptance(args.suite, reports) else 1
+    except BrainConfigError as exc:
+        print(str(exc))
+        return 2

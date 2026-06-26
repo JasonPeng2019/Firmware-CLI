@@ -11,6 +11,12 @@ from pyocd_debug_mcp.brain.evidence import (
     Observation,
     StrategyEvaluation,
 )
+from pyocd_debug_mcp.timeouts import (
+    ServerTimeoutUpdate,
+    TurnkeyTimeoutConfig,
+    default_turnkey_timeout_config,
+    server_timeout_update_to_record,
+)
 
 
 @dataclass
@@ -44,6 +50,10 @@ class BrainState:
     repeated_build_failure_count: int = 0
     stagnant_fix_cycle_count: int = 0
     pending_fix_evaluation: bool = False
+    effective_timeout_config: TurnkeyTimeoutConfig = field(default_factory=default_turnkey_timeout_config)
+    effective_max_iters: int = 0
+    pending_server_timeout_sync: ServerTimeoutUpdate | None = None
+    last_timeout_policy: dict[str, object] | None = None
     last_build_failure_signature: str | None = None
     last_no_progress_signature: str | None = None
     last_verification_signature: tuple[bool, bool, bool, bool] | None = None
@@ -120,6 +130,12 @@ class BrainState:
             "repeated_build_failure_count": self.repeated_build_failure_count,
             "stagnant_fix_cycle_count": self.stagnant_fix_cycle_count,
             "pending_fix_evaluation": self.pending_fix_evaluation,
+            "effective_timeout_config": self.effective_timeout_config.to_record(),
+            "effective_max_iters": self.effective_max_iters,
+            "pending_server_timeout_sync": server_timeout_update_to_record(
+                self.pending_server_timeout_sync
+            ),
+            "last_timeout_policy": self.last_timeout_policy,
             "observations": [item.to_dict() for item in self.observations],
             "hypotheses": [item.to_dict() for item in self.hypotheses],
             "experiments": [item.to_dict() for item in self.experiments],

@@ -24,17 +24,36 @@ class AnthropicDecisionProvider:
         model: str,
         timeout_seconds: float = PROVIDER_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
-        self._client = Anthropic(api_key=api_key, timeout=timeout_seconds)
+        self._api_key = api_key
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
-        return await anyio.to_thread.run_sync(self._next_decision_sync, instructions, turn_prompt)
+    async def next_decision(
+        self,
+        *,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn:
+        effective_timeout = self._timeout_seconds if timeout_seconds is None else timeout_seconds
+        return await anyio.to_thread.run_sync(
+            self._next_decision_sync,
+            instructions,
+            turn_prompt,
+            effective_timeout,
+        )
 
-    def _next_decision_sync(self, instructions: str, turn_prompt: str) -> ProviderTurn:
+    def _next_decision_sync(
+        self,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float,
+    ) -> ProviderTurn:
+        client = Anthropic(api_key=self._api_key, timeout=timeout_seconds)
         last_error: Exception | None = None
         current_prompt = turn_prompt
         for _attempt in range(2):
-            response = self._client.messages.create(
+            response = client.messages.create(
                 model=self._model,
                 max_tokens=4096,
                 system=instructions,

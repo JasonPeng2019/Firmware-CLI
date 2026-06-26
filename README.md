@@ -186,6 +186,7 @@ Firmware-CLI/
 |       |   |-- provider_types.py
 |       |   |-- skills.py
 |       |   |-- state.py
+|       |   |-- timeout_policy.py
 |       |   `-- workspace.py
 |       |-- ux/
 |       |   |-- artifacts.py
@@ -609,6 +610,11 @@ Verified:
 - the first Pass 1 UX-layer code path now also exists in the repo:
   `src/pyocd_debug_mcp/ux/`, `src/pyocd_debug_mcp/brain/events.py`, and
   `pyocd-debug`
+- the parallel `P-Wave-C` timeout/event prototype work now has a concrete
+  Branch C runtime path:
+  `brain/events.py`, `brain/timeout_policy.py`, shared timeout clamp/default
+  models in `timeouts.py`, and a brain-owned staged server-timeout sync path
+  for future `connect` operations
 - the turnkey layer no longer depends on Codex CLI or MCP registration:
   it launches the local MCP server as a subprocess and talks to it directly
 - the turnkey benchmark path reuses the frozen `pilot_v1_plus_b003_b004`

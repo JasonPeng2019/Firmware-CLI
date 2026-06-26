@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from pyocd_debug_mcp.board_config import BoardConfig
+from pyocd_debug_mcp.timeouts import ServerTimeoutConfig
 
 
 @dataclass
@@ -31,6 +32,7 @@ class SWDInterface(ABC):
         board: BoardConfig | None,
         unique_id: str | None,
         target: str | None,
+        server_timeouts: ServerTimeoutConfig | None = None,
     ) -> TargetSessionHandle:
         """Open a live debug session for the requested board or raw target."""
 

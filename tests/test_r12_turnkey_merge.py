@@ -36,6 +36,7 @@ from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain import workspace as workspace_mod
+from pyocd_debug_mcp.timeouts import ServerTimeoutUpdate
 from tests.harness import r11_benchmark as r11
 
 
@@ -43,7 +44,14 @@ class _FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
 
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+    async def next_decision(
+        self,
+        *,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn:
+        del instructions, turn_prompt, timeout_seconds
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
@@ -62,11 +70,35 @@ class _FakeClient:
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         return None
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> ToolTextResult:
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        del timeout_seconds
         queue = self._results.get(tool_name)
         if not queue:
             raise RuntimeError(f"Unexpected tool call: {tool_name}")
         return queue.popleft()
+
+    async def sync_timeouts(
+        self,
+        update: ServerTimeoutUpdate,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        payload = {
+            field_name: value
+            for field_name in update.changed_fields()
+            if (value := getattr(update, field_name)) is not None
+        }
+        return await self.call_tool(
+            "_brain_sync_timeouts",
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 def test_default_server_command_uses_uv_run_repo_entrypoint() -> None:

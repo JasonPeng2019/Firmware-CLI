@@ -33,4 +33,10 @@ class ProviderTurn:
 
 
 class DecisionProvider(Protocol):
-    async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn: ...
+    async def next_decision(
+        self,
+        *,
+        instructions: str,
+        turn_prompt: str,
+        timeout_seconds: float | None = None,
+    ) -> ProviderTurn: ...

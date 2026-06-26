@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
@@ -21,28 +21,40 @@ from pyocd_debug_mcp.board_config import (
 from pyocd_debug_mcp.brain.actions import (
     Classification,
     decision_schema_text,
+    IterationEstimate,
     ReadFileAction,
     FinalizeAction,
     ReplaceFileAction,
     RunBuildAction,
     RunGreenCheckAction,
     ServerToolAction,
+    TimeoutProposal,
     TurnDecision,
     TurnkeyRunResult,
     VerificationSnapshot,
 )
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
-from pyocd_debug_mcp.brain.events import BrainEvent, EventSink, emit_event, event_timestamp
+from pyocd_debug_mcp.brain.events import EventKind, EventKinds, EventSink, emit_brain_event
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
 from pyocd_debug_mcp.brain.provider_types import DecisionProvider, ProviderTurn
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
+from pyocd_debug_mcp.brain.timeout_policy import (
+    ProposalSource,
+    TimeoutPolicyResult,
+    apply_policy_proposals,
+)
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
+from pyocd_debug_mcp.timeouts import (
+    TurnkeyTimeoutConfig,
+    merge_server_timeout_updates,
+    server_timeout_update_to_record,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -198,6 +210,7 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- When code edits are allowed, replace whole files only; do not describe patches in prose.\n"
         "- Use run_green_check when you believe the target is healthy again.\n"
         "- Do not return final_status=healthy_confirmed or final_status=fixed until run_green_check has succeeded in this client.\n"
+        "- You may include timeout_proposal and iteration_estimate when justified; the brain clamps them inside hard caps and applies them only forward.\n"
         f"- {benchmark_note}\n"
     )
 
@@ -223,6 +236,7 @@ def _build_turn_prompt(
         f"{_workspace_summary(workspace)}\n\n"
         "Current state:\n"
         f"iteration={state.iteration}\n"
+        f"effective_max_iters={state.effective_max_iters or '(unset)'}\n"
         f"session_id={state.session_id or '(none)'}\n"
         f"session_ids_seen={state.session_ids_seen}\n"
         f"flash_count={state.flash_count}\n"
@@ -234,6 +248,7 @@ def _build_turn_prompt(
         f"last_result={state.last_result_text or '(none)'}\n"
         f"blocked_action_families={sorted(state.blocked_action_families)}\n"
         f"refused_action_families={sorted(state.refused_action_families)}\n"
+        f"effective_timeouts={json.dumps(state.effective_timeout_config.to_record(), sort_keys=True)}\n"
         f"verification.flash_ok={verification.flash_ok}\n"
         f"verification.uart_ok={verification.uart_ok}\n"
         f"verification.symbol_ok={verification.symbol_ok}\n"
@@ -286,26 +301,25 @@ async def _record_brain_event(
     records: list[dict[str, object]],
     invocation: TurnkeyInvocation,
     state: BrainState,
-    event_kind: str,
+    event_kind: EventKind,
     message: str,
-    details: dict[str, object] | None = None,
+    details: Mapping[str, object] | None = None,
     session_id: str | None = None,
     iteration: int | None = None,
 ) -> None:
-    event = BrainEvent(
+    event = await emit_brain_event(
+        sink,
         event_kind=event_kind,
-        timestamp=event_timestamp(),
         board_id=state.board_id,
         iteration=state.iteration if iteration is None else iteration,
         session_id=session_id if session_id is not None else _result_session_id(state),
         provider=invocation.provider,
         model=invocation.model,
         message=message,
-        details=details or {},
+        details=dict(details or {}),
     )
     record = event.to_record()
     records.append(record)
-    await emit_event(sink, event)
 
 
 async def _record_verification_event(
@@ -321,12 +335,157 @@ async def _record_verification_event(
         records=records,
         invocation=invocation,
         state=state,
-        event_kind="verification_state_update",
+        event_kind=EventKinds.VERIFICATION_STATE_UPDATE,
         message=f"Verification snapshot updated: {reason}",
         details={
             "reason": reason,
             "verification": state.verification.model_dump(mode="json"),
         },
+    )
+
+
+async def _record_timeout_policy_events(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    proposal_source: ProposalSource,
+    timeout_proposal: TimeoutProposal | None,
+    iteration_estimate: IterationEstimate | None,
+    policy_result: TimeoutPolicyResult,
+) -> None:
+    if timeout_proposal is not None:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.TIMEOUT_PROPOSAL_RECEIVED,
+            message=f"Accepted {proposal_source} timeout proposal for evaluation.",
+            details=timeout_proposal.model_dump(mode="json"),
+        )
+    if iteration_estimate is not None:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.ITERATION_ESTIMATE_RECEIVED,
+            message=f"Accepted {proposal_source} iteration estimate for evaluation.",
+            details=iteration_estimate.model_dump(mode="json"),
+        )
+    if policy_result.accepted_timeout_update is not None:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.TIMEOUT_POLICY_APPLIED,
+            message=f"Applied {proposal_source} timeout proposal.",
+            details=policy_result.to_record(),
+        )
+        if policy_result.accepted_timeout_update.provider_seconds is not None:
+            await _record_brain_event(
+                sink=sink,
+                records=records,
+                invocation=invocation,
+                state=state,
+                event_kind=EventKinds.PROVIDER_TIMEOUT_UPDATED,
+                message="Updated provider timeout budget for subsequent turns.",
+                details={
+                    "provider_seconds": policy_result.effective_timeout_config.provider_seconds,
+                    "source": proposal_source,
+                },
+            )
+    if policy_result.clamped_timeout_fields:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.TIMEOUT_POLICY_CLAMPED,
+            message=f"Clamped {proposal_source} timeout proposal inside hard caps.",
+            details=policy_result.clamped_timeout_fields,
+        )
+    if policy_result.rejected_timeout_fields:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.TIMEOUT_POLICY_REJECTED,
+            message=f"Rejected fields from the {proposal_source} timeout proposal.",
+            details=policy_result.rejected_timeout_fields,
+        )
+    if policy_result.iteration_budget_summary is not None:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.ITERATION_BUDGET_APPLIED,
+            message=f"Updated effective iteration budget from the {proposal_source} estimate.",
+            details=policy_result.iteration_budget_summary.to_record(),
+        )
+
+
+def _apply_timeout_policy_to_state(state: BrainState, policy_result: TimeoutPolicyResult) -> None:
+    state.effective_timeout_config = policy_result.effective_timeout_config
+    state.effective_max_iters = policy_result.effective_max_iters
+    state.last_timeout_policy = policy_result.to_record()
+    state.pending_server_timeout_sync = merge_server_timeout_updates(
+        state.pending_server_timeout_sync,
+        policy_result.server_sync_update,
+    )
+
+
+async def _sync_pending_server_timeouts(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    client: LocalMCPClient,
+    reason: str,
+) -> None:
+    pending_update = state.pending_server_timeout_sync
+    if pending_update is None:
+        return
+    pending_update_record = server_timeout_update_to_record(pending_update)
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind=EventKinds.TIMEOUT_SYNC_REQUESTED,
+        message=f"Syncing staged server timeout defaults ({reason}).",
+        details={"pending_update": pending_update_record, "reason": reason},
+    )
+    result = await client.sync_timeouts(
+        pending_update,
+        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
+    )
+    if result.refusal_code or result.blocked_code:
+        await _record_brain_event(
+            sink=sink,
+            records=records,
+            invocation=invocation,
+            state=state,
+            event_kind=EventKinds.TIMEOUT_SYNC_REJECTED,
+            message=result.text,
+            details={"pending_update": pending_update_record, "reason": reason},
+        )
+        raise MCPClientError(result.text)
+    state.pending_server_timeout_sync = None
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind=EventKinds.TIMEOUT_SYNC_APPLIED,
+        message="Applied staged server timeout defaults for future connects.",
+        details={"result_text": result.text, "reason": reason},
     )
 
 
@@ -614,8 +773,12 @@ async def _call_tool_with_timeout(
         ) from exc
 
 
-def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:
-    return invocation.timeout_config.tool_timeout_seconds(
+def _tool_timeout_seconds(
+    tool_name: str,
+    invocation: TurnkeyInvocation,
+    effective_timeout_config: TurnkeyTimeoutConfig,
+) -> float:
+    return effective_timeout_config.tool_timeout_seconds(
         tool_name,
         serial_read_seconds=invocation.serial_read_seconds,
     )
@@ -691,7 +854,11 @@ async def _execute_server_tool(
         client,
         action.tool_name,
         arguments,
-        timeout_seconds=_tool_timeout_seconds(action.tool_name, invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            action.tool_name,
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     state.register_tool_use(action.tool_name)
     state.actions_taken.append(action.tool_name)
@@ -792,7 +959,7 @@ def _execute_build(
     state.pending_fix_evaluation = True
     build = workspace.run_build(
         action.build_command,
-        timeout_seconds=invocation.timeout_config.build_seconds,
+        timeout_seconds=state.effective_timeout_config.build_seconds,
     )
     state.actions_taken.append("run_build")
     state.last_action_summary = f"run_build({action.build_command or workspace.build_command})"
@@ -835,7 +1002,11 @@ async def _execute_green_check(
         client,
         "flash_firmware",
         {"path": str(flash_artifact), "halt_after_reset": True},
-        timeout_seconds=_tool_timeout_seconds("flash_firmware", invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            "flash_firmware",
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     if flash_result.refusal_code or flash_result.blocked_code:
         state.last_result_text = flash_result.text
@@ -845,7 +1016,7 @@ async def _execute_green_check(
         client,
         "read_core_register",
         {"name": "pc"},
-        timeout_seconds=invocation.timeout_config.default_tool_seconds,
+        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
     )
     if pc_result.refusal_code or pc_result.blocked_code:
         state.last_result_text = pc_result.text
@@ -865,7 +1036,7 @@ async def _execute_green_check(
                 "address": f"0x{resolved_symbol.address:08X}",
                 "word_size": 32,
             },
-            timeout_seconds=invocation.timeout_config.default_tool_seconds,
+            timeout_seconds=state.effective_timeout_config.default_tool_seconds,
         )
         if value_result.refusal_code or value_result.blocked_code:
             state.last_result_text = value_result.text
@@ -905,7 +1076,11 @@ async def _execute_green_check(
         client,
         "read_serial",
         read_serial_args,
-        timeout_seconds=_tool_timeout_seconds("read_serial", invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            "read_serial",
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     if serial_result.refusal_code or serial_result.blocked_code:
         state.last_result_text = serial_result.text
@@ -1094,6 +1269,8 @@ async def _tooling_failure_execution(
         case_id=invocation.case_id,
         case_kind=invocation.case_kind,
         selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
+        effective_timeout_config=invocation.timeout_config,
+        effective_max_iters=invocation.max_iters,
     )
     prompt_text = _build_turn_prompt(invocation, board, state, skills_text, workspace)
     brain_events: list[dict[str, object]] = []
@@ -1103,7 +1280,7 @@ async def _tooling_failure_execution(
         records=brain_events,
         invocation=invocation,
         state=state,
-        event_kind="run_start",
+        event_kind=EventKinds.RUN_START,
         message=f"Turnkey run started for {board.board_id}.",
         details={
             "run_mode": invocation.mode,
@@ -1119,7 +1296,7 @@ async def _tooling_failure_execution(
         records=brain_events,
         invocation=invocation,
         state=state,
-        event_kind="unexpected_failure",
+        event_kind=EventKinds.UNEXPECTED_FAILURE,
         message=result.summary,
         details={"phase": "provider_setup"},
         iteration=0,
@@ -1129,7 +1306,7 @@ async def _tooling_failure_execution(
         records=brain_events,
         invocation=invocation,
         state=state,
-        event_kind="final_result",
+        event_kind=EventKinds.FINAL_RESULT,
         message=f"Run completed as {result.final_status}.",
         details={"result": result.model_dump(mode="json")},
         iteration=0,
@@ -1177,20 +1354,6 @@ async def run_turnkey(
         else None
     )
     request_payload = _build_request_payload(invocation, board, selected_skills)
-    prompt_text = _build_turn_prompt(
-        invocation,
-        board,
-        BrainState(
-            run_mode=invocation.mode,
-            board_id=board.board_id,
-            task=invocation.task,
-            case_id=invocation.case_id,
-            case_kind=invocation.case_kind,
-            selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
-        ),
-        skills_text,
-        workspace,
-    )
     instructions = _build_instructions(invocation)
     state = BrainState(
         run_mode=invocation.mode,
@@ -1199,22 +1362,22 @@ async def run_turnkey(
         case_id=invocation.case_id,
         case_kind=invocation.case_kind,
         selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
+        effective_timeout_config=invocation.timeout_config,
+        effective_max_iters=invocation.max_iters,
     )
+    prompt_text = _build_turn_prompt(invocation, board, state, skills_text, workspace)
     result: TurnkeyRunResult | None = None
     model_turns: list[dict[str, object]] = []
     brain_trace: list[dict[str, object]] = []
     brain_events: list[dict[str, object]] = []
     run_root = _prepare_run_root(_provisional_run_id())
-    resolved_client_factory = client_factory or (
-        lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
-    )
 
     await _record_brain_event(
         sink=event_sink,
         records=brain_events,
         invocation=invocation,
         state=state,
-        event_kind="run_start",
+        event_kind=EventKinds.RUN_START,
         message=f"Turnkey run started for {board.board_id}.",
         details={
             "run_mode": invocation.mode,
@@ -1224,10 +1387,47 @@ async def run_turnkey(
         },
         iteration=0,
     )
+    if invocation.timeout_proposal is not None or invocation.iteration_estimate is not None:
+        bootstrap_policy = apply_policy_proposals(
+            current_timeout_config=state.effective_timeout_config,
+            current_effective_max_iters=state.effective_max_iters,
+            operator_max_iters=invocation.max_iters,
+            proposal_source="invocation",
+            timeout_proposal=invocation.timeout_proposal,
+            iteration_estimate=invocation.iteration_estimate,
+            connected=False,
+        )
+        _apply_timeout_policy_to_state(state, bootstrap_policy)
+        await _record_timeout_policy_events(
+            sink=event_sink,
+            records=brain_events,
+            invocation=invocation,
+            state=state,
+            proposal_source="invocation",
+            timeout_proposal=invocation.timeout_proposal,
+            iteration_estimate=invocation.iteration_estimate,
+            policy_result=bootstrap_policy,
+        )
+        prompt_text = _build_turn_prompt(invocation, board, state, skills_text, workspace)
+    resolved_client_factory = client_factory or (
+        lambda: LocalMCPClient(
+            startup_timeout_seconds=state.effective_timeout_config.mcp_startup_seconds
+        )
+    )
 
     try:
         async with resolved_client_factory() as client:
-            for iteration in range(1, invocation.max_iters + 1):
+            if state.pending_server_timeout_sync is not None and state.session_id is None:
+                await _sync_pending_server_timeouts(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    client=client,
+                    reason="bootstrap-before-connect",
+                )
+            iteration = 1
+            while iteration <= state.effective_max_iters:
                 state.iteration = iteration
                 turn_prompt = _build_turn_prompt(invocation, board, state, skills_text, workspace)
                 await _record_brain_event(
@@ -1235,7 +1435,7 @@ async def run_turnkey(
                     records=brain_events,
                     invocation=invocation,
                     state=state,
-                    event_kind="provider_turn_start",
+                    event_kind=EventKinds.PROVIDER_TURN_START,
                     message=f"Provider turn {iteration} started.",
                     details={"turn_prompt_length": len(turn_prompt)},
                 )
@@ -1244,6 +1444,7 @@ async def run_turnkey(
                     provider_turn = await provider.next_decision(
                         instructions=instructions,
                         turn_prompt=turn_prompt,
+                        timeout_seconds=state.effective_timeout_config.provider_seconds,
                     )
                 except Exception as exc:  # noqa: BLE001 - provider/runtime failures become saved runs
                     result = _tooling_failure_result(
@@ -1256,7 +1457,7 @@ async def run_turnkey(
                         records=brain_events,
                         invocation=invocation,
                         state=state,
-                        event_kind="unexpected_failure",
+                        event_kind=EventKinds.UNEXPECTED_FAILURE,
                         message=result.summary,
                         details={"error_type": type(exc).__name__, "phase": "provider_turn"},
                     )
@@ -1269,7 +1470,7 @@ async def run_turnkey(
                     records=brain_events,
                     invocation=invocation,
                     state=state,
-                    event_kind="provider_turn_complete",
+                    event_kind=EventKinds.PROVIDER_TURN_COMPLETE,
                     message=f"Provider turn {iteration} completed.",
                     details={
                         "duration_ms": provider_duration_ms,
@@ -1278,17 +1479,72 @@ async def run_turnkey(
                         "decision": provider_turn.decision.model_dump(mode="json"),
                     },
                 )
+                if decision.timeout_proposal is not None or decision.iteration_estimate is not None:
+                    connected = state.session_id is not None
+                    live_policy = apply_policy_proposals(
+                        current_timeout_config=state.effective_timeout_config,
+                        current_effective_max_iters=state.effective_max_iters,
+                        operator_max_iters=invocation.max_iters,
+                        proposal_source="turn",
+                        timeout_proposal=decision.timeout_proposal,
+                        iteration_estimate=decision.iteration_estimate,
+                        connected=connected,
+                    )
+                    _apply_timeout_policy_to_state(state, live_policy)
+                    await _record_timeout_policy_events(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        proposal_source="turn",
+                        timeout_proposal=decision.timeout_proposal,
+                        iteration_estimate=decision.iteration_estimate,
+                        policy_result=live_policy,
+                    )
+                    if live_policy.server_sync_update is not None:
+                        if live_policy.server_sync_apply_now and state.session_id is None:
+                            await _sync_pending_server_timeouts(
+                                sink=event_sink,
+                                records=brain_events,
+                                invocation=invocation,
+                                state=state,
+                                client=client,
+                                reason="turn-before-connect",
+                            )
+                        elif state.session_id is not None:
+                            await _record_brain_event(
+                                sink=event_sink,
+                                records=brain_events,
+                                invocation=invocation,
+                                state=state,
+                                event_kind=EventKinds.TIMEOUT_SYNC_DEFERRED,
+                                message="Deferred server timeout sync until the next disconnected state.",
+                                details={
+                                    "pending_update": server_timeout_update_to_record(
+                                        state.pending_server_timeout_sync
+                                    ),
+                                },
+                            )
 
                 try:
                     action = decision.action
                     action_started = time.perf_counter()
                     if isinstance(action, ServerToolAction):
+                        if action.tool_name == "connect" and state.pending_server_timeout_sync is not None:
+                            await _sync_pending_server_timeouts(
+                                sink=event_sink,
+                                records=brain_events,
+                                invocation=invocation,
+                                state=state,
+                                client=client,
+                                reason="pre-connect",
+                            )
                         await _record_brain_event(
                             sink=event_sink,
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="tool_start",
+                            event_kind=EventKinds.TOOL_START,
                             message=f"Calling MCP tool `{action.tool_name}`.",
                             details={
                                 "tool_name": action.tool_name,
@@ -1305,7 +1561,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="tool_complete",
+                            event_kind=EventKinds.TOOL_COMPLETE,
                             message=f"MCP tool `{action.tool_name}` completed.",
                             details={
                                 "tool_name": action.tool_name,
@@ -1325,7 +1581,7 @@ async def run_turnkey(
                                 records=brain_events,
                                 invocation=invocation,
                                 state=state,
-                                event_kind="session_state",
+                                event_kind=EventKinds.SESSION_STATE,
                                 message=f"Active session is now {state.session_id}.",
                                 details={
                                     "session_id": state.session_id,
@@ -1350,14 +1606,14 @@ async def run_turnkey(
                                 )
                             )
                             await _record_brain_event(
-                                sink=event_sink,
-                                records=brain_events,
-                                invocation=invocation,
-                                state=state,
-                                event_kind="block",
-                                message=result.summary,
-                                details={"action_family": action.tool_name, "code": "benchmark/reconnect-not-allowed"},
-                            )
+                                    sink=event_sink,
+                                    records=brain_events,
+                                    invocation=invocation,
+                                    state=state,
+                                    event_kind=EventKinds.BLOCK,
+                                    message=result.summary,
+                                    details={"action_family": action.tool_name, "code": "benchmark/reconnect-not-allowed"},
+                                )
                             break
                         if action.tool_name == "flash_firmware" and action_result.text.startswith("Flashed "):
                             await _record_verification_event(
@@ -1375,6 +1631,15 @@ async def run_turnkey(
                                 state=state,
                                 reason="UART verification attempt completed",
                             )
+                        if action.tool_name == "disconnect" and state.pending_server_timeout_sync is not None:
+                            await _sync_pending_server_timeouts(
+                                sink=event_sink,
+                                records=brain_events,
+                                invocation=invocation,
+                                state=state,
+                                client=client,
+                                reason="post-disconnect",
+                            )
                     elif isinstance(action, ReplaceFileAction):
                         result_text = _execute_replace_file(workspace, action, state)
                         duration_ms = int((time.perf_counter() - action_started) * 1000)
@@ -1383,7 +1648,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="file_replace",
+                            event_kind=EventKinds.FILE_REPLACE,
                             message=f"Replaced workspace file `{action.path}`.",
                             details={
                                 "path": action.path,
@@ -1397,7 +1662,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="build_start",
+                            event_kind=EventKinds.BUILD_START,
                             message="Starting local build.",
                             details={"build_command": action.build_command or (workspace.build_command if workspace else None)},
                         )
@@ -1408,7 +1673,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="build_complete",
+                            event_kind=EventKinds.BUILD_COMPLETE,
                             message="Local build finished.",
                             details={
                                 "build_command": action.build_command or (workspace.build_command if workspace else None),
@@ -1422,7 +1687,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="green_check_start",
+                            event_kind=EventKinds.GREEN_CHECK_START,
                             message="Running final green verification.",
                             details={
                                 "flash_artifact": str(_green_check_artifacts(invocation, board)[0]),
@@ -1441,7 +1706,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="green_check_complete",
+                            event_kind=EventKinds.GREEN_CHECK_COMPLETE,
                             message="Green verification finished.",
                             details={
                                 "duration_ms": duration_ms,
@@ -1464,7 +1729,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="file_read",
+                            event_kind=EventKinds.FILE_READ,
                             message=f"Read workspace file `{action.path}`.",
                             details={
                                 "path": action.path,
@@ -1488,7 +1753,7 @@ async def run_turnkey(
                             records=brain_events,
                             invocation=invocation,
                             state=state,
-                            event_kind="final_result",
+                            event_kind=EventKinds.FINAL_RESULT,
                             message=f"Run finalized as {result.final_status}.",
                             details={"result": result.model_dump(mode="json")},
                         )
@@ -1505,7 +1770,7 @@ async def run_turnkey(
                         records=brain_events,
                         invocation=invocation,
                         state=state,
-                        event_kind="refusal",
+                        event_kind=EventKinds.REFUSAL,
                         message=result_text,
                         details={
                             "code": exc.code,
@@ -1516,10 +1781,10 @@ async def run_turnkey(
                     result_text = f"{type(exc).__name__}: {exc}"
                     state.last_action_summary = decision.action.kind
                     state.last_result_text = result_text
-                    event_kind = (
-                        "block"
+                    event_kind: EventKind = (
+                        EventKinds.BLOCK
                         if isinstance(exc, RuntimeError) and result_text.startswith("Blocked [")
-                        else "unexpected_failure"
+                        else EventKinds.UNEXPECTED_FAILURE
                     )
                     await _record_brain_event(
                         sink=event_sink,
@@ -1552,25 +1817,26 @@ async def run_turnkey(
                         records=brain_events,
                         invocation=invocation,
                         state=state,
-                        event_kind="block",
+                        event_kind=EventKinds.BLOCK,
                         message=blocked.summary,
                         details={"code": blocked.summary.split("]:", 1)[0].replace("Blocked [", "")},
                     )
                     break
 
+                iteration += 1
             if result is None:
                 result = _blocked_result(
                     state,
                     classification=state.last_classification or "observability_fault",
                     code="brain/max-iters",
-                    message=f"Reached max_iters={invocation.max_iters} without a final answer.",
+                    message=f"Reached effective_max_iters={state.effective_max_iters} without a final answer.",
                 )
                 await _record_brain_event(
                     sink=event_sink,
                     records=brain_events,
                     invocation=invocation,
                     state=state,
-                    event_kind="block",
+                    event_kind=EventKinds.BLOCK,
                     message=result.summary,
                     details={"code": "brain/max-iters"},
                 )
@@ -1582,7 +1848,7 @@ async def run_turnkey(
                         client,
                         "disconnect",
                         {},
-                        timeout_seconds=invocation.timeout_config.default_tool_seconds,
+                        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
                     )
                     state.register_disconnect()
                     await _record_brain_event(
@@ -1590,7 +1856,7 @@ async def run_turnkey(
                         records=brain_events,
                         invocation=invocation,
                         state=state,
-                        event_kind="session_state",
+                        event_kind=EventKinds.SESSION_STATE,
                         message="Disconnected from active session.",
                         details={"session_ids_seen": list(state.session_ids_seen)},
                     )
@@ -1608,7 +1874,7 @@ async def run_turnkey(
             records=brain_events,
             invocation=invocation,
             state=state,
-            event_kind="unexpected_failure",
+            event_kind=EventKinds.UNEXPECTED_FAILURE,
             message=result.summary,
             details={"error_type": type(exc).__name__, "phase": "mcp_startup"},
         )
@@ -1620,13 +1886,13 @@ async def run_turnkey(
             root_cause="The turnkey loop ended without producing a final result.",
         )
 
-    if not brain_events or brain_events[-1].get("event_kind") != "final_result":
+    if not brain_events or brain_events[-1].get("event_kind") != EventKinds.FINAL_RESULT:
         await _record_brain_event(
             sink=event_sink,
             records=brain_events,
             invocation=invocation,
             state=state,
-            event_kind="final_result",
+            event_kind=EventKinds.FINAL_RESULT,
             message=f"Run completed as {result.final_status}.",
             details={"result": result.model_dump(mode="json")},
         )

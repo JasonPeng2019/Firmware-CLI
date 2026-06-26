@@ -11,6 +11,7 @@ from pyocd_debug_mcp.board_config import (
     RECOVER_MODE_NRF_PYOCD_UNLOCK,
     BoardConfig,
 )
+from pyocd_debug_mcp.timeouts import ServerTimeoutConfig
 
 _BACKEND = PyOCDSWDInterface()
 
@@ -18,10 +19,11 @@ _BACKEND = PyOCDSWDInterface()
 def build_session_options(
     board: BoardConfig | None,
     target: str | None,
+    server_timeouts: ServerTimeoutConfig | None = None,
 ) -> dict[str, object] | None:
     """Expose the backend option builder for tests and wrapper compatibility."""
 
-    return _build_session_options(board, target)
+    return _build_session_options(board, target, server_timeouts)
 
 
 def open_session(
@@ -29,8 +31,14 @@ def open_session(
     board: BoardConfig | None,
     unique_id: str | None = None,
     target: str | None = None,
+    server_timeouts: ServerTimeoutConfig | None = None,
 ) -> TargetSessionHandle:
-    return _BACKEND.open(board=board, unique_id=unique_id, target=target)
+    return _BACKEND.open(
+        board=board,
+        unique_id=unique_id,
+        target=target,
+        server_timeouts=server_timeouts,
+    )
 
 
 def close_session(handle: TargetSessionHandle) -> None:

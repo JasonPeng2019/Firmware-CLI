@@ -12,7 +12,12 @@ from rich.status import Status
 from rich.table import Table
 from rich.text import Text
 
-from pyocd_debug_mcp.brain.events import BrainEvent
+from pyocd_debug_mcp.brain.events import (
+    BrainEvent,
+    EventKinds,
+    STATUS_COMPLETE_EVENT_KINDS,
+    STATUS_START_EVENT_KINDS,
+)
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution
 from pyocd_debug_mcp.ux.artifacts import ArtifactEntry, artifact_entries, preview_json, preview_text
 from pyocd_debug_mcp.ux.history import HistoryListing, SessionBundle
@@ -54,18 +59,18 @@ class UXRenderer:
     def emit(self, event: BrainEvent) -> None:
         self._current_session_id = event.session_id or self._current_session_id
         details = event.details
-        if event.event_kind in {"provider_turn_start", "tool_start", "build_start", "green_check_start"}:
+        if event.event_kind in STATUS_START_EVENT_KINDS:
             self._start_status(event.message)
-            if event.event_kind == "tool_start":
+            if event.event_kind == EventKinds.TOOL_START:
                 tool_name = details.get("tool_name", "(tool)")
                 args = details.get("arguments", {})
                 self.console.print(f"[bold cyan]tool[/bold cyan] {tool_name} {args}")
             return
 
-        if event.event_kind in {"provider_turn_complete", "tool_complete", "build_complete", "green_check_complete"}:
+        if event.event_kind in STATUS_COMPLETE_EVENT_KINDS:
             self._stop_status()
 
-        if event.event_kind == "provider_turn_complete":
+        if event.event_kind == EventKinds.PROVIDER_TURN_COMPLETE:
             decision = details.get("decision")
             if isinstance(decision, dict):
                 self._render_decision_summary(decision)
@@ -76,7 +81,7 @@ class UXRenderer:
                     self.render_raw_output(raw_output)
             return
 
-        if event.event_kind == "tool_complete":
+        if event.event_kind == EventKinds.TOOL_COMPLETE:
             tool_name = details.get("tool_name", "(tool)")
             duration_ms = details.get("duration_ms")
             result_text = details.get("result_text")
@@ -87,38 +92,38 @@ class UXRenderer:
                 self.console.print(f"  [dim]{excerpt}[/dim]")
             return
 
-        if event.event_kind == "file_read":
+        if event.event_kind == EventKinds.FILE_READ:
             self.console.print(f"[cyan]read[/cyan] {details.get('path')}")
             return
-        if event.event_kind == "file_replace":
+        if event.event_kind == EventKinds.FILE_REPLACE:
             self.console.print(f"[yellow]replace[/yellow] {details.get('path')}")
             return
-        if event.event_kind == "build_complete":
+        if event.event_kind == EventKinds.BUILD_COMPLETE:
             self.console.print(f"[green]build[/green] {event.message}")
             return
-        if event.event_kind == "green_check_complete":
+        if event.event_kind == EventKinds.GREEN_CHECK_COMPLETE:
             self.console.print(f"[green]verify[/green] {event.message}")
             return
-        if event.event_kind == "verification_state_update":
+        if event.event_kind == EventKinds.VERIFICATION_STATE_UPDATE:
             verification = details.get("verification")
             self.console.print(f"[blue]verification[/blue] {verification}")
             return
-        if event.event_kind == "refusal":
+        if event.event_kind == EventKinds.REFUSAL:
             self.console.print(Panel(Text(event.message), border_style="yellow", title="Refusal"))
             return
-        if event.event_kind == "block":
+        if event.event_kind == EventKinds.BLOCK:
             self.console.print(Panel(Text(event.message), border_style="red", title="Blocked"))
             return
-        if event.event_kind == "unexpected_failure":
+        if event.event_kind == EventKinds.UNEXPECTED_FAILURE:
             self.console.print(Panel(Text(event.message), border_style="red", title="Failure"))
             return
-        if event.event_kind == "final_result":
+        if event.event_kind == EventKinds.FINAL_RESULT:
             self.console.print(f"[bold green]{event.message}[/bold green]")
             return
-        if event.event_kind == "session_state":
+        if event.event_kind == EventKinds.SESSION_STATE:
             self.console.print(f"[magenta]{event.message}[/magenta]")
             return
-        if event.event_kind == "run_start":
+        if event.event_kind == EventKinds.RUN_START:
             self.console.print(f"[bold]{event.message}[/bold]")
 
     def _render_decision_summary(self, decision: dict[str, Any]) -> None:
