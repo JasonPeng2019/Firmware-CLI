@@ -294,7 +294,13 @@ class LocalMCPClient:
 
         async def _startup() -> tuple[ToolDescriptor, ...]:
             await self._transport.__aenter__()
-            return await self._transport.list_tool_descriptors()
+            if hasattr(self._transport, "list_tool_descriptors"):
+                return await self._transport.list_tool_descriptors()
+            tool_names = await self._transport.list_tool_names()
+            return tuple(
+                ToolDescriptor(name=name, description="", input_schema={})
+                for name in sorted(tool_names)
+            )
 
         try:
             descriptors = await asyncio.wait_for(_startup(), timeout=self._startup_timeout_seconds)

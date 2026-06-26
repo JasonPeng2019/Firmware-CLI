@@ -362,15 +362,6 @@ class ProviderPromptBundle:
             "turn_decision_schema_length": len(self.turn_decision_schema_text),
         }
 
-
-@dataclass(frozen=True)
-class ProviderSessionState:
-    provider_session_id: str | None = None
-    response_id: str | None = None
-    turn_index: int = 0
-    metadata: dict[str, str] = field(default_factory=dict)
-
-
 @dataclass(frozen=True)
 class ProviderProgressUpdate:
     stage: str
