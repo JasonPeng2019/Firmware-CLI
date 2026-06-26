@@ -74,6 +74,14 @@ def test_build_session_options_keeps_jlink_workaround() -> None:
     }
 
 
+def test_typed_backend_error_explains_missing_ap_keyerror() -> None:
+    error = swd_pyocd._typed_backend_error(KeyError(1))
+
+    assert isinstance(error, TargetConnectionError)
+    assert "AP#1" in str(error)
+    assert "nRF52" in str(error)
+
+
 def test_build_session_options_adds_nucleo_under_reset_workaround() -> None:
     stlink_board = BoardConfig(
         board_id="nucleo_l476rg",

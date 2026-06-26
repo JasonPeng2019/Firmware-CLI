@@ -143,7 +143,11 @@ def parse_pyocd_probe_listing(output: str) -> list[ProbeInfo]:
     return probes
 
 
-def list_connected_probes(run_cmd: RunCommand) -> list[ProbeInfo]:
+def list_connected_probes(
+    run_cmd: RunCommand,
+    *,
+    allow_subprocess_fallback: bool = True,
+) -> list[ProbeInfo]:
     """Return the connected probes visible to pyOCD."""
 
     try:
@@ -152,6 +156,8 @@ def list_connected_probes(run_cmd: RunCommand) -> list[ProbeInfo]:
         probes = []
     if probes:
         return probes
+    if not allow_subprocess_fallback:
+        return []
 
     rc, out, err = run_cmd(["pyocd", "list", "--probes"])
     primary_text = out if out.strip() else err
@@ -226,10 +232,14 @@ def resolve_probe_for_board(
     *,
     run_cmd: RunCommand,
     allow_single_fallback: bool,
+    allow_subprocess_fallback: bool = True,
 ) -> ProbeResolution:
     """List probes and select the best match for the given board."""
 
-    probes = list_connected_probes(run_cmd)
+    probes = list_connected_probes(
+        run_cmd,
+        allow_subprocess_fallback=allow_subprocess_fallback,
+    )
     return pick_probe_for_board(
         board,
         probes,

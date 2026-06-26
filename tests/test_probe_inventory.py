@@ -184,6 +184,33 @@ def test_list_connected_probes_falls_back_to_subprocess_when_api_raises(
     ]
 
 
+def test_list_connected_probes_can_skip_subprocess_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeConnectHelper:
+        @staticmethod
+        def get_all_connected_probes(
+            *,
+            blocking: bool,
+            print_wait_message: bool,
+        ) -> list[object]:
+            assert blocking is False
+            assert print_wait_message is False
+            return []
+
+    monkeypatch.setattr(probe_inventory, "ConnectHelper", FakeConnectHelper)
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str]) -> tuple[int, str, str]:
+        seen.append(cmd)
+        return 0, SAMPLE_LISTING, ""
+
+    probes = list_connected_probes(fake_run, allow_subprocess_fallback=False)
+
+    assert probes == []
+    assert seen == []
+
+
 def test_parse_pyocd_probe_listing_accepts_windows_stlink_row_without_state() -> None:
     sample = """\
   #   Probe/Board     Unique ID                  Target

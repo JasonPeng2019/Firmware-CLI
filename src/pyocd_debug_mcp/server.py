@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import secrets
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -316,6 +317,17 @@ def build_session_options(board: BoardConfig | None, target: str | None) -> dict
     return target_control.build_session_options(board, target)
 
 
+def _should_bypass_jlink_probe_resolution(
+    board: BoardConfig | None,
+    *,
+    platform_name: str | None = None,
+) -> bool:
+    if board is None or board.probe_family != "jlink":
+        return False
+    current_platform = platform_name or sys.platform
+    return current_platform.startswith("win")
+
+
 def _resolve_probe_uid_for_connect(
     board: BoardConfig | None,
     unique_id: str | None,
@@ -328,12 +340,24 @@ def _resolve_probe_uid_for_connect(
     if board is None:
         return None
 
+    allow_subprocess_fallback = True
+    if _should_bypass_jlink_probe_resolution(board):
+        # On this Windows host, the risky path is the subprocess fallback
+        # behind probe resolution, not the direct pyOCD API enumeration. Keep
+        # using API-derived UIDs when available so J-Link stdio attaches still
+        # work on boards like nrf52840dk, but never pre-run the subprocess
+        # probe-listing path for implicit J-Link selection.
+        allow_subprocess_fallback = False
+
     resolution = resolve_probe_for_board(
         board,
         run_cmd=_run_cmd,
         allow_single_fallback=True,
+        allow_subprocess_fallback=allow_subprocess_fallback,
     )
     if resolution.probe is None:
+        if not allow_subprocess_fallback:
+            return None
         raise RuntimeError(
             f"Probe resolution failed for {board.display_name}: {resolution.note}"
         )

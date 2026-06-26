@@ -64,6 +64,7 @@ def test_resolve_probe_uid_resolves_jlink_uid_on_non_windows(monkeypatch) -> Non
     assert board is not None
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
@@ -109,22 +110,48 @@ def test_resolve_probe_uid_prefers_env_uid(monkeypatch) -> None:
     assert server._resolve_probe_uid_for_connect(board, None) == "env-uid"
 
 
-def test_resolve_probe_uid_autoresolves_jlink_uid_on_windows(monkeypatch) -> None:
+def test_resolve_probe_uid_uses_api_only_resolution_on_windows_jlink(monkeypatch) -> None:
     board = server.resolve_board_config("nrf52840dk", None)
     assert board is not None
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "win32")
+    seen: dict[str, object] = {}
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
-        lambda *args, **kwargs: type(
+        lambda *args, **kwargs: seen.update(kwargs)
+        or type(
             "Resolution",
             (),
-            {"probe": type("Probe", (), {"uid": "jlink-win-123"})()},
+            {"probe": type("Probe", (), {"uid": "jlink-win-123"})(), "note": ""},
         )(),
     )
 
     assert server._resolve_probe_uid_for_connect(board, None) == "jlink-win-123"
+    assert seen["allow_subprocess_fallback"] is False
+
+
+def test_resolve_probe_uid_returns_none_when_windows_jlink_api_resolution_is_empty(monkeypatch) -> None:
+    board = server.resolve_board_config("nrf52840dk", None)
+    assert board is not None
+
+    monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "win32")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        server,
+        "resolve_probe_for_board",
+        lambda *args, **kwargs: seen.update(kwargs)
+        or type(
+            "Resolution",
+            (),
+            {"probe": None, "note": "no probes visible via API"},
+        )(),
+    )
+
+    assert server._resolve_probe_uid_for_connect(board, None) is None
+    assert seen["allow_subprocess_fallback"] is False
 
 
 def test_resolve_probe_uid_raises_for_ambiguous_non_windows_jlink(monkeypatch) -> None:
@@ -132,6 +159,7 @@ def test_resolve_probe_uid_raises_for_ambiguous_non_windows_jlink(monkeypatch) -
     assert board is not None
 
     monkeypatch.delenv("PYOCD_PROBE_UID", raising=False)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",

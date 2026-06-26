@@ -207,9 +207,12 @@ Important architectural outcomes:
   `pyocd list --probes` to auto-resolve an implicit J-Link UID before the real
   attach:
   - when `connect()` is called for a J-Link board without an explicit
-    `unique_id` / `PYOCD_PROBE_UID`, the server now passes `unique_id=None`
-    through to the shared backend and lets pyOCD choose the single attached
-    probe directly
+    `unique_id` / `PYOCD_PROBE_UID`, the server now resolves through the pyOCD
+    Python API path only
+  - if that API path yields a UID, the server uses it for the attach
+  - if the API path yields nothing, the server passes `unique_id=None` through
+    to the shared backend rather than falling back to the subprocess probe-list
+    path on this host
 - the shared path is used by:
   - `host_bootstrap.py`
   - `stage0_check.py`

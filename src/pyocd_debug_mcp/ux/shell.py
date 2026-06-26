@@ -7,6 +7,7 @@ from pathlib import Path
 
 import anyio
 from prompt_toolkit import PromptSession
+from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
@@ -15,6 +16,15 @@ from pyocd_debug_mcp.ux.artifacts import find_shortcut_entries
 from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashCommand, TaskInput, parse_shell_input
 from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
 from pyocd_debug_mcp.ux.renderer import RawOutputPolicy, UXRenderer
+
+try:  # pragma: no cover - import path differs by host platform
+    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError as _NoConsoleScreenBufferError
+except ImportError:  # pragma: no cover - non-Windows hosts
+    _NO_CONSOLE_ERROR_TYPE: type[BaseException] = RuntimeError
+else:  # pragma: no cover - Windows import path only
+    _NO_CONSOLE_ERROR_TYPE = _NoConsoleScreenBufferError
+
+_NO_CONSOLE_ERRORS: tuple[type[BaseException], ...] = (_NO_CONSOLE_ERROR_TYPE,)
 
 
 @dataclass(frozen=True)
@@ -107,12 +117,17 @@ class OperatorShell:
     def __init__(self, renderer: UXRenderer | None = None) -> None:
         self.renderer = renderer or UXRenderer(raw_output="off")
         self.context = ShellContext(raw_output=self.renderer.raw_output)
-        self._session: PromptSession[str] | None = None
+        self._session: PromptSession[str] = self._build_prompt_session()
+
+    @staticmethod
+    def _build_prompt_session() -> PromptSession[str]:
+        try:
+            return PromptSession()
+        except _NO_CONSOLE_ERRORS:
+            return PromptSession(output=DummyOutput())
 
     def run(self) -> int:
         self.renderer.print_info("pyocd-debug interactive shell. Use `/help` for commands.")
-        if self._session is None:
-            self._session = PromptSession()
         with patch_stdout():
             while True:
                 try:
