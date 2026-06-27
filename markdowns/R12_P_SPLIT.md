@@ -1,5 +1,7 @@
 # R12 P-Split Parallel Work Plan
 
+Read things-to-change for scope of the modules.
+
 ## Purpose
 
 This file defines the parallel branch schedule for the `R12` prototype.
@@ -205,7 +207,7 @@ Serial order inside Branch B:
    - UART write
    - small `server.py` wrappers only if needed
 5. `client_actions.py`
-   - session-scoped script create/update/run
+   - client (NOT codex session) session-scoped script create/update/run
    - route server-native calls back through the brain gate
 
 Parallel with:
