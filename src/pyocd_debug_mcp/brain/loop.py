@@ -21,14 +21,12 @@ from pyocd_debug_mcp.board_config import (
 from pyocd_debug_mcp.brain.actions import (
     Classification,
     decision_schema_text,
-    IterationEstimate,
     ReadFileAction,
     FinalizeAction,
     ReplaceFileAction,
     RunBuildAction,
     RunGreenCheckAction,
     ServerToolAction,
-    TimeoutProposal,
     TurnDecision,
     TurnkeyRunResult,
     VerificationSnapshot,
@@ -41,20 +39,16 @@ from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
 from pyocd_debug_mcp.brain.provider_types import DecisionProvider, ProviderTurn
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
-from pyocd_debug_mcp.brain.timeout_policy import (
-    ProposalSource,
-    TimeoutPolicyResult,
-    apply_policy_proposals,
+from pyocd_debug_mcp.brain.timeout_runtime import (
+    apply_invocation_timeout_policy,
+    apply_turn_timeout_policy,
+    sync_pending_server_timeouts,
 )
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
-from pyocd_debug_mcp.timeouts import (
-    TurnkeyTimeoutConfig,
-    merge_server_timeout_updates,
-    server_timeout_update_to_record,
-)
+from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -341,151 +335,6 @@ async def _record_verification_event(
             "reason": reason,
             "verification": state.verification.model_dump(mode="json"),
         },
-    )
-
-
-async def _record_timeout_policy_events(
-    *,
-    sink: EventSink | None,
-    records: list[dict[str, object]],
-    invocation: TurnkeyInvocation,
-    state: BrainState,
-    proposal_source: ProposalSource,
-    timeout_proposal: TimeoutProposal | None,
-    iteration_estimate: IterationEstimate | None,
-    policy_result: TimeoutPolicyResult,
-) -> None:
-    if timeout_proposal is not None:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.TIMEOUT_PROPOSAL_RECEIVED,
-            message=f"Accepted {proposal_source} timeout proposal for evaluation.",
-            details=timeout_proposal.model_dump(mode="json"),
-        )
-    if iteration_estimate is not None:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.ITERATION_ESTIMATE_RECEIVED,
-            message=f"Accepted {proposal_source} iteration estimate for evaluation.",
-            details=iteration_estimate.model_dump(mode="json"),
-        )
-    if policy_result.accepted_timeout_update is not None:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.TIMEOUT_POLICY_APPLIED,
-            message=f"Applied {proposal_source} timeout proposal.",
-            details=policy_result.to_record(),
-        )
-        if policy_result.accepted_timeout_update.provider_seconds is not None:
-            await _record_brain_event(
-                sink=sink,
-                records=records,
-                invocation=invocation,
-                state=state,
-                event_kind=EventKinds.PROVIDER_TIMEOUT_UPDATED,
-                message="Updated provider timeout budget for subsequent turns.",
-                details={
-                    "provider_seconds": policy_result.effective_timeout_config.provider_seconds,
-                    "source": proposal_source,
-                },
-            )
-    if policy_result.clamped_timeout_fields:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.TIMEOUT_POLICY_CLAMPED,
-            message=f"Clamped {proposal_source} timeout proposal inside hard caps.",
-            details=policy_result.clamped_timeout_fields,
-        )
-    if policy_result.rejected_timeout_fields:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.TIMEOUT_POLICY_REJECTED,
-            message=f"Rejected fields from the {proposal_source} timeout proposal.",
-            details=policy_result.rejected_timeout_fields,
-        )
-    if policy_result.iteration_budget_summary is not None:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.ITERATION_BUDGET_APPLIED,
-            message=f"Updated effective iteration budget from the {proposal_source} estimate.",
-            details=policy_result.iteration_budget_summary.to_record(),
-        )
-
-
-def _apply_timeout_policy_to_state(state: BrainState, policy_result: TimeoutPolicyResult) -> None:
-    state.effective_timeout_config = policy_result.effective_timeout_config
-    state.effective_max_iters = policy_result.effective_max_iters
-    state.last_timeout_policy = policy_result.to_record()
-    state.pending_server_timeout_sync = merge_server_timeout_updates(
-        state.pending_server_timeout_sync,
-        policy_result.server_sync_update,
-    )
-
-
-async def _sync_pending_server_timeouts(
-    *,
-    sink: EventSink | None,
-    records: list[dict[str, object]],
-    invocation: TurnkeyInvocation,
-    state: BrainState,
-    client: LocalMCPClient,
-    reason: str,
-) -> None:
-    pending_update = state.pending_server_timeout_sync
-    if pending_update is None:
-        return
-    pending_update_record = server_timeout_update_to_record(pending_update)
-    await _record_brain_event(
-        sink=sink,
-        records=records,
-        invocation=invocation,
-        state=state,
-        event_kind=EventKinds.TIMEOUT_SYNC_REQUESTED,
-        message=f"Syncing staged server timeout defaults ({reason}).",
-        details={"pending_update": pending_update_record, "reason": reason},
-    )
-    result = await client.sync_timeouts(
-        pending_update,
-        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
-    )
-    if result.refusal_code or result.blocked_code:
-        await _record_brain_event(
-            sink=sink,
-            records=records,
-            invocation=invocation,
-            state=state,
-            event_kind=EventKinds.TIMEOUT_SYNC_REJECTED,
-            message=result.text,
-            details={"pending_update": pending_update_record, "reason": reason},
-        )
-        raise MCPClientError(result.text)
-    state.pending_server_timeout_sync = None
-    await _record_brain_event(
-        sink=sink,
-        records=records,
-        invocation=invocation,
-        state=state,
-        event_kind=EventKinds.TIMEOUT_SYNC_APPLIED,
-        message="Applied staged server timeout defaults for future connects.",
-        details={"result_text": result.text, "reason": reason},
     )
 
 
@@ -1388,25 +1237,11 @@ async def run_turnkey(
         iteration=0,
     )
     if invocation.timeout_proposal is not None or invocation.iteration_estimate is not None:
-        bootstrap_policy = apply_policy_proposals(
-            current_timeout_config=state.effective_timeout_config,
-            current_effective_max_iters=state.effective_max_iters,
-            operator_max_iters=invocation.max_iters,
-            proposal_source="invocation",
-            timeout_proposal=invocation.timeout_proposal,
-            iteration_estimate=invocation.iteration_estimate,
-            connected=False,
-        )
-        _apply_timeout_policy_to_state(state, bootstrap_policy)
-        await _record_timeout_policy_events(
+        await apply_invocation_timeout_policy(
             sink=event_sink,
             records=brain_events,
             invocation=invocation,
             state=state,
-            proposal_source="invocation",
-            timeout_proposal=invocation.timeout_proposal,
-            iteration_estimate=invocation.iteration_estimate,
-            policy_result=bootstrap_policy,
         )
         prompt_text = _build_turn_prompt(invocation, board, state, skills_text, workspace)
     resolved_client_factory = client_factory or (
@@ -1418,7 +1253,7 @@ async def run_turnkey(
     try:
         async with resolved_client_factory() as client:
             if state.pending_server_timeout_sync is not None and state.session_id is None:
-                await _sync_pending_server_timeouts(
+                await sync_pending_server_timeouts(
                     sink=event_sink,
                     records=brain_events,
                     invocation=invocation,
@@ -1480,58 +1315,21 @@ async def run_turnkey(
                     },
                 )
                 if decision.timeout_proposal is not None or decision.iteration_estimate is not None:
-                    connected = state.session_id is not None
-                    live_policy = apply_policy_proposals(
-                        current_timeout_config=state.effective_timeout_config,
-                        current_effective_max_iters=state.effective_max_iters,
-                        operator_max_iters=invocation.max_iters,
-                        proposal_source="turn",
-                        timeout_proposal=decision.timeout_proposal,
-                        iteration_estimate=decision.iteration_estimate,
-                        connected=connected,
-                    )
-                    _apply_timeout_policy_to_state(state, live_policy)
-                    await _record_timeout_policy_events(
+                    await apply_turn_timeout_policy(
                         sink=event_sink,
                         records=brain_events,
                         invocation=invocation,
                         state=state,
-                        proposal_source="turn",
-                        timeout_proposal=decision.timeout_proposal,
-                        iteration_estimate=decision.iteration_estimate,
-                        policy_result=live_policy,
+                        client=client,
+                        decision=decision,
                     )
-                    if live_policy.server_sync_update is not None:
-                        if live_policy.server_sync_apply_now and state.session_id is None:
-                            await _sync_pending_server_timeouts(
-                                sink=event_sink,
-                                records=brain_events,
-                                invocation=invocation,
-                                state=state,
-                                client=client,
-                                reason="turn-before-connect",
-                            )
-                        elif state.session_id is not None:
-                            await _record_brain_event(
-                                sink=event_sink,
-                                records=brain_events,
-                                invocation=invocation,
-                                state=state,
-                                event_kind=EventKinds.TIMEOUT_SYNC_DEFERRED,
-                                message="Deferred server timeout sync until the next disconnected state.",
-                                details={
-                                    "pending_update": server_timeout_update_to_record(
-                                        state.pending_server_timeout_sync
-                                    ),
-                                },
-                            )
 
                 try:
                     action = decision.action
                     action_started = time.perf_counter()
                     if isinstance(action, ServerToolAction):
                         if action.tool_name == "connect" and state.pending_server_timeout_sync is not None:
-                            await _sync_pending_server_timeouts(
+                            await sync_pending_server_timeouts(
                                 sink=event_sink,
                                 records=brain_events,
                                 invocation=invocation,
@@ -1632,7 +1430,7 @@ async def run_turnkey(
                                 reason="UART verification attempt completed",
                             )
                         if action.tool_name == "disconnect" and state.pending_server_timeout_sync is not None:
-                            await _sync_pending_server_timeouts(
+                            await sync_pending_server_timeouts(
                                 sink=event_sink,
                                 records=brain_events,
                                 invocation=invocation,
