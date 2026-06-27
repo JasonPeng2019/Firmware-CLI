@@ -162,6 +162,25 @@ Wave 0 and run in parallel.
 
 ### Branch A - Provider Session + Tool Schema Prompt
 
+Branch A owns provider session continuity where the provider surface makes that
+possible, plus the model-facing tool schema prompt. It should not overclaim
+"one native provider session" for every provider:
+
+- API-backed providers should use native/session-capable continuation where
+  available, such as OpenAI Responses `previous_response_id`;
+- Anthropic API-style continuity may be client-owned history that is resent each
+  turn, because that is the provider's session model;
+- CLI providers may use the best available local mechanism until true CLI resume
+  is implemented and verified;
+- do not call a CLI transcript/local-memory fallback a true native persistent
+  provider session unless the provider CLI actually resumes the same session.
+
+Tool schema forwarding in this branch means a curated model-facing schema bundle
+for the allowed server-native tools. It does not expose raw MCP handles, internal
+brain/admin tools, or every MCP server function. Branch A keeps the current
+`TurnDecision` JSON contract; provider-native tool calls remain a later optional
+change, not part of this branch.
+
 Serial order inside Branch A:
 
 1. `provider_types.py`
@@ -188,27 +207,51 @@ Should not own:
 
 - action execution
 - timeout clamp rules
+- raw MCP server tool exposure
+- provider-native tool-call output format
+- event spine or progress UI ownership
 - CLI progress rendering
 
 ### Branch B - Action Boundary + Batches + Client Actions
+
+Branch B is a turnkey brain/client branch, not a general MCP-server expansion.
+It must preserve the closed-server boundary:
+
+- the MCP server remains the board-control surface with deterministic
+  guardrails;
+- host-only model work stays model-native and is not converted into governed
+  brain actions;
+- every board/server-native action still routes through the brain gate, whether
+  it is direct, batched, or called by a client action.
 
 Serial order inside Branch B:
 
 1. `action_policy.py`
    - classify model-native host actions vs governed server-native actions
 2. `host_actions.py`
-   - host-only command/file/script execution path
+   - support and audit model-native host work at the decision boundary
+   - do not make ordinary host file/shell/script authoring a governed action
+   - do not add general host command/file execution to the MCP server
 3. `action_batch.py`
    - ordered action batches
    - batch result aggregation
    - batch-level failure behavior
 4. Basic action additions:
-   - `wait`
-   - UART write
-   - small `server.py` wrappers only if needed
+   - `wait` as a bounded brain-local delay
+   - UART write as real hardware I/O
+   - for UART write, update the adapter/service/MCP tool/brain allowlist stack;
+     do not treat it as only a small `server.py` wrapper
 5. `client_actions.py`
-   - client (NOT codex session) session-scoped script create/update/run
-   - route server-native calls back through the brain gate
+   - client (NOT codex session) session-scoped script/tool store
+   - native script authoring target; script bodies are not embedded in
+     `TurnDecision`
+   - governed `run_script(name, inputs)` execution for scripts that touch
+     server-native tools
+   - snapshot/hash the script version that actually runs
+   - inject the gated server-tool API only during governed `run_script`
+     execution
+   - route every server-native call back through the same brain gate used by
+     direct server-tool actions
 
 Parallel with:
 
@@ -226,8 +269,27 @@ Should not own:
 - provider sessions
 - inspector rendering
 - timeout default/clamp rules
+- broad MCP-server host execution
+- raw hardware access from client scripts
 
 ### Branch C - Event Spine + Timeout Policy
+
+Branch C owns the normalized brain event spine and timeout policy. It must make
+timeout state session/client scoped now, not process-global prototype state:
+
+- timeout proposals, clamps, effective budgets, and pending server-sync values
+  live with the current turnkey brain/client session;
+- server timeout sync is brain-only/internal and must not appear in the
+  model-facing tool schema bundle;
+- server timeout updates are partial updates for subsequent operations, not
+  mutation of config files and not a promise to interrupt already-running
+  pyOCD/vendor calls;
+- bounded outer waits are still not true cancellation for in-process vendor
+  calls. A killable worker/job layer remains out of scope for this branch.
+
+Branch C defines event kinds, sinks, timeout clamps, and timeout propagation
+hooks. Branch D renders those events, Branch E owns checkpoint continue/cancel
+decisions, and Branch B applies batch timeout behavior during batch execution.
 
 Serial order inside Branch C:
 
@@ -241,6 +303,7 @@ Serial order inside Branch C:
 3. `src/pyocd_debug_mcp/timeouts.py`
    - shared defaults and clamp ranges
    - no competing timeout source
+   - session/client-scoped effective timeout state
 4. Timeout consumption hooks:
    - providers consume provider timeout values
    - tool calls consume action timeout values
@@ -262,7 +325,10 @@ Should not own:
 
 - batch semantics
 - client-action execution
+- checkpoint continue/cancel decisions
 - inspector UI
+- provider adapter rewrites beyond the stable timeout-consumption hook
+- model-facing timeout admin tools
 
 ## Wave 2 - Three Parallel Branches
 
@@ -436,6 +502,14 @@ into the other branch, or into final integration.
 - This file is a coordination plan only.
 - It is aligned with the current `R12` prototype target in the build plan and
   roadmap.
+- Branch A now scopes persistent sessions to "where available": native/session
+  continuation for providers that support it, client-owned history where that is
+  the provider model, and explicitly labeled fallback behavior for CLI providers.
+- Branch B now explicitly preserves the closed-server boundary: model-native
+  host work stays outside governed actions, board/server-native work stays
+  gated, and UART write is treated as hardware-stack work.
+- Branch C now explicitly requires session/client-scoped timeout state and keeps
+  brain-only timeout sync out of the model-facing tool surface.
 
 ## Pending Verification
 
@@ -450,3 +524,9 @@ into the other branch, or into final integration.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.
+- Branch A behavior remains unimplemented here; provider-specific persistent
+  session behavior still needs code, tests, and provider-specific verification.
+- Branch B behavior remains unimplemented here; the clarified boundary still
+  needs code, tests, and any required real-board proof when Branch B is built.
+- Branch C behavior remains unimplemented here; session/client-scoped timeout
+  state and brain-only server timeout sync still need code and tests.

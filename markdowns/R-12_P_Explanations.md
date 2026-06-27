@@ -1,6 +1,80 @@
 # Things To Change
 This document is a copy of things-to-change. this is here to add context to the R-12_P_Split.
 
+## Branch A Implementation Clarification
+
+Branch A should be read as "persistent session where possible," not "force every
+provider into the same native session mechanism."
+
+Simple boundary:
+
+- OpenAI/API-style providers should use real provider continuation when
+  available, such as threading `previous_response_id` into the next turn;
+- Anthropic/API-style continuity may be client-owned history that the brain
+  resends each turn, because the provider API is stateless;
+- CLI providers may keep the best available local fallback until true CLI resume
+  is implemented and verified;
+- a transcript or local-memory fallback is useful continuity, but it is not a
+  true native persistent provider session unless the CLI actually resumes the
+  same provider session.
+
+Branch A also owns the model-facing tool schema prompt, but only for curated
+allowed server-native tools. It should not expose raw MCP handles, internal
+brain/admin tools, or every MCP server function. The output contract remains the
+existing `TurnDecision` JSON; provider-native tool calls are a later optional
+change.
+
+## Branch B Implementation Clarification
+
+Branch B should be read as the action-boundary branch for the turnkey
+brain/client, not as a broad expansion of the closed MCP server.
+
+Simple boundary:
+
+- normal host work stays model-native: reading files, writing helper scripts,
+  shell utilities, and pure local computation should not become governed
+  `TurnDecision` actions;
+- the brain observes/audits host-side effects at the decision boundary, but does
+  not gate ordinary host work;
+- board/server-native work is governed: direct server tools, batches, firmware
+  repair deliverables, builds that feed convergence, UART write, and any script
+  that calls server tools must route through the brain gate;
+- client actions are client-session scripts/tools. The model may author and edit
+  script files natively, but a board-touching script runs only through
+  `run_script(name, inputs)`;
+- on `run_script`, the brain snapshots and hashes the script that actually ran
+  and injects the gated server-tool API only for that execution;
+- `wait` is brain-local, but UART write is real hardware I/O and therefore needs
+  the adapter, shared service, MCP tool, brain allowlist, and hardware proof
+  path.
+
+This keeps the MCP server closed and focused on board control/guardrails while
+the turnkey brain/client owns host freedom, batching, and client-side scripts.
+
+## Branch C Implementation Clarification
+
+Branch C should be read as the event and timeout-policy branch, with timeout
+state scoped to the active turnkey brain/client session right now.
+
+Simple boundary:
+
+- timeout proposals, clamped budgets, effective limits, and pending server-sync
+  values live with the current client/session, not in process-global prototype
+  state;
+- server timeout sync is an internal brain-to-server operation and must not be
+  shown to the model as a normal tool;
+- server timeout sync is a partial update for future operations. It does not
+  edit config files and does not interrupt an operation that is already stuck
+  inside a pyOCD/vendor call;
+- bounded waits are still not true cancellation. A killable pyOCD worker/job
+  layer is out of scope for Branch C;
+- Branch C defines events and timeout policy, Branch D renders progress and
+  inspector output, Branch E owns checkpoint continue/cancel decisions, and
+  Branch B applies batch timeout behavior while executing batches.
+
+This keeps C focused on the shared policy/event spine while avoiding accidental
+ownership of UI, checkpoint, batch, or provider-session work.
+
 This backlog is ordered by implementation priority: earliest prototype-enabling
 changes first, later MVP/product polish last. The old entry numbers are preserved
 so existing cross-references like "entry #7" still point to the same change.
@@ -3359,3 +3433,20 @@ Proposal only. Not yet specced, not yet implemented. Decoupled from entry #2,
 which keeps the `TurnDecision` JSON return.
 
 ---
+
+## Verified
+
+- This document now includes an explicit Branch A implementation clarification
+  that matches the build plan wording: persistent provider sessions where
+  available, with provider-specific session mechanisms and clearly labeled CLI
+  fallbacks.
+- This document now includes an explicit Branch B implementation clarification
+  that aligns with the build plan's closed MCP server architecture and the
+  current `things-to-change.md` host-vs-board boundary.
+- This document now includes an explicit Branch C implementation clarification
+  requiring session/client-scoped timeout state and brain-only timeout sync.
+
+## Pending Verification
+
+- Documentation-only change. No code behavior has been changed or verified by
+  this document update.
