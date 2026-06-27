@@ -35,3 +35,7 @@ class UARTInterface(ABC):
     @abstractmethod
     def read(self, handle: UARTPortHandle, size: int) -> bytes:
         """Read up to ``size`` bytes from the live port."""
+
+    @abstractmethod
+    def write(self, handle: UARTPortHandle, data: bytes) -> int:
+        """Write bytes to the live port and return the number of bytes accepted."""

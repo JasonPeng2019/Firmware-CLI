@@ -35,6 +35,12 @@ class UARTCaptureResult:
         return self.expected_text in self.text
 
 
+@dataclass(frozen=True)
+class UARTWriteResult:
+    bytes_written: int
+    duration_seconds: float
+
+
 def capture_uart_output(
     device: str,
     baudrate: int,
@@ -119,5 +125,37 @@ def capture_uart_output(
         text=captured.decode("utf-8", errors="replace"),
         expected_text=expected_text,
         reopen_count=reopen_count,
+        duration_seconds=time.monotonic() - started,
+    )
+
+
+def write_uart_output(
+    device: str,
+    baudrate: int,
+    payload: bytes,
+    *,
+    timeout_seconds: float = 1.0,
+    adapter: UARTInterface | None = None,
+) -> UARTWriteResult:
+    """Write bounded UART bytes through the same backend-neutral transport as capture."""
+
+    if baudrate <= 0:
+        raise ValueError("baudrate must be > 0")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be > 0")
+
+    backend = adapter or _BACKEND
+    started = time.monotonic()
+    port_handle = None
+    try:
+        port_handle = backend.open(device, baudrate=baudrate, timeout_seconds=timeout_seconds)
+        bytes_written = backend.write(port_handle, payload)
+    except Exception as exc:  # noqa: BLE001 - want the raw serial error
+        raise RuntimeError(f"Unable to write {device} at {baudrate} baud: {exc}") from exc
+    finally:
+        if port_handle is not None:
+            backend.close(port_handle)
+    return UARTWriteResult(
+        bytes_written=bytes_written,
         duration_seconds=time.monotonic() - started,
     )

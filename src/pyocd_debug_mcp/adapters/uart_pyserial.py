@@ -35,3 +35,8 @@ class PySerialUARTInterface(UARTInterface):
 
     def read(self, handle: UARTPortHandle, size: int) -> bytes:
         return bytes(handle.handle.read(size))
+
+    def write(self, handle: UARTPortHandle, data: bytes) -> int:
+        bytes_written = int(handle.handle.write(data))
+        handle.handle.flush()
+        return bytes_written

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pyocd_debug_mcp.brain.decision_types import (
     ActionBatch,
@@ -28,6 +28,7 @@ AllowedServerToolName = Literal[
     "read_memory",
     "flash_firmware",
     "read_serial",
+    "write_serial",
     "unlock_recover",
 ]
 
@@ -72,6 +73,17 @@ class RunGreenCheckAction(_StrictModel):
     kind: Literal["run_green_check"] = "run_green_check"
 
 
+class WaitAction(_StrictModel):
+    kind: Literal["wait"] = "wait"
+    seconds: float = Field(gt=0, le=30)
+
+
+class RunScriptAction(_StrictModel):
+    kind: Literal["run_script"] = "run_script"
+    name: str = Field(min_length=1)
+    inputs: dict[str, object] = Field(default_factory=dict)
+
+
 class FinalizeAction(_StrictModel):
     kind: Literal["finalize"] = "finalize"
     final_status: FinalStatus
@@ -86,6 +98,8 @@ ActionUnion = Annotated[
     | ReplaceFileAction
     | RunBuildAction
     | RunGreenCheckAction
+    | WaitAction
+    | RunScriptAction
     | FinalizeAction,
     Field(discriminator="kind"),
 ]
@@ -96,7 +110,16 @@ class TurnDecision(_StrictModel):
     classification: Classification | None = None
     hypothesis: str | None = None
     strategy_evaluation: str | None = None
-    action: ActionUnion
+    action: ActionUnion | None = None
+    action_batch: ActionBatch | None = None
+
+    @model_validator(mode="after")
+    def _require_single_action_or_batch(self) -> TurnDecision:
+        has_action = self.action is not None
+        has_batch = self.action_batch is not None and bool(self.action_batch.calls)
+        if has_action == has_batch:
+            raise ValueError("Provide exactly one of action or non-empty action_batch.")
+        return self
 
 
 class TurnkeyRunResult(_StrictModel):
@@ -144,10 +167,30 @@ def turn_decision_output_schema() -> dict[str, object]:
                         "read_memory",
                         "flash_firmware",
                         "read_serial",
+                        "write_serial",
                         "unlock_recover",
                     ],
                 },
                 "arguments": {"type": "object", "additionalProperties": True},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "seconds"],
+            "properties": {
+                "kind": {"type": "string", "const": "wait"},
+                "seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 30},
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "name", "inputs"],
+            "properties": {
+                "kind": {"type": "string", "const": "run_script"},
+                "name": {"type": "string", "minLength": 1},
+                "inputs": {"type": "object", "additionalProperties": True},
             },
         },
         {
@@ -210,7 +253,7 @@ def turn_decision_output_schema() -> dict[str, object]:
         "title": "TurnDecision",
         "type": "object",
         "additionalProperties": False,
-        "required": ["observation_summary", "classification", "action"],
+        "required": ["observation_summary", "classification"],
         "properties": {
             "observation_summary": {"type": "string", "minLength": 1},
             "classification": {
@@ -220,7 +263,28 @@ def turn_decision_output_schema() -> dict[str, object]:
             "hypothesis": {"type": ["string", "null"]},
             "strategy_evaluation": {"type": ["string", "null"]},
             "action": {"oneOf": action_variants},
+            "action_batch": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["calls"],
+                "properties": {
+                    "calls": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["action_type", "arguments"],
+                            "properties": {
+                                "action_type": {"type": "string", "minLength": 1},
+                                "arguments": {"type": "object", "additionalProperties": True},
+                            },
+                        },
+                    }
+                },
+            },
         },
+        "oneOf": [{"required": ["action"]}, {"required": ["action_batch"]}],
     }
 
 
@@ -237,11 +301,13 @@ __all__ = [
     "ReplaceFileAction",
     "RunBuildAction",
     "RunGreenCheckAction",
+    "RunScriptAction",
     "ServerToolAction",
     "TimeoutProposal",
     "TurnDecision",
     "TurnkeyRunResult",
     "VerificationSnapshot",
+    "WaitAction",
     "decision_schema_text",
     "result_schema_text",
     "turn_decision_output_schema",

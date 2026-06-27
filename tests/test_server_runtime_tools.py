@@ -11,7 +11,7 @@ from pyocd_debug_mcp.serial_resolver import SerialPortInfo
 from pyocd_debug_mcp.services.convergence_watcher import UART_TOOL
 from pyocd_debug_mcp.services.session_runtime import InMemorySessionStore
 from pyocd_debug_mcp.services.symbols import ResolvedSymbol
-from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult
+from pyocd_debug_mcp.services.uart_capture import UARTCaptureResult, UARTWriteResult
 
 
 def make_board() -> BoardConfig:
@@ -318,6 +318,62 @@ def test_read_serial_refuses_nonpositive_baudrate(monkeypatch) -> None:
 
     assert result == (
         "Refused [uart/invalid-baudrate]: baudrate must be > 0. session_id=(none)"
+    )
+
+
+def test_write_serial_uses_port_override_and_utf8_payload(monkeypatch) -> None:
+    board = make_board()
+    handle = make_handle(board)
+    port = SerialPortInfo(
+        device="COM7",
+        description="J-Link",
+        manufacturer="SEGGER",
+        product="J-Link",
+        interface="VCOM",
+        hwid="USB VID:PID=1366:0105",
+    )
+    seen: dict[str, object] = {}
+
+    server._session_handle = handle
+
+    def fake_resolve(handle_arg, *, override: str | None):
+        seen["override"] = override
+        return port
+
+    def fake_write(device, baudrate, payload, *, timeout_seconds):
+        seen["device"] = device
+        seen["baudrate"] = baudrate
+        seen["payload"] = payload
+        seen["timeout_seconds"] = timeout_seconds
+        return UARTWriteResult(bytes_written=len(payload), duration_seconds=0.125)
+
+    monkeypatch.setattr(server, "_resolve_serial_port_for_session", fake_resolve)
+    monkeypatch.setattr(server, "write_uart_output", fake_write)
+
+    result = server.write_serial("hello", port="COM99", append_newline=True, timeout_seconds=0.5)
+
+    assert seen == {
+        "override": "COM99",
+        "device": "COM7",
+        "baudrate": 115200,
+        "payload": b"hello\n",
+        "timeout_seconds": 0.5,
+    }
+    assert result == "UART wrote 6 byte(s) on COM7 at 115200 baud via pyocd-native; duration=0.12s"
+
+
+def test_write_serial_refuses_invalid_timeout(monkeypatch) -> None:
+    server._session_handle = make_handle(make_board())
+    monkeypatch.setattr(
+        server,
+        "_resolve_serial_port_for_session",
+        lambda handle_arg, *, override: (_ for _ in ()).throw(AssertionError("should not resolve port")),
+    )
+
+    result = server.write_serial("hello", timeout_seconds=0)
+
+    assert result == (
+        "Refused [uart/invalid-timeout]: timeout_seconds must be > 0. session_id=(none)"
     )
 
 

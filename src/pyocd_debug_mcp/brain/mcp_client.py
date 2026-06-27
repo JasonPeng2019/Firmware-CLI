@@ -386,5 +386,25 @@ class LocalMCPClient:
             },
         )
 
+    async def write_serial(
+        self,
+        *,
+        text: str,
+        baudrate: int | None = None,
+        port: str | None = None,
+        append_newline: bool = False,
+        timeout_seconds: float = 1.0,
+    ) -> ToolTextResult:
+        return await self.call_tool(
+            "write_serial",
+            {
+                "text": text,
+                "baudrate": baudrate,
+                "port": port,
+                "append_newline": append_newline,
+                "timeout_seconds": timeout_seconds,
+            },
+        )
+
     async def unlock_recover(self, *, confirm: bool = False) -> ToolTextResult:
         return await self.call_tool("unlock_recover", {"confirm": confirm})

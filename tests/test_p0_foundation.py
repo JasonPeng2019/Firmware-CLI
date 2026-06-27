@@ -5,8 +5,14 @@ import argparse
 import pytest
 
 from pyocd_debug_mcp.brain import cli as brain_cli
-from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
-from pyocd_debug_mcp.brain.client_actions import ClientActionRecord, InMemoryClientActionStore
+from pyocd_debug_mcp.brain.action_policy import classify_action
+from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision, WaitAction
+from pyocd_debug_mcp.brain.client_actions import (
+    ClientActionRecord,
+    GatedClientActionServer,
+    InMemoryClientActionStore,
+    run_client_action,
+)
 from pyocd_debug_mcp.brain.config import build_turnkey_invocation
 from pyocd_debug_mcp.brain.decision_types import (
     ActionBatch,
@@ -111,6 +117,90 @@ def test_client_action_store_lists_records_sorted_by_name() -> None:
 
     assert [record.name for record in store.list_actions()] == ["a-first", "z-last"]
     assert store.get_action("a-first") is not None
+
+
+def test_action_policy_classifies_branch_b_boundaries() -> None:
+    assert classify_action("read_file") == "model_native_host"
+    assert classify_action("wait") == "brain_local"
+    assert classify_action("run_script") == "client_action"
+    assert classify_action("write_serial") == "server_native"
+
+
+def test_turn_decision_accepts_action_batch_and_wait_action() -> None:
+    decision = TurnDecision.model_validate(
+        {
+            "observation_summary": "Need the board to settle before UART read.",
+            "classification": None,
+            "action_batch": {
+                "calls": [
+                    {"action_type": "wait", "arguments": {"seconds": 0.1}},
+                    {"action_type": "read_serial", "arguments": {"read_seconds": 1.0}},
+                ]
+            },
+        }
+    )
+
+    assert decision.action is None
+    assert decision.action_batch is not None
+    assert decision.action_batch.calls[0].action_type == "wait"
+    assert WaitAction(seconds=0.1).seconds == 0.1
+
+
+@pytest.mark.anyio
+async def test_client_action_snapshot_hash_and_gated_server_api() -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_call(tool_name: str, arguments: dict[str, object]) -> str:
+        calls.append((tool_name, arguments))
+        return "ok"
+
+    store = InMemoryClientActionStore(
+        [
+            ClientActionRecord(
+                name="ping-uart",
+                relative_path="client_actions/ping_uart.py",
+                content=(
+                    "async def run(inputs, server):\n"
+                    "    result = await server.call_tool('write_serial', {'text': inputs['text']})\n"
+                    "    return {'tool_result': result}\n"
+                ),
+            )
+        ]
+    )
+    snapshot = store.snapshot_action("ping-uart")
+    assert snapshot is not None
+    assert len(snapshot.content_sha256) == 64
+
+    server = GatedClientActionServer(fake_call, allowed_tools={"write_serial"})
+    result = await run_client_action(snapshot, inputs={"text": "hello"}, server=server)
+
+    assert result == {"tool_result": "ok"}
+    assert calls == [("write_serial", {"text": "hello"})]
+
+
+@pytest.mark.anyio
+async def test_client_action_gated_server_api_rejects_unapproved_tool() -> None:
+    async def fake_call(tool_name: str, arguments: dict[str, object]) -> str:
+        raise AssertionError("unapproved tool should not run")
+
+    store = InMemoryClientActionStore(
+        [
+            ClientActionRecord(
+                name="bad",
+                relative_path="client_actions/bad.py",
+                content=(
+                    "async def run(inputs, server):\n"
+                    "    return await server.call_tool('raw_shell', {})\n"
+                ),
+            )
+        ]
+    )
+    snapshot = store.snapshot_action("bad")
+    assert snapshot is not None
+
+    server = GatedClientActionServer(fake_call, allowed_tools={"write_serial"})
+    with pytest.raises(PermissionError, match="raw_shell"):
+        await run_client_action(snapshot, inputs={}, server=server)
 
 
 def test_turnkey_invocation_carries_p0_hook_fields_by_default() -> None:
