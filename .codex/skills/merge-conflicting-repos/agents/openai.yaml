@@ -1,0 +1,4 @@
+interface:
+  display_name: "Merge Conflicting Repos"
+  short_description: "Audit and selectively merge divergent repo work"
+  default_prompt: "Use $merge-conflicting-repos to inventory two divergent repos or refs, keep the best implementation for the goal, and validate the merged result end to end."
