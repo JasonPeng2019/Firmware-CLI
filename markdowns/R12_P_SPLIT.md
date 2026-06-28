@@ -508,6 +508,19 @@ into the other branch, or into final integration.
 - Branch B now explicitly preserves the closed-server boundary: model-native
   host work stays outside governed actions, board/server-native work stays
   gated, and UART write is treated as hardware-stack work.
+- Branch B's scoped implementation has now been built and reviewed on
+  `P-Wave-B`. The branch owns action-boundary behavior, ordered batches,
+  bounded `wait`, UART write, and session-scoped client actions; it does not
+  own provider-session continuity, timeout policy ownership, inspector/progress
+  rendering, stream checkpoints, scoped green approval, or provider-native
+  tool-call conversion.
+- Branch B attached-board deployment proof exists on this Windows host for
+  `nucleo_l476rg + nrf52840dk`, including real Codex, the real MCP subprocess,
+  public `--client-action` registration, workspace edit/build runs, and
+  repeated user-prompt / multi-loop runs. Evidence lives in:
+  - `markdowns/curr/r12-branch-b-action-boundary_review.md`
+  - `markdowns/curr/r12-branch-b-full-deployment-completion_review.md`
+  - `markdowns/curr/r12-branch-b-multi-loop-real-deployment_test_report.md`
 - Branch C now explicitly requires session/client-scoped timeout state and keeps
   brain-only timeout sync out of the model-facing tool surface.
 
@@ -521,12 +534,11 @@ into the other branch, or into final integration.
   follow-on evidence task.
 - Second-provider and fresh-machine portability proof remain intentionally
   deferred outside the Wave 0 gate and must not be claimed as verified.
-- The exact module names should be checked against implementation reality when
-  `P0` starts.
-- No code behavior has been changed by this document.
 - Branch A behavior remains unimplemented here; provider-specific persistent
   session behavior still needs code, tests, and provider-specific verification.
-- Branch B behavior remains unimplemented here; the clarified boundary still
-  needs code, tests, and any required real-board proof when Branch B is built.
 - Branch C behavior remains unimplemented here; session/client-scoped timeout
   state and brain-only server timeout sync still need code and tests.
+- Exact official `nrf52833dk` Branch B deployment proof remains pending because
+  the Nordic board attached during the Branch B completion pass identified as
+  `nrf52840dk` / `NRF52840_xxAA_REV2`, which is a retained alternate profile
+  rather than the official scoped Nordic board.

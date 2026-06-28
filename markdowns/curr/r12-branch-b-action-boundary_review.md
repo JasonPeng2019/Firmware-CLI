@@ -50,7 +50,8 @@ Reviewed the `P-Wave-B` implementation against
 - The implementation preserves legacy single-action compatibility; future A/C
   merges should keep the same regression tests active while replacing or
   extending provider-facing prompt behavior.
-- Public CLI deployment still needs an operator-facing way to seed/register
-  session-scoped client actions before `run_script` can be exercised by a real
-  provider through `pyocd-debug-brain run`. Persistent provider sessions are not
-  the blocker for this; client-action registration is.
+- Public CLI client-action registration was added after this action-boundary
+  review through repeatable `--client-action NAME=PATH`, then verified in the
+  full deployment completion pass and the multi-loop deployment report.
+  Persistent provider sessions remain separate Branch A scope, not a Branch B
+  residual risk.

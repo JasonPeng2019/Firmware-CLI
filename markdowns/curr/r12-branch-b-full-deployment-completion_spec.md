@@ -65,37 +65,52 @@ Build plan:
 - The turnkey product is exposed through `pyocd-debug-brain run` and benchmark
   commands.
 
-Current code:
+Pre-implementation code state this spec was written to close:
 
 - `ClientActionStore`, `ClientActionRecord`, snapshots, hashes, and
   `run_client_action(...)` exist in `brain/client_actions.py`.
 - `run_turnkey(...)` accepts `client_actions: ClientActionStore | None`.
 - `run_script` can execute a registered action through the brain gate when a
   store is supplied programmatically.
-- `pyocd-debug-brain run` does not accept any client-action registration flag.
-- `brain/app.py::run_freeform_task(...)` has no client-action parameter.
-- `TurnkeyInvocation` carries no client-action registration metadata.
-- `_build_turn_prompt(...)` lists `run_script(name, inputs)`, but it does not
-  list which script names are registered in this session.
-- Real Codex provider proof exists for
+- At spec time, `pyocd-debug-brain run` did not accept any client-action
+  registration flag.
+- At spec time, `brain/app.py::run_freeform_task(...)` had no client-action
+  parameter.
+- At spec time, `TurnkeyInvocation` carried no client-action registration
+  metadata.
+- At spec time, `_build_turn_prompt(...)` listed `run_script(name, inputs)`,
+  but did not list which script names were registered in this session.
+- At spec time, real Codex provider proof existed for
   `action_batch(connect, wait, write_serial, read_serial)`, but not for
-  public-CLI `run_script`, because no public CLI registration path exists.
+  public-CLI `run_script`, because no public CLI registration path existed.
+
+Implementation outcome:
+
+- The public Branch B completion pass added repeatable
+  `--client-action NAME=PATH` registration.
+- Registered actions are loaded into the session-scoped client-action store,
+  shown to the provider, and persisted in `client_actions.json`.
+- Public-CLI `run_script` was verified through real Codex, real MCP, real
+  hardware, and repeated user-prompt / multi-loop deployment runs on the
+  attached `nucleo_l476rg + nrf52840dk` pair.
 
 Other docs or notes:
 
 - `markdowns/R12_P_SPLIT.md` assigns Branch B ownership for client actions.
-- `markdowns/curr/r12-branch-b-action-boundary_process.md` records the current
-  public CLI gap explicitly.
-- `markdowns/curr/r12-branch-b-action-boundary_review.md` says persistent
-  provider sessions are not the blocker; client-action registration is.
+- `markdowns/curr/r12-branch-b-action-boundary_process.md` recorded the
+  original public CLI gap that this spec closed.
+- `markdowns/curr/r12-branch-b-action-boundary_review.md` now records that
+  public CLI client-action registration was added after the action-boundary
+  review and verified in the later completion pass.
 - `markdowns/curr/things-to-change.md` says CLI providers run in temp dirs and
   are one-shot today, so provider persistence is separate from this gap.
 
 Disagreements and ambiguities:
 
-- No source-of-truth conflict was found. The current implementation is behind
-  the Branch B deployability bar, but that is implementation incompleteness, not
-  a plan conflict.
+- No source-of-truth conflict was found. At spec time, the implementation was
+  behind the Branch B deployability bar, but that was implementation
+  incompleteness, not a plan conflict. The later completion pass closed this
+  gap for the attached-board proof boundary.
 - AMBIGUITY: "model-authored" client actions can mean either scripts authored
   before the run and registered into the session, or scripts created dynamically
   by the provider during the run. For this Branch B completion pass, use the
