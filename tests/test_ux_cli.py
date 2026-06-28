@@ -224,6 +224,68 @@ def test_operator_cli_parser_supports_raw_output_flags() -> None:
     assert args.raw_output == "all"
 
 
+def test_operator_cli_parser_supports_task_file_source(tmp_path: Path) -> None:
+    parser = ux_cli.build_parser()
+    task_file = tmp_path / "task.txt"
+    task_file.write_text('Use {"action_type":"run_script"}.\n', encoding="utf-8")
+
+    args = parser.parse_args(
+        [
+            "run",
+            "--board-id",
+            "nucleo_l476rg",
+            "--task-file",
+            str(task_file),
+        ]
+    )
+
+    assert ux_cli.resolve_task_input(args) == task_file.read_text(encoding="utf-8")
+
+
+def test_operator_cli_render_run_uses_task_file_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    task_file = tmp_path / "task.txt"
+    task_file.write_text("Diagnose from a task file.\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    async def _fake_run_freeform_task(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                session_id="20260628T000000Z-taskfile",
+                board_id="nucleo_l476rg",
+                classification="healthy",
+                final_status="diagnosed_only",
+                summary="Done.",
+                root_cause="None.",
+                verification=SimpleNamespace(
+                    flash_ok=False,
+                    uart_ok=False,
+                    symbol_ok=False,
+                    green_check_ok=False,
+                ),
+            ),
+            run_root=None,
+        )
+
+    monkeypatch.setattr(ux_cli, "run_freeform_task", _fake_run_freeform_task)
+    monkeypatch.setattr(ux_cli.UXRenderer, "render_execution", lambda self, execution: None)
+    args = ux_cli.build_parser().parse_args(
+        [
+            "run",
+            "--board-id",
+            "nucleo_l476rg",
+            "--task-file",
+            str(task_file),
+        ]
+    )
+
+    assert ux_cli._render_run(args) == 0
+    assert captured["task"] == "Diagnose from a task file.\n"
+
+
 def _make_renderer(stream: io.StringIO | None = None) -> UXRenderer:
     return UXRenderer(raw_output="off", console=Console(file=stream or io.StringIO(), force_terminal=False, color_system=None))
 

@@ -381,6 +381,22 @@ Run the turnkey CLI in freeform verify/diagnose mode:
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task-file prompt.txt
+```
+
+For long prompts, prompts with JSON examples, or prompts containing many shell
+quotes, prefer `--task-file prompt.txt` or `--task-stdin` over inline `--task`.
+That avoids Windows PowerShell, macOS shell, and CI argument-quoting edge cases
+before the turnkey brain receives the task text.
+
+Register run-local Branch B client actions with repeatable
+`--client-action NAME=PATH`. The action is loaded into the current brain run,
+listed in the provider prompt with its content hash, and executed by
+`run_script(name, inputs)` through the brain gate rather than as a general MCP
+host executor:
+
+```bash
+uv run pyocd-debug-brain run --provider codex-cli --board-id nucleo_l476rg --client-action uart_write=tests/fixtures/client_actions/uart_write.py --task "Use the registered uart_write action, then verify UART boot text."
 ```
 
 Run the operator-facing CLI over the same turnkey brain:
@@ -388,6 +404,7 @@ Run the operator-facing CLI over the same turnkey brain:
 ```bash
 uv run pyocd-debug
 uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug run --board-id nrf52833dk --task-file prompt.txt
 uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
 uv run pyocd-debug history
 ```

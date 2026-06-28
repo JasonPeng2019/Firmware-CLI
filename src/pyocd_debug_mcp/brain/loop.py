@@ -36,10 +36,13 @@ from pyocd_debug_mcp.brain.actions import (
     WaitAction,
 )
 from pyocd_debug_mcp.brain.client_actions import (
+    ClientActionSnapshot,
     ClientActionStore,
     GatedClientActionServer,
     InMemoryClientActionStore,
+    render_client_action_prompt_section,
     run_client_action,
+    snapshot_all_actions,
 )
 from pyocd_debug_mcp.brain.decision_types import ActionCall
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
@@ -88,6 +91,7 @@ class TurnkeyExecution:
     model_turns: tuple[dict[str, object], ...]
     brain_trace: tuple[dict[str, object], ...]
     brain_events: tuple[dict[str, object], ...]
+    client_action_snapshots: tuple[ClientActionSnapshot, ...] = ()
 
 
 def load_board(board_id: str) -> BoardConfig:
@@ -219,6 +223,7 @@ def _build_turn_prompt(
     state: BrainState,
     skills_text: str,
     workspace: WorkspaceSession | None,
+    client_actions: ClientActionStore | None = None,
 ) -> str:
     verification = state.verification
     flash_artifact, symbol_artifact = _default_artifacts(invocation, board)
@@ -255,6 +260,7 @@ def _build_turn_prompt(
         f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
         "Selected skills:\n"
         f"{skills_text}\n\n"
+        f"{render_client_action_prompt_section(client_actions or InMemoryClientActionStore())}\n\n"
         "Available action kinds:\n"
         "- server_tool: connect, disconnect, get_board_info, get_state, halt, resume, reset, read_core_register, read_memory, flash_firmware, read_serial, write_serial, unlock_recover\n"
         "- read_file(path)\n"
@@ -1335,6 +1341,26 @@ def _persist_turnkey_artifacts(
             handle.write("\n")
     if workspace is not None:
         workspace.write_diff(run_root / "applied-patches" / "turnkey.diff")
+    if execution.client_action_snapshots:
+        executed_names = {
+            item.removeprefix("run_script:")
+            for item in execution.result.actions_taken
+            if item.startswith("run_script:")
+        }
+        client_action_records = [
+            {
+                "name": snapshot.name,
+                "relative_path": snapshot.relative_path,
+                "description": snapshot.description,
+                "content_sha256": snapshot.content_sha256,
+                "executed": snapshot.name in executed_names,
+            }
+            for snapshot in execution.client_action_snapshots
+        ]
+        (run_root / "run-metadata" / "client_actions.json").write_text(
+            json.dumps(client_action_records, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
 
 async def _tooling_failure_execution(
@@ -1454,20 +1480,6 @@ async def run_turnkey(
         else None
     )
     request_payload = _build_request_payload(invocation, board, selected_skills)
-    prompt_text = _build_turn_prompt(
-        invocation,
-        board,
-        BrainState(
-            run_mode=invocation.mode,
-            board_id=board.board_id,
-            task=invocation.task,
-            case_id=invocation.case_id,
-            case_kind=invocation.case_kind,
-            selected_skill_ids=tuple(skill.skill_id for skill in selected_skills),
-        ),
-        skills_text,
-        workspace,
-    )
     instructions = _build_instructions(invocation)
     state = BrainState(
         run_mode=invocation.mode,
@@ -1486,6 +1498,15 @@ async def run_turnkey(
         lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
     )
     client_action_store = client_actions or InMemoryClientActionStore()
+    client_action_snapshots = snapshot_all_actions(client_action_store)
+    prompt_text = _build_turn_prompt(
+        invocation,
+        board,
+        state,
+        skills_text,
+        workspace,
+        client_action_store,
+    )
 
     await _record_brain_event(
         sink=event_sink,
@@ -1507,7 +1528,14 @@ async def run_turnkey(
         async with resolved_client_factory() as client:
             for iteration in range(1, invocation.max_iters + 1):
                 state.iteration = iteration
-                turn_prompt = _build_turn_prompt(invocation, board, state, skills_text, workspace)
+                turn_prompt = _build_turn_prompt(
+                    invocation,
+                    board,
+                    state,
+                    skills_text,
+                    workspace,
+                    client_action_store,
+                )
                 await _record_brain_event(
                     sink=event_sink,
                     records=brain_events,
@@ -1743,6 +1771,7 @@ async def run_turnkey(
         model_turns=tuple(model_turns),
         brain_trace=tuple(brain_trace),
         brain_events=tuple(brain_events),
+        client_action_snapshots=client_action_snapshots,
     )
     _persist_turnkey_artifacts(execution, workspace)
     return execution
@@ -1753,9 +1782,15 @@ async def run_turnkey_with_openai(
     *,
     api_key: str,
     event_sink: EventSink | None = None,
+    client_actions: ClientActionStore | None = None,
 ) -> TurnkeyExecution:
     config = BrainProviderConfig(provider="openai-api", api_key=api_key, model=invocation.model)
-    return await run_turnkey_with_provider(invocation, provider_config=config, event_sink=event_sink)
+    return await run_turnkey_with_provider(
+        invocation,
+        provider_config=config,
+        event_sink=event_sink,
+        client_actions=client_actions,
+    )
 
 
 async def run_turnkey_with_provider(
@@ -1763,6 +1798,7 @@ async def run_turnkey_with_provider(
     *,
     provider_config: BrainProviderConfig,
     event_sink: EventSink | None = None,
+    client_actions: ClientActionStore | None = None,
 ) -> TurnkeyExecution:
     try:
         provider = create_decision_provider(provider_config)
@@ -1773,4 +1809,9 @@ async def run_turnkey_with_provider(
             root_cause=f"Provider setup failed before any board session was created: {type(exc).__name__}: {exc}",
             event_sink=event_sink,
         )
-    return await run_turnkey(invocation, provider=provider, event_sink=event_sink)
+    return await run_turnkey(
+        invocation,
+        provider=provider,
+        event_sink=event_sink,
+        client_actions=client_actions,
+    )

@@ -7,9 +7,14 @@ from collections.abc import Sequence
 from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.config import (
+    BrainConfigError,
     TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
+)
+from pyocd_debug_mcp.brain.client_actions import (
+    ClientActionLoadError,
+    load_client_actions_from_specs,
 )
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
@@ -34,6 +39,7 @@ async def run_freeform_task(
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
     iteration_estimate: IterationEstimate | None = None,
+    client_action_specs: Sequence[str] = (),
 ) -> TurnkeyExecution:
     if timeout_config is None:
         provider_config = load_provider_config(model, provider)
@@ -63,10 +69,24 @@ async def run_freeform_task(
         timeout_proposal=timeout_proposal,
         iteration_estimate=iteration_estimate,
     )
+    try:
+        client_action_store = (
+            load_client_actions_from_specs(client_action_specs) if client_action_specs else None
+        )
+    except ClientActionLoadError as exc:
+        raise BrainConfigError(str(exc)) from exc
+
+    if client_action_store is None:
+        return await run_turnkey_with_provider(
+            invocation,
+            provider_config=provider_config,
+            event_sink=event_sink,
+        )
     return await run_turnkey_with_provider(
         invocation,
         provider_config=provider_config,
         event_sink=event_sink,
+        client_actions=client_action_store,
     )
 
 

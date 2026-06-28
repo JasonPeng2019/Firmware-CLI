@@ -22,7 +22,11 @@ from pyocd_debug_mcp.brain.actions import (
     TurnkeyRunResult,
     VerificationSnapshot,
 )
-from pyocd_debug_mcp.brain.client_actions import ClientActionRecord, InMemoryClientActionStore
+from pyocd_debug_mcp.brain.client_actions import (
+    ClientActionRecord,
+    InMemoryClientActionStore,
+    load_client_actions_from_specs,
+)
 from pyocd_debug_mcp.brain.cli import build_parser as build_turnkey_cli_parser
 from pyocd_debug_mcp.brain.config import (
     BrainProviderConfig,
@@ -52,8 +56,10 @@ from pyocd_debug_mcp.timeouts import (
 class FakeProvider:
     def __init__(self, decisions: list[TurnDecision]) -> None:
         self._decisions = deque(decisions)
+        self.turn_prompts: list[str] = []
 
     async def next_decision(self, *, instructions: str, turn_prompt: str) -> ProviderTurn:
+        self.turn_prompts.append(turn_prompt)
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
@@ -279,6 +285,104 @@ async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool(
     assert "write_serial" in execution.result.mcp_tools_used
 
 
+@pytest.mark.anyio
+async def test_run_turnkey_prompts_and_audits_registered_client_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to nRF52833 DK via probe TEST123. session_id=sess-1",
+                )
+            ],
+            "write_serial": [
+                ToolTextResult(
+                    tool_name="write_serial",
+                    text="UART wrote 6 byte(s) on COM7 at 115200 baud via pyocd-native; duration=0.01s",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    script = tmp_path / "client_actions" / "uart_write.py"
+    script.parent.mkdir()
+    script.write_text(
+        '"""Write text to UART through the gated Branch B server API."""\n\n'
+        "async def run(inputs, server):\n"
+        "    result = await server.call_tool('write_serial', {'text': inputs['text']})\n"
+        "    return result.text\n",
+        encoding="utf-8",
+    )
+    client_actions = load_client_actions_from_specs((f"uart_write={script}",))
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Use the registered session script.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {"action_type": "connect", "arguments": {}},
+                            {
+                                "action_type": "run_script",
+                                "arguments": {
+                                    "name": "uart_write",
+                                    "inputs": {"text": "hello"},
+                                },
+                            },
+                        ]
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="The registered script executed.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Client-action registration is visible to the provider.",
+                    summary="Client action completed.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise public client-action registration.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=lambda: client,
+        client_actions=client_actions,
+    )
+
+    assert execution.run_root is not None
+    assert "name=uart_write" in provider.turn_prompts[0]
+    assert "name=uart_write" in execution.prompt_text
+    audit_path = execution.run_root / "run-metadata" / "client_actions.json"
+    audit_records = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit_records == [
+        {
+            "content_sha256": execution.client_action_snapshots[0].content_sha256,
+            "description": "Write text to UART through the gated Branch B server API.",
+            "executed": True,
+            "name": "uart_write",
+            "relative_path": str(script),
+        }
+    ]
+
+
 def test_load_provider_config_requires_api_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -431,6 +535,54 @@ def test_run_freeform_task_does_not_refuse_fix_wording_without_repair_context(
     assert getattr(invocation, "task").startswith("Fix the wrong UART boot signature")
     assert getattr(invocation, "workspace_root") is None
     assert getattr(invocation, "allowed_edit_roots") == ()
+
+
+def test_run_freeform_task_threads_cli_client_action_specs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    script = tmp_path / "uart_write.py"
+    script.write_text(
+        "async def run(inputs, server):\n"
+        "    return await server.call_tool('write_serial', {'text': inputs['text']})\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    async def _fake_run_turnkey_with_provider(
+        invocation: object,
+        *,
+        provider_config: object,
+        event_sink: object = None,
+        client_actions: object = None,
+    ) -> SimpleNamespace:
+        captured["invocation"] = invocation
+        captured["provider_config"] = provider_config
+        captured["event_sink"] = event_sink
+        captured["client_actions"] = client_actions
+        return SimpleNamespace(result=SimpleNamespace(final_status="diagnosed_only"))
+
+    monkeypatch.setattr(
+        brain_app,
+        "load_provider_config",
+        lambda model, provider=None: BrainProviderConfig(provider="codex-cli", model=model),
+    )
+    monkeypatch.setattr(brain_app, "run_turnkey_with_provider", _fake_run_turnkey_with_provider)
+
+    execution = anyio.run(
+        lambda: brain_app.run_freeform_task(
+            board_id="nucleo_l476rg",
+            task="Run a registered client action.",
+            provider="codex-cli",
+            model=None,
+            client_action_specs=(f"uart_write={script}",),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    store = captured["client_actions"]
+    assert isinstance(store, InMemoryClientActionStore)
+    assert store.get_action("uart_write") is not None
 
 
 def test_skill_loader_selects_common_and_family_skills_deterministically() -> None:

@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
+
+
+CLIENT_ACTION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")  # PROJECT-DEFINED (JSON/prompt-stable id)
+
+
+class ClientActionLoadError(ValueError):
+    """Raised when CLI-provided client-action registrations are invalid."""
 
 
 @dataclass(frozen=True)
@@ -65,6 +75,105 @@ class InMemoryClientActionStore:
             content=record.content,
             content_sha256=digest,
         )
+
+
+def parse_client_action_spec(raw: str) -> tuple[str, str]:
+    if "=" not in raw:
+        raise ClientActionLoadError("client action must be NAME=PATH")
+    name, path_text = raw.split("=", 1)
+    name = name.strip()
+    path_text = path_text.strip()
+    if not name:
+        raise ClientActionLoadError("client action name cannot be empty")
+    if not CLIENT_ACTION_NAME_PATTERN.fullmatch(name):
+        raise ClientActionLoadError(
+            "client action name may contain only letters, digits, underscore, dash, and dot"
+        )
+    if not path_text:
+        raise ClientActionLoadError("client action path cannot be empty")
+    return name, path_text
+
+
+def load_client_actions_from_specs(
+    specs: Iterable[str],
+    *,
+    base_dir: Path | None = None,
+) -> InMemoryClientActionStore:
+    records: list[ClientActionRecord] = []
+    seen_names: set[str] = set()
+    root = (base_dir or Path.cwd()).resolve()
+    for raw in specs:
+        name, path_text = parse_client_action_spec(raw)
+        if name in seen_names:
+            raise ClientActionLoadError(f"duplicate client action name: {name}")
+        seen_names.add(name)
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = root / path
+        path = path.resolve()
+        if not path.exists() or not path.is_file():
+            raise ClientActionLoadError(f"client action file does not exist: {path_text}")
+        content = path.read_text(encoding="utf-8", errors="replace")
+        if not content.strip():
+            raise ClientActionLoadError(f"client action file is empty: {path_text}")
+        try:
+            parsed = ast.parse(content, filename=str(path))
+        except SyntaxError as exc:
+            raise ClientActionLoadError(f"client action {name!r} is not valid Python: {exc.msg}") from exc
+        if not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "run"
+            for node in parsed.body
+        ):
+            raise ClientActionLoadError(
+                f"client action {name!r} must define run(inputs, server)"
+            )
+        description = _description_from_module(parsed) or path.stem.replace("_", "-")
+        records.append(
+            ClientActionRecord(
+                name=name,
+                relative_path=path_text,
+                description=description,
+                content=content,
+            )
+        )
+    return InMemoryClientActionStore(records)
+
+
+def snapshot_all_actions(store: ClientActionStore) -> tuple[ClientActionSnapshot, ...]:
+    snapshots: list[ClientActionSnapshot] = []
+    for record in store.list_actions():
+        snapshot = store.snapshot_action(record.name)
+        if snapshot is not None:
+            snapshots.append(snapshot)
+    return tuple(snapshots)
+
+
+def render_client_action_prompt_section(store: ClientActionStore) -> str:
+    snapshots = snapshot_all_actions(store)
+    if not snapshots:
+        return "Registered client actions:\n(none)"
+    lines = ["Registered client actions:"]
+    for snapshot in snapshots:
+        description = snapshot.description or "(none)"
+        lines.append(
+            "- "
+            f"name={snapshot.name}; "
+            f"path={snapshot.relative_path}; "
+            f"sha256={snapshot.content_sha256}; "
+            f"description={description}"
+        )
+    return "\n".join(lines)
+
+
+def _description_from_module(module: ast.Module) -> str | None:
+    docstring = ast.get_docstring(module)
+    if not docstring:
+        return None
+    for line in docstring.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
 
 
 class GatedClientActionServer:
