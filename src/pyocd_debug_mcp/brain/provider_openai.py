@@ -13,6 +13,7 @@ from pyocd_debug_mcp.brain.provider_parsing import (
     parse_turn_decision_json,
 )
 from pyocd_debug_mcp.brain.provider_types import (
+    build_provider_turn_metadata,
     ProviderCapabilities,
     ProviderContinuationPath,
     ProviderMemoryEntry,
@@ -52,7 +53,8 @@ class OpenAIDecisionProvider:
             supports_transcript_continuation=False,
             supports_response_id_continuation=True,
             supports_tool_schema_prompt=True,
-            continuation_mode="native-primary",
+            continuation_mode="remote-primary",
+            remote_strategy="openai-response-chain",
         )
 
     async def next_decision(
@@ -93,32 +95,36 @@ class OpenAIDecisionProvider:
             if session_state.native_handle is not None
             else None
         )
-        has_local_memory = provider_has_local_memory(session_state)
+        has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
+            session_state
+        )
         use_local_memory = False
         native_sync_used = False
-        continuation_path: ProviderContinuationPath = "native"
+        fresh_session = False
+        continuation_path: ProviderContinuationPath = "remote-resume"
         prompt_render_mode = "bootstrap/full"
         if previous_response_id is None:
             use_local_memory = has_local_memory
-            continuation_path = "local-memory-fallback" if use_local_memory else "native"
-            prompt_render_mode = "native-sync" if use_local_memory else "bootstrap/full"
+            continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
+            prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
+            fresh_session = True
         elif should_inject_native_memory_sync(session_state):
             use_local_memory = True
             continuation_path = "local-memory-fallback"
             native_sync_used = True
-            prompt_render_mode = "native-sync"
+            prompt_render_mode = "remote-sync"
         else:
-            prompt_render_mode = "native-delta"
-        if prompt_render_mode == "native-delta":
-            current_prompt = prompt_bundle.render_native_delta_text()
-        elif prompt_render_mode == "native-sync":
-            current_prompt = prompt_bundle.render_native_sync_text(include_memory=use_local_memory)
+            prompt_render_mode = "remote-delta"
+        if prompt_render_mode == "remote-delta":
+            current_prompt = prompt_bundle.render_remote_delta_text()
+        elif prompt_render_mode == "remote-sync":
+            current_prompt = prompt_bundle.render_remote_sync_text(include_memory=use_local_memory)
         else:
             current_prompt = prompt_bundle.render_bootstrap_text(include_memory=use_local_memory)
         current_prompt_render_mode = prompt_render_mode
         current_memory_injected = use_local_memory
-        current_static_tool_schema_injected = prompt_render_mode != "native-delta"
-        current_decision_schema_injected = prompt_render_mode != "native-delta"
+        current_static_tool_schema_injected = prompt_render_mode != "remote-delta"
+        current_decision_schema_injected = prompt_render_mode != "remote-delta"
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
@@ -128,6 +134,7 @@ class OpenAIDecisionProvider:
                     "prompt_render_mode": current_prompt_render_mode,
                     "native_response_id_present": previous_response_id is not None,
                     "memory_injected": current_memory_injected,
+                    "fresh_session": fresh_session,
                 },
             )
         ]
@@ -160,7 +167,7 @@ class OpenAIDecisionProvider:
                 ProviderProgressUpdate(
                     stage="continuation",
                     message="Starting a new native OpenAI turn with the bootstrap prompt.",
-                    details={},
+                    details={"fresh_session": True},
                 )
             )
         response_format = {
@@ -203,6 +210,25 @@ class OpenAIDecisionProvider:
                 )
                 continue
             response_id = getattr(response, "id", None)
+            turn_metadata = build_provider_turn_metadata(
+                capabilities=self.capabilities,
+                continuation_path=continuation_path,
+                prompt_render_mode=current_prompt_render_mode,
+                memory_injected=current_memory_injected,
+                static_tool_schema_injected=current_static_tool_schema_injected,
+                decision_schema_injected=current_decision_schema_injected,
+                retry_count=retry_count,
+                remote_handle_kind="response_id",
+                remote_handle_id=response_id,
+                fresh_remote_turn=previous_response_id is None,
+                resumed_remote=previous_response_id is not None,
+                native_sync_used=native_sync_used,
+                extra={
+                    "native_response_id_present": response_id is not None,
+                    "native_session_used": bool(previous_response_id),
+                    "fresh_session": previous_response_id is None,
+                },
+            )
             return ProviderTurn(
                 decision=decision,
                 output_text=output_text,
@@ -211,29 +237,9 @@ class OpenAIDecisionProvider:
                     response_id=response_id,
                 ).with_last_continuation_path(
                     continuation_path,
-                    metadata={
-                        "continuation_mode": self.capabilities.continuation_mode,
-                        "continuation_path": continuation_path,
-                        "native_response_id_present": response_id is not None,
-                        "native_session_used": bool(previous_response_id),
-                        "memory_injected": current_memory_injected,
-                        "native_sync_used": native_sync_used,
-                        "prompt_render_mode": current_prompt_render_mode,
-                        "static_tool_schema_injected": current_static_tool_schema_injected,
-                        "decision_schema_injected": current_decision_schema_injected,
-                        "retry_count": retry_count,
-                    },
+                    metadata=turn_metadata,
                 ),
-                provider_metadata={
-                    "continuation_mode": self.capabilities.continuation_mode,
-                    "continuation_path": continuation_path,
-                    "memory_injected": current_memory_injected,
-                    "native_sync_used": native_sync_used,
-                    "prompt_render_mode": current_prompt_render_mode,
-                    "static_tool_schema_injected": current_static_tool_schema_injected,
-                    "decision_schema_injected": current_decision_schema_injected,
-                    "retry_count": retry_count,
-                },
+                provider_metadata=turn_metadata,
                 progress_updates=tuple(progress_updates),
             )
 

@@ -77,7 +77,7 @@ class FakeProvider:
             supports_transcript_continuation=True,
             supports_response_id_continuation=False,
             supports_tool_schema_prompt=True,
-            continuation_mode="transcript-only",
+            continuation_mode="local-primary",
         )
 
     async def next_decision(
@@ -92,12 +92,12 @@ class FakeProvider:
             output_text=json.dumps(decision.model_dump(mode="json")),
             response_id="resp-test",
             session_state=session_state.with_last_continuation_path(
-                "transcript-memory",
-                metadata={"continuation_kind": "test-transcript-memory"},
+                "local-memory-only",
+                metadata={"continuation_kind": "test-local-memory-only"},
             ),
             provider_metadata={
-                "continuation_kind": "test-transcript-memory",
-                "continuation_path": "transcript-memory",
+                "continuation_kind": "test-local-memory-only",
+                "continuation_path": "local-memory-only",
                 "memory_injected": True,
             },
         )
@@ -257,7 +257,7 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
     state = make_provider_session_state(
         provider="codex-cli",
         model=None,
-        continuation_mode="transcript-only",
+        continuation_mode="local-primary",
     )
     for index in range(1, 7):
         state = append_memory_entry(
@@ -354,7 +354,7 @@ def test_memory_compaction_triggers_on_recent_memory_char_limit() -> None:
         provider="codex-cli",
         model=None,
         memory_mode="deterministic",
-        continuation_mode="transcript-only",
+        continuation_mode="local-primary",
         recent_render_char_limit=200,
     )
     for index in range(1, 4):
@@ -643,7 +643,7 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
                 supports_transcript_continuation=True,
                 supports_response_id_continuation=False,
                 supports_tool_schema_prompt=True,
-                continuation_mode="transcript-only",
+                continuation_mode="local-primary",
             )
 
         async def next_decision(
@@ -706,7 +706,7 @@ def test_run_turnkey_forwards_provider_progress_updates(
                 supports_transcript_continuation=True,
                 supports_response_id_continuation=False,
                 supports_tool_schema_prompt=True,
-                continuation_mode="transcript-only",
+                continuation_mode="local-primary",
             )
 
         async def next_decision(
@@ -728,8 +728,8 @@ def test_run_turnkey_forwards_provider_progress_updates(
                 ),
                 output_text="{}",
                 response_id="resp-progress",
-                session_state=session_state.with_last_continuation_path("transcript-memory"),
-                provider_metadata={"continuation_path": "transcript-memory"},
+                session_state=session_state.with_last_continuation_path("local-memory-only"),
+                provider_metadata={"continuation_path": "local-memory-only"},
                 progress_updates=(
                     ProviderProgressUpdate(
                         stage="provider_request",
@@ -2035,8 +2035,9 @@ def test_claude_output_extractor_surfaces_provider_error() -> None:
         stderr="",
     )
 
-    output_text, error = _extract_claude_output_text(result)
+    output_text, session_id, error = _extract_claude_output_text(result)
 
     assert output_text == ""
+    assert session_id is None
     assert error is not None
     assert "not_found_error" in str(error)

@@ -70,8 +70,12 @@ The current live status is:
   - canonical compact local memory is persisted for every provider
   - OpenAI uses native continuation when healthy, with local fallback and
     periodic safety-sync injection
-  - Anthropic, Codex CLI, and Claude CLI use the same canonical local memory
-    model without pretending they have durable remote sessions
+  - Claude CLI now uses real remote session resume plus fork retry on top of
+    the same local-memory model
+  - Codex CLI now uses real remote thread resume plus same-thread retry /
+    fresh-thread fallback on top of the same local-memory model
+  - Anthropic remains local-primary because the current Messages API is
+    stateless and does not expose a resumable native conversation handle
   - deterministic compaction is the default; `model-summary` compaction is
     available as an explicit option
   - coarse provider progress checkpoints are now emitted as first-class brain
@@ -447,12 +451,17 @@ Turnkey provider rules:
   subscription or `ANTHROPIC_API_KEY`
 - provider continuity is unified across all backends:
   - the brain always persists compact local turn-fact memory
-  - OpenAI uses native continuation first, then falls back to the local memory
-    layer if the native handle is missing or reset
-  - OpenAI can also inject local-memory safety sync on a cadence
-    (`--native-sync-every`, default `4`, `0` disables)
-  - Anthropic, Codex CLI, and Claude CLI always reason from the canonical
-    local memory block rather than provider-owned remote sessions
+  - OpenAI is `remote-primary` via Responses `previous_response_id`, with
+    local-memory fallback and periodic safety sync
+  - Claude CLI is `remote-primary` via real `--resume <session_id>` reuse, with
+    `--fork-session` retries plus local-memory fallback and safety sync
+  - Codex CLI is `remote-primary` via real `codex exec resume <thread_id>`
+    reuse, with same-thread correction retry, fresh local-memory fallback, and
+    safety sync
+  - Anthropic Messages API remains `local-primary` because the current Messages
+    API surface is stateless and does not expose a resumable conversation handle
+    equivalent to OpenAI response chaining, Claude session resume, or Codex
+    thread resume
 - turnkey memory controls are optional:
   - `--memory-mode deterministic|model-summary`
   - `--native-sync-every N`
@@ -641,8 +650,10 @@ Verified:
   - all providers share one canonical compact local-memory model
   - OpenAI uses native continuation as an accelerator, with local fallback and
     optional periodic safety sync
-  - Anthropic, Codex CLI, and Claude CLI use the same canonical compact
-    memory model without fake durable remote sessions
+  - Claude CLI and Codex CLI now add real remote continuation on top of that
+    same canonical compact memory model
+  - Anthropic remains local-primary because the current Messages API does not
+    expose a resumable native conversation handle
   - model-facing server-tool docs now come from live MCP metadata through
     `brain/tool_schemas.py`
 - the first Pass 1 UX-layer code path now also exists in the repo:

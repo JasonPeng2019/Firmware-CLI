@@ -39,6 +39,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
+    ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
@@ -60,7 +61,7 @@ class _FakeProvider:
             supports_transcript_continuation=True,
             supports_response_id_continuation=False,
             supports_tool_schema_prompt=True,
-            continuation_mode="transcript-only",
+            continuation_mode="local-primary",
         )
 
     async def next_decision(
@@ -75,12 +76,12 @@ class _FakeProvider:
             output_text=json.dumps(decision.model_dump(mode="json")),
             response_id="resp-merge-test",
             session_state=session_state.with_last_continuation_path(
-                "transcript-memory",
-                metadata={"continuation_kind": "merge-test-transcript-memory"},
+                "local-memory-only",
+                metadata={"continuation_kind": "merge-test-local-memory-only"},
             ),
             provider_metadata={
-                "continuation_kind": "merge-test-transcript-memory",
-                "continuation_path": "transcript-memory",
+                "continuation_kind": "merge-test-local-memory-only",
+                "continuation_path": "local-memory-only",
                 "memory_injected": True,
             },
         )
@@ -570,14 +571,18 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
         make_provider_session_state(
             provider="codex-cli",
             model=None,
-            continuation_mode="transcript-only",
+            continuation_mode="remote-primary",
+            runtime_context=ProviderRuntimeContext(
+                runtime_root=str(output_dir),
+                working_directory=str(output_dir),
+            ),
         ),
     )
 
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
-    assert captured["input"] == "sys\n\nmemory block\n\nprompt\n"
+    assert captured["input"] == "sys\n\nmemory block\n\nprompt"
     assert captured["timeout"] == 300.0
 
 
@@ -616,7 +621,7 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     session_state = make_provider_session_state(
         provider="openai-api",
         model="gpt-test",
-        continuation_mode="native-primary",
+        continuation_mode="remote-primary",
     ).with_native_handle_update(response_id="resp-prev")
     bundle = ProviderPromptBundle(
         system_instructions="sys",
@@ -635,8 +640,8 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     assert turn.response_id == "resp-next"
     assert turn.session_state.native_handle is not None
     assert turn.session_state.native_handle.response_id == "resp-next"
-    assert turn.provider_metadata["continuation_path"] == "native"
-    assert turn.provider_metadata["prompt_render_mode"] == "native-delta"
+    assert turn.provider_metadata["continuation_path"] == "remote-resume"
+    assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
     assert turn.provider_metadata["static_tool_schema_injected"] is False
     assert turn.provider_metadata["decision_schema_injected"] is False
     assert [update.stage for update in turn.progress_updates] == [
@@ -696,12 +701,12 @@ def test_openai_provider_retry_updates_prompt_metadata(
         make_provider_session_state(
             provider="openai-api",
             model="gpt-test",
-            continuation_mode="native-primary",
+            continuation_mode="remote-primary",
         ),
     )
 
     assert len(call_inputs) == 2
-    assert call_inputs[0]["input"] == "tool schema\n\nturn context\n\ndecision schema"
+    assert call_inputs[0]["input"] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
     assert call_inputs[1]["input"] == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
     assert turn.provider_metadata["prompt_render_mode"] == "retry"
     assert turn.provider_metadata["memory_injected"] is False
@@ -738,7 +743,7 @@ def test_codex_cli_provider_surfaces_subprocess_timeout(
     with pytest.raises(CodexProviderResponseError, match="Codex CLI timed out after 1s"):
         provider._next_decision_sync(
             bundle,
-            make_provider_session_state(provider="codex-cli", model=None, continuation_mode="transcript-only"),
+            make_provider_session_state(provider="codex-cli", model=None, continuation_mode="local-primary"),
         )
 
 
@@ -794,7 +799,7 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     )
     turn = provider._next_decision_sync(
         bundle,
-        make_provider_session_state(provider="claude-cli", model=None, continuation_mode="transcript-only"),
+        make_provider_session_state(provider="claude-cli", model=None, continuation_mode="remote-primary"),
     )
 
     assert turn.decision.classification == "healthy"
@@ -803,7 +808,7 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     assert captured["timeout"] == 300.0
 
 
-def test_anthropic_provider_uses_transcript_continuation_and_updates_state(
+def test_anthropic_provider_uses_local_primary_memory_and_updates_state(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -843,7 +848,7 @@ def test_anthropic_provider_uses_transcript_continuation_and_updates_state(
     session_state = make_provider_session_state(
         provider="anthropic-api",
         model="claude-test",
-        continuation_mode="transcript-only",
+        continuation_mode="local-primary",
     )
     bundle = ProviderPromptBundle(
         system_instructions="sys",
@@ -861,9 +866,10 @@ def test_anthropic_provider_uses_transcript_continuation_and_updates_state(
     assert "memory block" in message_text
     assert turn.response_id == "anthropic-next"
     assert turn.session_state.native_handle is None
-    assert turn.provider_metadata["continuation_path"] == "transcript-memory"
+    assert turn.provider_metadata["continuation_path"] == "local-memory-only"
     assert turn.provider_metadata["memory_injected"] is True
-    assert provider.capabilities.supports_transcript_continuation is True
+    assert provider.capabilities.continuation_mode == "local-primary"
+    assert provider.capabilities.remote_strategy == "none"
 
 
 def test_anthropic_provider_retry_updates_prompt_metadata(
@@ -919,7 +925,7 @@ def test_anthropic_provider_retry_updates_prompt_metadata(
         make_provider_session_state(
             provider="anthropic-api",
             model="claude-test",
-            continuation_mode="transcript-only",
+            continuation_mode="local-primary",
         ),
     )
 
@@ -961,7 +967,7 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
     with pytest.raises(ClaudeProviderResponseError, match="Claude CLI timed out after 1s"):
         provider._next_decision_sync(
             bundle,
-            make_provider_session_state(provider="claude-cli", model=None, continuation_mode="transcript-only"),
+            make_provider_session_state(provider="claude-cli", model=None, continuation_mode="remote-primary"),
         )
 
 
@@ -1012,7 +1018,371 @@ def test_codex_cli_provider_reports_memory_injected_only_when_memory_block_exist
 
     turn = provider._next_decision_sync(
         bundle,
-        make_provider_session_state(provider="codex-cli", model=None, continuation_mode="transcript-only"),
+        make_provider_session_state(
+            provider="codex-cli",
+            model=None,
+            continuation_mode="remote-primary",
+            runtime_context=ProviderRuntimeContext(
+                runtime_root=str(output_dir),
+                working_directory=str(output_dir),
+            ),
+        ),
     )
 
     assert turn.provider_metadata["memory_injected"] is False
+
+
+def test_claude_cli_provider_resumes_remote_session_and_records_unified_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    working_dir = tmp_path / "claude-resume"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "session_id": "sess-parent",
+                    "result": json.dumps(
+                        {
+                            "observation_summary": "connected",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "none",
+                                "summary": "ok",
+                            },
+                        }
+                    ),
+                    "is_error": False,
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
+
+    provider = ClaudeCLIDecisionProvider(model="sonnet")
+    session_state = make_provider_session_state(
+        provider="claude-cli",
+        model="sonnet",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(native_session_id="sess-parent")
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    assert calls
+    assert "--resume" in calls[0]
+    assert "sess-parent" in calls[0]
+    assert "--fork-session" not in calls[0]
+    assert turn.provider_metadata["remote_strategy"] == "claude-session-resume"
+    assert turn.provider_metadata["remote_handle_kind"] == "session_id"
+    assert turn.provider_metadata["remote_handle_id"] == "sess-parent"
+    assert turn.provider_metadata["remote_handle_present"] is True
+    assert turn.provider_metadata["resumed_remote"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is False
+    assert turn.provider_metadata["local_memory_fallback_used"] is False
+    assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
+    assert turn.provider_metadata["memory_injected"] is False
+
+
+def test_claude_cli_provider_fork_retry_commits_child_session_only_on_success(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    outputs = iter(
+        (
+            json.dumps({"session_id": "sess-parent", "result": "not json", "is_error": False}),
+            json.dumps(
+                {
+                    "session_id": "sess-child",
+                    "result": json.dumps(
+                        {
+                            "observation_summary": "connected",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "none",
+                                "summary": "ok",
+                            },
+                        }
+                    ),
+                    "is_error": False,
+                }
+            ),
+        )
+    )
+    working_dir = tmp_path / "claude-fork"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout=next(outputs), stderr="")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
+
+    provider = ClaudeCLIDecisionProvider(model="sonnet")
+    session_state = make_provider_session_state(
+        provider="claude-cli",
+        model="sonnet",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(native_session_id="sess-parent")
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    assert len(calls) == 2
+    assert "--resume" in calls[0] and "sess-parent" in calls[0]
+    assert "--fork-session" not in calls[0]
+    assert "--resume" in calls[1] and "sess-parent" in calls[1]
+    assert "--fork-session" in calls[1]
+    assert turn.session_state.native_handle is not None
+    assert turn.session_state.native_handle.native_session_id == "sess-child"
+    assert turn.provider_metadata["continuation_path"] == "remote-fork"
+    assert turn.provider_metadata["fork_retry_used"] is True
+    assert turn.provider_metadata["remote_handle_id"] == "sess-child"
+    assert turn.provider_metadata["resumed_remote"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is False
+
+
+def test_claude_cli_provider_resume_failure_falls_back_to_fresh_local_memory_turn(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    outputs = iter(
+        (
+            SimpleNamespace(returncode=1, stdout="", stderr="resume failed"),
+            SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "session_id": "sess-fresh",
+                        "result": json.dumps(
+                            {
+                                "observation_summary": "connected",
+                                "classification": "healthy",
+                                "action": {
+                                    "kind": "finalize",
+                                    "final_status": "diagnosed_only",
+                                    "classification": "healthy",
+                                    "root_cause": "none",
+                                    "summary": "ok",
+                                },
+                            }
+                        ),
+                        "is_error": False,
+                    }
+                ),
+                stderr="",
+            ),
+        )
+    )
+    working_dir = tmp_path / "claude-fallback"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        return next(outputs)
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
+
+    provider = ClaudeCLIDecisionProvider(model="sonnet")
+    session_state = make_provider_session_state(
+        provider="claude-cli",
+        model="sonnet",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(native_session_id="sess-parent")
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    assert len(calls) == 2
+    assert "--resume" in calls[0] and "sess-parent" in calls[0]
+    assert "--resume" not in calls[1]
+    assert turn.provider_metadata["continuation_path"] == "local-memory-fallback"
+    assert turn.provider_metadata["local_memory_fallback_used"] is True
+    assert turn.provider_metadata["memory_injected"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is True
+    assert turn.provider_metadata["resumed_remote"] is False
+    assert turn.provider_metadata["remote_handle_id"] == "sess-fresh"
+
+
+def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    working_dir = tmp_path / "codex-resume"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        output_path = Path(command[command.index("-o") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "observation_summary": "connected",
+                    "classification": "healthy",
+                    "action": {
+                        "kind": "finalize",
+                        "final_status": "diagnosed_only",
+                        "classification": "healthy",
+                        "root_cause": "none",
+                        "summary": "ok",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
+
+    provider = CodexCLIDecisionProvider(model="gpt-5")
+    session_state = make_provider_session_state(
+        provider="codex-cli",
+        model="gpt-5",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(
+        native_session_id="thread-parent",
+        provider_fields={"codex_thread_id": "thread-parent"},
+    )
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    assert calls
+    assert "resume" in calls[0]
+    assert "thread-parent" in calls[0]
+    assert turn.provider_metadata["remote_strategy"] == "codex-thread-resume"
+    assert turn.provider_metadata["remote_handle_kind"] == "thread_id"
+    assert turn.provider_metadata["remote_handle_id"] == "thread-parent"
+    assert turn.provider_metadata["remote_handle_present"] is True
+    assert turn.provider_metadata["resumed_remote"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is False
+    assert turn.provider_metadata["local_memory_fallback_used"] is False
+    assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
+    assert turn.provider_metadata["memory_injected"] is False
+
+
+def test_codex_cli_provider_resume_failure_falls_back_to_fresh_local_memory_thread(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    working_dir = tmp_path / "codex-fallback"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        if "resume" in command:
+            return SimpleNamespace(returncode=1, stdout="", stderr="resume failed")
+        output_path = Path(command[command.index("-o") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "observation_summary": "connected",
+                    "classification": "healthy",
+                    "action": {
+                        "kind": "finalize",
+                        "final_status": "diagnosed_only",
+                        "classification": "healthy",
+                        "root_cause": "none",
+                        "summary": "ok",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"type":"thread.started","thread_id":"thread-fresh"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
+
+    provider = CodexCLIDecisionProvider(model="gpt-5")
+    session_state = make_provider_session_state(
+        provider="codex-cli",
+        model="gpt-5",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(
+        native_session_id="thread-parent",
+        provider_fields={"codex_thread_id": "thread-parent"},
+    )
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    assert len(calls) == 2
+    assert "resume" in calls[0] and "thread-parent" in calls[0]
+    assert "resume" not in calls[1]
+    assert "--ephemeral" not in calls[1]
+    assert turn.provider_metadata["continuation_path"] == "local-memory-fallback"
+    assert turn.provider_metadata["local_memory_fallback_used"] is True
+    assert turn.provider_metadata["memory_injected"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is True
+    assert turn.provider_metadata["resumed_remote"] is False
+    assert turn.provider_metadata["remote_handle_id"] == "thread-fresh"

@@ -332,6 +332,18 @@ What that code does:
   - `ANTHROPIC_API_KEY` for `anthropic-api`
 - can reuse existing Codex or Claude Code CLI auth for subscription-backed
   turnkey runs
+- now uses one unified hybrid provider-continuation model:
+  - `openai-api` is `remote-primary` through Responses
+    `previous_response_id`, with local-memory fallback and periodic safety
+    sync
+  - `claude-cli` is `remote-primary` through real `--resume <session_id>`
+    reuse with `--fork-session` retries, local-memory fallback, and safety
+    sync
+  - `codex-cli` is `remote-primary` through real `codex exec resume
+    <thread_id>` reuse with fresh-thread fallback and safety sync
+  - `anthropic-api` remains `local-primary` because the current Anthropic
+    Messages API surface is stateless and does not expose a resumable
+    conversation handle
 - selects board-aware YAML skills
 - keeps local turnkey run state
 - supports freeform `run` mode and benchmark mode
@@ -1002,7 +1014,15 @@ Important live issues that were exposed and fixed during this pass:
 The second-provider path is no longer globally blocked. The latest live status
 is:
 
-- historical macOS `--model sonnet` attempts failed before board action
+- historical pre-upgrade macOS `--model sonnet` attempts failed before board
+  action
+- current local provider-upgrade sanity is green for:
+  - direct Claude transport bootstrap/resume/fork probes
+  - direct Codex transport bootstrap/resume probe
+  - `pyocd-debug-brain run --provider claude-cli --model sonnet --board-id nucleo_l476rg`
+  - `pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk`
+  - `pyocd-debug-brain benchmark --provider claude-cli --model sonnet --case-id nucleo_l476rg__k001_reference_green`
+  - `pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52833dk__k001_reference_green`
 - current Windows STM32 Claude runs are now green on the attached
   `nucleo_l476rg`
 - the remaining gap is full official-pair closure, not basic provider

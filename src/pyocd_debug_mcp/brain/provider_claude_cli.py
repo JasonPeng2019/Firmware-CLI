@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import tempfile
 
@@ -13,14 +14,19 @@ from pyocd_debug_mcp.brain.provider_parsing import (
     parse_turn_decision_json,
 )
 from pyocd_debug_mcp.brain.provider_types import (
+    build_provider_turn_metadata,
     ProviderCapabilities,
+    ProviderContinuationPath,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
+    ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
+    provider_has_local_memory,
     render_memory_summary_request,
+    should_inject_native_memory_sync,
 )
 from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
@@ -44,11 +50,14 @@ class ClaudeCLIDecisionProvider:
     @property
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
-            supports_native_session=False,
+            supports_native_session=True,
             supports_transcript_continuation=True,
             supports_response_id_continuation=False,
             supports_tool_schema_prompt=True,
-            continuation_mode="transcript-only",
+            continuation_mode="remote-primary",
+            remote_strategy="claude-session-resume",
+            resume_requires_stable_workdir=True,
+            supports_transactional_fork=True,
         )
 
     async def next_decision(
@@ -82,111 +91,261 @@ class ClaudeCLIDecisionProvider:
         prompt_bundle: ProviderPromptBundle,
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
-        last_error: Exception | None = None
+        session_state = _ensure_runtime_context(session_state)
+        working_dir = _require_runtime_working_directory(session_state)
+        committed_session_id = (
+            session_state.native_handle.native_session_id
+            if session_state.native_handle is not None
+            else None
+        )
+        has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
+            session_state
+        )
+        use_local_memory = False
+        native_sync_used = False
+        fresh_session = False
+        resumed_session = False
+        fork_retry_used = False
+        continuation_path: ProviderContinuationPath = "remote-resume"
+        prompt_render_mode = "bootstrap/full"
+
+        if committed_session_id is None:
+            use_local_memory = has_local_memory
+            continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
+            prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
+            fresh_session = True
+            current_resume_session_id: str | None = None
+        elif should_inject_native_memory_sync(session_state):
+            use_local_memory = True
+            continuation_path = "remote-resume"
+            prompt_render_mode = "remote-sync"
+            native_sync_used = True
+            resumed_session = True
+            current_resume_session_id = committed_session_id
+        else:
+            continuation_path = "remote-resume"
+            prompt_render_mode = "remote-delta"
+            resumed_session = True
+            current_resume_session_id = committed_session_id
+
+        if prompt_render_mode == "remote-delta":
+            current_prompt = prompt_bundle.render_remote_delta_text()
+        elif prompt_render_mode == "remote-sync":
+            current_prompt = prompt_bundle.render_remote_sync_text(include_memory=use_local_memory)
+        else:
+            current_prompt = prompt_bundle.render_bootstrap_text(include_memory=use_local_memory)
+        current_prompt_render_mode = prompt_render_mode
+        current_memory_injected = use_local_memory
+        current_static_tool_schema_injected = prompt_render_mode != "remote-delta"
+        current_decision_schema_injected = prompt_render_mode != "remote-delta"
+        current_fork_session = False
+        fallback_attempted = False
         retry_count = 0
-        base_prompt = prompt_bundle.render_bootstrap_text(include_memory=True)
-        current_prompt = base_prompt
-        current_prompt_render_mode = "bootstrap/full"
-        current_memory_injected = bool(prompt_bundle.provider_memory_text.strip())
-        current_static_tool_schema_injected = True
-        current_decision_schema_injected = True
+        last_error: Exception | None = None
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
-                message="Dispatching Claude CLI turn from canonical local memory.",
+                message="Dispatching Claude Code CLI turn.",
                 details={
-                    "continuation_path": "transcript-memory",
-                    "cli_mode": "print",
+                    "continuation_path": continuation_path,
                     "prompt_render_mode": current_prompt_render_mode,
                     "memory_injected": current_memory_injected,
+                    "fresh_session": fresh_session,
+                    "resumed_session": resumed_session,
+                    "working_directory": str(working_dir),
                 },
             )
         ]
-        for _attempt in range(2):
-            with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-") as tmpdir:
-                try:
-                    result = subprocess.run(
-                        _build_claude_command(
-                            model=self._model,
-                            instructions=prompt_bundle.system_instructions,
-                            prompt=current_prompt,
-                        ),
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        capture_output=True,
-                        cwd=tmpdir,
-                        check=False,
-                        timeout=self._timeout_seconds,
-                    )
-                except subprocess.TimeoutExpired as exc:
-                    raise ProviderResponseError(
-                        f"Claude CLI timed out after {self._timeout_seconds:.0f}s."
-                    ) from exc
-                output_text, command_error = _extract_claude_output_text(result)
-                if command_error is not None:
-                    last_error = command_error
-                    retry_count += 1
-                    current_prompt = prompt_bundle.render_retry_text(
-                        "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
-                    )
-                    current_prompt_render_mode = "retry"
-                    current_memory_injected = False
-                    current_static_tool_schema_injected = False
-                    current_decision_schema_injected = True
-                    progress_updates.append(
-                        ProviderProgressUpdate(
-                            stage="provider_retry",
-                            message="Claude CLI did not yield valid structured output; retrying with a schema-correction prompt.",
-                            details={"retry_count": retry_count},
-                        )
-                    )
-                    continue
-                try:
-                    decision = parse_turn_decision_json(output_text)
-                except Exception as exc:  # noqa: BLE001 - preserve parse failures
-                    last_error = exc
-                    retry_count += 1
-                    current_prompt = prompt_bundle.render_retry_text(
-                        "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
-                    )
-                    current_prompt_render_mode = "retry"
-                    current_memory_injected = False
-                    current_static_tool_schema_injected = False
-                    current_decision_schema_injected = True
-                    progress_updates.append(
-                        ProviderProgressUpdate(
-                            stage="provider_retry",
-                            message="Claude CLI returned invalid JSON; retrying with a schema-correction prompt.",
-                            details={"retry_count": retry_count},
-                        )
-                    )
-                    continue
-                return ProviderTurn(
-                    decision=decision,
-                    output_text=output_text,
-                    response_id=None,
-                    session_state=session_state.with_last_continuation_path(
-                        "transcript-memory",
-                    ).with_updated_metadata(
-                        {
-                            "continuation_kind": "transcript-memory",
-                            "cli_mode": "print",
-                        }
-                    ),
-                    provider_metadata={
-                        "continuation_kind": "transcript-memory",
-                        "continuation_mode": self.capabilities.continuation_mode,
-                        "continuation_path": "transcript-memory",
-                        "memory_injected": current_memory_injected,
-                        "cli_mode": "print",
-                        "prompt_render_mode": current_prompt_render_mode,
-                        "static_tool_schema_injected": current_static_tool_schema_injected,
-                        "decision_schema_injected": current_decision_schema_injected,
-                        "retry_count": retry_count,
-                    },
-                    progress_updates=tuple(progress_updates),
+        if resumed_session and committed_session_id is not None:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Using Claude remote session resume.",
+                    details={"session_id": committed_session_id},
                 )
+            )
+        elif use_local_memory:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Claude remote handle is missing; bootstrapping from canonical local memory.",
+                    details={"memory_available": has_local_memory},
+                )
+            )
+        else:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Starting a fresh Claude remote session.",
+                    details={"fresh_session": True},
+                )
+            )
+        if native_sync_used:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="memory_sync",
+                    message="Injecting canonical local memory into the resumed Claude turn.",
+                    details={"native_sync_every": session_state.native_sync_every},
+                )
+            )
+
+        for _attempt in range(3):
+            try:
+                result = subprocess.run(
+                    _build_claude_command(
+                        model=self._model,
+                        instructions=prompt_bundle.system_instructions,
+                        prompt=current_prompt,
+                        resume_session_id=current_resume_session_id,
+                        fork_session=current_fork_session,
+                    ),
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    capture_output=True,
+                    cwd=working_dir,
+                    check=False,
+                    timeout=self._timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ProviderResponseError(
+                    f"Claude CLI timed out after {self._timeout_seconds:.0f}s."
+                ) from exc
+
+            output_text, returned_session_id, command_error = _extract_claude_output_text(result)
+            if command_error is not None:
+                last_error = command_error
+                if current_resume_session_id is not None and not fallback_attempted:
+                    fallback_attempted = True
+                    current_resume_session_id = None
+                    current_fork_session = False
+                    current_memory_injected = has_local_memory
+                    continuation_path = "local-memory-fallback" if has_local_memory else "remote-resume"
+                    current_prompt_render_mode = (
+                        "remote-sync" if has_local_memory else "bootstrap/full"
+                    )
+                    current_static_tool_schema_injected = True
+                    current_decision_schema_injected = True
+                    current_prompt = (
+                        prompt_bundle.render_remote_sync_text(include_memory=has_local_memory)
+                        if has_local_memory
+                        else prompt_bundle.render_bootstrap_text(include_memory=False)
+                    )
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="continuation",
+                            message="Claude resume failed; falling back to a fresh local-memory-backed turn.",
+                            details={
+                                "session_id": committed_session_id,
+                                "fallback_reason": str(command_error),
+                            },
+                        )
+                    )
+                    continue
+                break
+
+            try:
+                decision = parse_turn_decision_json(output_text)
+            except Exception as exc:  # noqa: BLE001 - preserve parse failures
+                last_error = exc
+                if current_resume_session_id is not None and not current_fork_session:
+                    retry_count += 1
+                    current_fork_session = True
+                    current_resume_session_id = committed_session_id
+                    continuation_path = "remote-fork"
+                    current_prompt = prompt_bundle.render_retry_text(
+                        "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    current_prompt_render_mode = "retry"
+                    current_memory_injected = False
+                    current_static_tool_schema_injected = False
+                    current_decision_schema_injected = True
+                    fork_retry_used = True
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Claude returned invalid structured output; retrying from the committed parent session via --fork-session.",
+                            details={
+                                "retry_count": retry_count,
+                                "parent_session_id": committed_session_id,
+                            },
+                        )
+                    )
+                    continue
+                if current_resume_session_id is None and retry_count == 0:
+                    retry_count += 1
+                    current_prompt = prompt_bundle.render_retry_text(
+                        "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+                    )
+                    current_prompt_render_mode = "retry"
+                    current_memory_injected = False
+                    current_static_tool_schema_injected = False
+                    current_decision_schema_injected = True
+                    progress_updates.append(
+                        ProviderProgressUpdate(
+                            stage="provider_retry",
+                            message="Claude returned invalid structured output; retrying with a schema-correction prompt.",
+                            details={"retry_count": retry_count},
+                        )
+                    )
+                    continue
+                break
+
+            effective_session_id = returned_session_id
+            if effective_session_id is None:
+                if current_fork_session:
+                    effective_session_id = committed_session_id
+                elif current_resume_session_id is not None:
+                    effective_session_id = current_resume_session_id
+            resumed_remote = current_resume_session_id is not None
+            fresh_remote_turn = not resumed_remote
+            turn_metadata = build_provider_turn_metadata(
+                capabilities=self.capabilities,
+                continuation_path=continuation_path,
+                prompt_render_mode=current_prompt_render_mode,
+                memory_injected=current_memory_injected,
+                static_tool_schema_injected=current_static_tool_schema_injected,
+                decision_schema_injected=current_decision_schema_injected,
+                retry_count=retry_count,
+                remote_handle_kind="session_id",
+                remote_handle_id=effective_session_id,
+                fresh_remote_turn=fresh_remote_turn,
+                resumed_remote=resumed_remote,
+                native_sync_used=native_sync_used,
+                working_directory=str(working_dir),
+                extra={
+                    "session_id": effective_session_id,
+                    "session_id_present": returned_session_id is not None,
+                    "fresh_session": fresh_remote_turn,
+                    "resumed_session": resumed_remote,
+                    "fork_retry_used": fork_retry_used,
+                },
+            )
+            updated_session = session_state.with_native_handle_update(
+                native_session_id=effective_session_id,
+                provider_fields=(
+                    {"claude_session_id": effective_session_id}
+                    if effective_session_id is not None
+                    else None
+                ),
+            ).with_runtime_transport_metadata(
+                {
+                    "working_directory": str(working_dir),
+                    "claude_session_id": effective_session_id,
+                    "remote_strategy": self.capabilities.remote_strategy,
+                }
+            ).with_last_continuation_path(
+                continuation_path,
+                metadata=turn_metadata,
+            )
+            return ProviderTurn(
+                decision=decision,
+                output_text=output_text,
+                response_id=None,
+                session_state=updated_session,
+                provider_metadata=turn_metadata,
+                progress_updates=tuple(progress_updates),
+            )
 
         raise ProviderResponseError(
             f"Claude CLI provider did not return a valid turnkey action: {last_error}"
@@ -209,59 +368,72 @@ class ClaudeCLIDecisionProvider:
             "Return exactly one JSON object with a non-empty summary_text field."
         )
         system = "Return only one JSON object with a non-empty summary_text field."
+        working_dir = (
+            Path(session_state.runtime_context.working_directory)
+            if session_state.runtime_context is not None
+            else None
+        )
         for _attempt in range(2):
-            with tempfile.TemporaryDirectory(prefix="pyocd-turnkey-claude-summary-") as tmpdir:
-                try:
-                    result = subprocess.run(
-                        _build_claude_command(
-                            model=self._model,
-                            instructions=system,
-                            prompt=current_prompt,
-                        ),
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        capture_output=True,
-                        cwd=tmpdir,
-                        check=False,
-                        timeout=self._timeout_seconds,
-                    )
-                except subprocess.TimeoutExpired as exc:
-                    raise ProviderResponseError(
-                        f"Claude CLI memory summarizer timed out after {self._timeout_seconds:.0f}s."
-                    ) from exc
-                output_text, command_error = _extract_claude_output_text(result)
-                if command_error is not None:
-                    last_error = command_error
-                    current_prompt = (
-                        f"{prompt}\n\n"
-                        "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
-                    )
-                    continue
-                try:
-                    summary_text = parse_memory_summary_json(output_text)
-                except Exception as exc:  # noqa: BLE001
-                    last_error = exc
-                    current_prompt = (
-                        f"{prompt}\n\n"
-                        "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
-                    )
-                    continue
-                return ProviderMemorySummaryResult(
-                    summary_text=summary_text,
-                    provider_metadata={
-                        "continuation_path": "summary-call",
-                        "provider": "claude-cli",
-                        "model": self._model,
-                        "cli_mode": "print",
-                    },
+            try:
+                result = subprocess.run(
+                    _build_claude_command(
+                        model=self._model,
+                        instructions=system,
+                        prompt=current_prompt,
+                        no_session_persistence=True,
+                    ),
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    capture_output=True,
+                    cwd=str(working_dir) if working_dir is not None else None,
+                    check=False,
+                    timeout=self._timeout_seconds,
                 )
+            except subprocess.TimeoutExpired as exc:
+                raise ProviderResponseError(
+                    f"Claude CLI memory summarizer timed out after {self._timeout_seconds:.0f}s."
+                ) from exc
+            output_text, _session_id, command_error = _extract_claude_output_text(result)
+            if command_error is not None:
+                last_error = command_error
+                current_prompt = (
+                    f"{prompt}\n\n"
+                    "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
+                )
+                continue
+            try:
+                summary_text = parse_memory_summary_json(output_text)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                current_prompt = (
+                    f"{prompt}\n\n"
+                    "Your previous reply was invalid. Return only one JSON object with a non-empty summary_text field."
+                )
+                continue
+            return ProviderMemorySummaryResult(
+                summary_text=summary_text,
+                provider_metadata={
+                    "continuation_path": "summary-call",
+                    "provider": "claude-cli",
+                    "model": self._model,
+                    "remote_strategy": self.capabilities.remote_strategy,
+                },
+            )
         raise ProviderResponseError(
             f"Claude CLI provider did not return a valid memory summary: {last_error}"
         )
 
 
-def _build_claude_command(*, model: str | None, instructions: str, prompt: str) -> list[str]:
+def _build_claude_command(
+    *,
+    model: str | None,
+    instructions: str,
+    prompt: str,
+    resume_session_id: str | None = None,
+    fork_session: bool = False,
+    no_session_persistence: bool = False,
+) -> list[str]:
     command = [
         "claude",
         "--print",
@@ -272,35 +444,66 @@ def _build_claude_command(*, model: str | None, instructions: str, prompt: str) 
     ]
     if model:
         command.extend(["--model", model])
+    if no_session_persistence:
+        command.append("--no-session-persistence")
+    if resume_session_id:
+        command.extend(["--resume", resume_session_id])
+        if fork_session:
+            command.append("--fork-session")
     command.append(prompt)
     return command
 
 
 def _extract_claude_output_text(
     result: subprocess.CompletedProcess[str],
-) -> tuple[str, ProviderResponseError | None]:
+) -> tuple[str, str | None, ProviderResponseError | None]:
     stdout = result.stdout.strip()
     stderr = result.stderr.strip()
     if not stdout:
         if result.returncode != 0:
-            return "", ProviderResponseError(stderr or "Claude CLI returned no output.")
-        return "", ProviderResponseError("Claude CLI returned an empty response.")
+            return "", None, ProviderResponseError(stderr or "Claude CLI returned no output.")
+        return "", None, ProviderResponseError("Claude CLI returned an empty response.")
 
     try:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
         if result.returncode != 0:
-            return "", ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
-        return stdout, None
+            return "", None, ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
+        return stdout, None, None
 
     if isinstance(payload, dict):
+        session_id = payload.get("session_id")
         if payload.get("is_error") is True:
             message = str(payload.get("result") or payload)
-            return "", ProviderResponseError(message)
+            return "", None, ProviderResponseError(message)
         result_text = payload.get("result")
         if isinstance(result_text, str) and result_text.strip():
-            return result_text.strip(), None
+            return result_text.strip(), session_id if isinstance(session_id, str) else None, None
 
     if result.returncode != 0:
-        return "", ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
-    return "", ProviderResponseError("Claude CLI returned an unrecognized JSON response.")
+        return "", None, ProviderResponseError(stdout or stderr or "Claude CLI request failed.")
+    return "", None, ProviderResponseError("Claude CLI returned an unrecognized JSON response.")
+
+
+def _require_runtime_working_directory(session_state: ProviderSessionState) -> str:
+    runtime_context = session_state.runtime_context
+    if runtime_context is None or not runtime_context.working_directory:
+        raise ProviderResponseError(
+            "Claude CLI remote continuation requires a stable provider runtime working directory."
+        )
+    path = Path(runtime_context.working_directory)
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
+def _ensure_runtime_context(session_state: ProviderSessionState) -> ProviderSessionState:
+    if session_state.runtime_context is not None and session_state.runtime_context.working_directory:
+        return session_state
+    working_dir = tempfile.mkdtemp(prefix="pyocd-turnkey-claude-runtime-")
+    return session_state.with_runtime_context(
+        ProviderRuntimeContext(
+            runtime_root=working_dir,
+            working_directory=working_dir,
+            transport_metadata={"auto_seeded_runtime_context": True},
+        )
+    )

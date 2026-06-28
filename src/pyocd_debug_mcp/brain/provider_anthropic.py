@@ -10,7 +10,9 @@ from pyocd_debug_mcp.brain.provider_parsing import (
     parse_turn_decision_json,
 )
 from pyocd_debug_mcp.brain.provider_types import (
+    build_provider_turn_metadata,
     ProviderCapabilities,
+    ProviderContinuationPath,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
@@ -46,7 +48,8 @@ class AnthropicDecisionProvider:
             supports_transcript_continuation=True,
             supports_response_id_continuation=False,
             supports_tool_schema_prompt=True,
-            continuation_mode="transcript-only",
+            continuation_mode="local-primary",
+            remote_strategy="none",
         )
 
     async def next_decision(
@@ -88,12 +91,14 @@ class AnthropicDecisionProvider:
         current_memory_injected = bool(prompt_bundle.provider_memory_text.strip())
         current_static_tool_schema_injected = True
         current_decision_schema_injected = True
+        continuation_path: ProviderContinuationPath = "local-memory-only"
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
                 stage="provider_request",
-                message="Dispatching Anthropic Messages turn from canonical local memory.",
+                message="Dispatching Anthropic Messages turn from canonical local memory because the Messages API is stateless.",
                 details={
-                    "continuation_path": "transcript-memory",
+                    "continuation_path": continuation_path,
+                    "remote_strategy": self.capabilities.remote_strategy,
                     "prompt_render_mode": current_prompt_render_mode,
                     "memory_injected": current_memory_injected,
                 },
@@ -128,25 +133,32 @@ class AnthropicDecisionProvider:
                 )
                 continue
             response_id = getattr(response, "id", None)
+            turn_metadata = build_provider_turn_metadata(
+                capabilities=self.capabilities,
+                continuation_path=continuation_path,
+                prompt_render_mode=current_prompt_render_mode,
+                memory_injected=current_memory_injected,
+                static_tool_schema_injected=current_static_tool_schema_injected,
+                decision_schema_injected=current_decision_schema_injected,
+                retry_count=retry_count,
+                remote_handle_kind="none",
+                remote_handle_id=None,
+                fresh_remote_turn=False,
+                resumed_remote=False,
+                extra={
+                    "continuation_explanation": "Anthropic Messages API is stateless on this backend.",
+                    "provider_response_id": response_id,
+                },
+            )
             return ProviderTurn(
                 decision=decision,
                 output_text=output_text,
                 response_id=response_id,
                 session_state=session_state.with_last_continuation_path(
-                    "transcript-memory",
-                    metadata={"continuation_kind": "transcript"},
+                    continuation_path,
+                    metadata=turn_metadata,
                 ),
-                provider_metadata={
-                    "continuation_kind": "transcript",
-                    "continuation_mode": self.capabilities.continuation_mode,
-                    "continuation_path": "transcript-memory",
-                    "memory_injected": current_memory_injected,
-                    "provider_response_id": response_id,
-                    "prompt_render_mode": current_prompt_render_mode,
-                    "static_tool_schema_injected": current_static_tool_schema_injected,
-                    "decision_schema_injected": current_decision_schema_injected,
-                    "retry_count": retry_count,
-                },
+                provider_metadata=turn_metadata,
                 progress_updates=tuple(progress_updates),
             )
 

@@ -45,6 +45,14 @@ Current benchmark split:
   - `codex-cli`
   - `claude-cli`
 
+Provider continuity note:
+
+- `openai-api`, `claude-cli`, and `codex-cli` now use the same brain-owned
+  local-memory/compaction model plus remote-primary continuation when the
+  transport exposes a resumable native handle
+- `anthropic-api` remains local-primary because the current Anthropic Messages
+  API surface is stateless and does not expose a resumable conversation handle
+
 Both paths currently reuse the same 12-case corpus:
 
 - `pilot_v1_plus_b003_b004`
@@ -66,8 +74,15 @@ Current live status:
 - the `R11` BYO-agent path is live-proven on the scoped pair
 - the `R12` turnkey path is live-proven through the full 12-case suite with
   `codex-cli`
-- the `R12` second-provider closure check is still open because the current
-  `claude-cli --model sonnet` path fails before any board action on this host
+- the current local provider-upgrade sanity is green for:
+  - `claude-cli --model sonnet` transport bootstrap/resume/fork
+  - one healthy `pyocd-debug-brain run` on `nucleo_l476rg`
+  - one known-good benchmark case on `nucleo_l476rg`
+  - one healthy `codex-cli` run plus one known-good benchmark case on
+    `nrf52833dk`
+- the `R12` second-provider closure check is still open because the full
+  official-pair Claude rerun and full 12-case second-provider suite have not
+  been rerun in this pass
 - the Pass 1 `pyocd-debug` shell is implemented in code and covered by the
   local non-hardware test/lint/typecheck ladder; provider-token streaming and
   true live session resume are still the next UX follow-up

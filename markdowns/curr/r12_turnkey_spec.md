@@ -77,7 +77,10 @@ The current implemented prototype increment adds or tightens:
 - one canonical brain-owned provider memory model for every backend
 - native Responses continuation for OpenAI as an accelerator, with local
   fallback and optional periodic safety sync
-- canonical local-memory continuation for Anthropic, Codex CLI, and Claude CLI
+- real remote continuation for Claude CLI and Codex CLI layered on top of the
+  same canonical local-memory model
+- canonical local-memory-only continuation for Anthropic because the current
+  Messages API surface is stateless
 - deterministic compaction by default, with optional `model-summary`
   compaction and deterministic fallback on summarizer failure
 - real MCP tool descriptions and JSON schemas in the turnkey prompt, plus a
@@ -147,6 +150,17 @@ Frozen provider rules:
 - all providers participate in the same hybrid provider-session model:
   - canonical compact local memory is always persisted by the brain
   - provider-native handles are optional accelerators, not the source of truth
+  - `openai-api` is `remote-primary` through Responses
+    `previous_response_id`, with local-memory fallback and periodic safety
+    sync
+  - `claude-cli` is `remote-primary` through real CLI `--resume <session_id>`
+    reuse with `--fork-session` retry support, local-memory fallback, and
+    safety sync
+  - `codex-cli` is `remote-primary` through real `codex exec resume
+    <thread_id>` reuse, with fresh local-memory fallback and safety sync
+  - `anthropic-api` remains `local-primary` because the current Anthropic
+    Messages API surface is stateless and does not expose a resumable
+    conversation handle equivalent to the other remote-primary backends
   - memory compaction defaults to deterministic mode
   - `model-summary` compaction is optional and falls back to deterministic
     compaction on summarizer failure

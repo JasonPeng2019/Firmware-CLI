@@ -47,6 +47,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderMemoryEntry,
     ProviderPromptBundle,
     ProviderProgressUpdate,
+    ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
@@ -113,7 +114,7 @@ def _default_artifacts(invocation: TurnkeyInvocation, board: BoardConfig) -> tup
 
 
 def _continuation_mode_for_provider(provider_kind: str) -> ProviderContinuationMode:
-    return "native-primary" if provider_kind == "openai-api" else "transcript-only"
+    return "local-primary" if provider_kind == "anthropic-api" else "remote-primary"
 
 
 def _build_request_payload(
@@ -768,6 +769,27 @@ def _prepare_run_root(run_id: str) -> Path:
     return run_root
 
 
+def _prepare_provider_runtime_context(
+    *,
+    run_id: str,
+    provider: str,
+    continuation_mode: ProviderContinuationMode,
+    resume_requires_stable_workdir: bool,
+) -> ProviderRuntimeContext:
+    runtime_root = RUNS_ROOT / "_provider-runtime" / run_id / provider
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    return ProviderRuntimeContext(
+        runtime_root=str(runtime_root),
+        working_directory=str(runtime_root),
+        transport_metadata={
+            "run_id": run_id,
+            "provider": provider,
+            "continuation_mode": continuation_mode,
+            "resume_requires_stable_workdir": resume_requires_stable_workdir,
+        },
+    )
+
+
 def _merge_tree(source_root: Path, destination_root: Path) -> None:
     for path in source_root.rglob("*"):
         relative = path.relative_to(source_root)
@@ -1353,6 +1375,14 @@ async def _tooling_failure_execution(
         else None
     )
     request_payload = _build_request_payload(invocation, board, selected_skills)
+    provisional_run_id = _provisional_run_id()
+    run_root = _prepare_run_root(provisional_run_id)
+    provider_runtime_context = _prepare_provider_runtime_context(
+        run_id=provisional_run_id,
+        provider=invocation.provider,
+        continuation_mode=_continuation_mode_for_provider(invocation.provider),
+        resume_requires_stable_workdir=invocation.provider == "claude-cli",
+    )
     state = BrainState(
         run_mode=invocation.mode,
         board_id=board.board_id,
@@ -1366,6 +1396,7 @@ async def _tooling_failure_execution(
             memory_mode=invocation.memory_mode,
             continuation_mode=_continuation_mode_for_provider(invocation.provider),
             native_sync_every=invocation.native_sync_every,
+            runtime_context=provider_runtime_context,
         ),
     )
     prompt_bundle = ProviderPromptBundle(
@@ -1376,7 +1407,6 @@ async def _tooling_failure_execution(
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
     )
     brain_events: list[dict[str, object]] = []
-    run_root = _prepare_run_root(_provisional_run_id())
     await _record_brain_event(
         sink=event_sink,
         records=brain_events,
@@ -1389,6 +1419,7 @@ async def _tooling_failure_execution(
             "case_id": invocation.case_id,
             "case_kind": invocation.case_kind,
             "selected_skill_ids": [skill.skill_id for skill in selected_skills],
+            "provider_runtime_context": provider_runtime_context.summary_record(),
         },
         iteration=0,
     )
@@ -1456,6 +1487,14 @@ async def run_turnkey(
         else None
     )
     request_payload = _build_request_payload(invocation, board, selected_skills)
+    provisional_run_id = _provisional_run_id()
+    run_root = _prepare_run_root(provisional_run_id)
+    provider_runtime_context = _prepare_provider_runtime_context(
+        run_id=provisional_run_id,
+        provider=invocation.provider,
+        continuation_mode=provider.capabilities.continuation_mode,
+        resume_requires_stable_workdir=provider.capabilities.resume_requires_stable_workdir,
+    )
     state = BrainState(
         run_mode=invocation.mode,
         board_id=board.board_id,
@@ -1469,6 +1508,7 @@ async def run_turnkey(
             memory_mode=invocation.memory_mode,
             continuation_mode=provider.capabilities.continuation_mode,
             native_sync_every=invocation.native_sync_every,
+            runtime_context=provider_runtime_context,
         ),
         provider_capabilities=provider.capabilities,
     )
@@ -1476,7 +1516,6 @@ async def run_turnkey(
     model_turns: list[dict[str, object]] = []
     brain_trace: list[dict[str, object]] = []
     brain_events: list[dict[str, object]] = []
-    run_root = _prepare_run_root(_provisional_run_id())
     resolved_client_factory = client_factory or (
         lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
     )
@@ -1494,6 +1533,7 @@ async def run_turnkey(
             "case_id": invocation.case_id,
             "case_kind": invocation.case_kind,
             "selected_skill_ids": [skill.skill_id for skill in selected_skills],
+            "provider_runtime_context": provider_runtime_context.summary_record(),
         },
         iteration=0,
     )

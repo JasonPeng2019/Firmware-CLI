@@ -72,9 +72,9 @@ a glance before relying on detail.
 | `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool descriptors plus parsed tool-call helpers. |
 | `brain/playbooks.py` | Loader for the internal deterministic turnkey helper playbooks stored under `playbooks/turnkey/`, resolved from repo roots in checkout mode or from bundled package data in wheel installs. |
 | `brain/cli_parsing.py` | Shared turnkey CLI parsing helpers for JSON planning-hook flags such as timeout overrides, timeout proposals, and iteration estimates. |
-| `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation using the canonical local-memory session model plus optional summarizer calls for `model-summary` compaction. |
-| `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`, using the same canonical local-memory session model as the other backends. |
-| `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`, using the same canonical local-memory session model as the other backends while keeping transport invocation ephemeral. |
+| `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation using the canonical local-memory session model plus optional summarizer calls for `model-summary` compaction; it stays `local-primary` because the Messages API is stateless. |
+| `brain/provider_claude_cli.py` | Claude Code CLI wrapper for per-turn structured next-action generation through `claude --print`, with real `--resume <session_id>` / `--fork-session` remote continuation layered on top of the shared local-memory session model. |
+| `brain/provider_codex_cli.py` | Codex CLI wrapper for per-turn structured next-action generation through `codex exec`, with real `codex exec resume <thread_id>` remote continuation layered on top of the shared local-memory session model plus fresh-thread fallback. |
 | `brain/provider_factory.py` | Factory that maps provider config to the correct decision backend. |
 | `brain/provider_openai.py` | OpenAI Responses API wrapper for per-turn structured next-action generation with native continuation as the primary path, local-memory fallback, periodic safety sync, and optional summarizer calls for `model-summary` compaction. |
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |

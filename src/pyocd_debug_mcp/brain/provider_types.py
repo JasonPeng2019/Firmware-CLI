@@ -7,19 +7,26 @@ from typing import Literal, Protocol, cast
 
 from pyocd_debug_mcp.brain.actions import TurnDecision
 
-ProviderContinuationMode = Literal["native-primary", "transcript-only"]
+ProviderContinuationMode = Literal["remote-primary", "local-primary"]
 ProviderContinuationPath = Literal[
-    "native",
+    "remote-resume",
+    "remote-fork",
     "local-memory-fallback",
-    "transcript-memory",
+    "local-memory-only",
     "summary-call",
+]
+ProviderRemoteStrategy = Literal[
+    "openai-response-chain",
+    "claude-session-resume",
+    "codex-thread-resume",
+    "none",
 ]
 ProviderMemoryMode = Literal["deterministic", "model-summary"]
 
 DEFAULT_RECENT_TURN_LIMIT = 4  # PROJECT-DEFINED (hybrid memory recent-turn window)
 DEFAULT_RECENT_RENDER_CHAR_LIMIT = 8_000  # PROJECT-DEFINED (recent-memory prompt cap)
 DEFAULT_SUMMARY_CHAR_LIMIT = 4_000  # PROJECT-DEFINED (compacted-summary prompt cap)
-DEFAULT_NATIVE_SYNC_EVERY = 4  # PROJECT-DEFINED (native safety-sync cadence)
+DEFAULT_NATIVE_SYNC_EVERY = 4  # PROJECT-DEFINED (remote safety-sync cadence)
 
 _ENTRY_FIELD_CHAR_LIMIT = 320
 _SUMMARY_COMPONENT_CHAR_LIMIT = 180
@@ -34,11 +41,17 @@ _KEEP = _KeepSentinel()
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
+    # The legacy boolean fields remain for compatibility with older tests and
+    # diagnostics. The canonical runtime contract is continuation_mode plus
+    # remote_strategy.
     supports_native_session: bool
     supports_transcript_continuation: bool
     supports_response_id_continuation: bool
     supports_tool_schema_prompt: bool
     continuation_mode: ProviderContinuationMode
+    remote_strategy: ProviderRemoteStrategy = "none"
+    resume_requires_stable_workdir: bool = False
+    supports_transactional_fork: bool = False
     supports_partial_streaming: bool = False
 
     def to_record(self) -> dict[str, object]:
@@ -48,7 +61,31 @@ class ProviderCapabilities:
             "supports_response_id_continuation": self.supports_response_id_continuation,
             "supports_tool_schema_prompt": self.supports_tool_schema_prompt,
             "continuation_mode": self.continuation_mode,
+            "remote_strategy": self.remote_strategy,
+            "resume_requires_stable_workdir": self.resume_requires_stable_workdir,
+            "supports_transactional_fork": self.supports_transactional_fork,
             "supports_partial_streaming": self.supports_partial_streaming,
+        }
+
+
+@dataclass(frozen=True)
+class ProviderRuntimeContext:
+    runtime_root: str
+    working_directory: str
+    transport_metadata: dict[str, object] = field(default_factory=dict)
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "runtime_root": self.runtime_root,
+            "working_directory": self.working_directory,
+            "transport_metadata": dict(self.transport_metadata),
+        }
+
+    def summary_record(self) -> dict[str, object]:
+        return {
+            "runtime_root": self.runtime_root,
+            "working_directory": self.working_directory,
+            "transport_metadata_keys": sorted(self.transport_metadata),
         }
 
 
@@ -163,6 +200,7 @@ class ProviderSessionState:
     model: str | None
     memory_mode: ProviderMemoryMode
     continuation_mode: ProviderContinuationMode
+    runtime_context: ProviderRuntimeContext | None = None
     native_handle: ProviderNativeHandle | None = None
     recent_memory_entries: tuple[ProviderMemoryEntry, ...] = ()
     memory_summary: ProviderMemorySummary | None = None
@@ -180,6 +218,11 @@ class ProviderSessionState:
             "model": self.model,
             "memory_mode": self.memory_mode,
             "continuation_mode": self.continuation_mode,
+            "runtime_context": (
+                self.runtime_context.to_record()
+                if self.runtime_context is not None
+                else None
+            ),
             "native_handle": self.native_handle.to_record() if self.native_handle is not None else None,
             "recent_turn_limit": self.recent_turn_limit,
             "recent_render_char_limit": self.recent_render_char_limit,
@@ -198,6 +241,11 @@ class ProviderSessionState:
             "model": self.model,
             "memory_mode": self.memory_mode,
             "continuation_mode": self.continuation_mode,
+            "runtime_context": (
+                self.runtime_context.summary_record()
+                if self.runtime_context is not None
+                else None
+            ),
             "native_handle": (
                 self.native_handle.summary_record()
                 if self.native_handle is not None
@@ -220,11 +268,27 @@ class ProviderSessionState:
             "metadata": dict(self.metadata),
         }
 
+    def with_runtime_context(self, runtime_context: ProviderRuntimeContext) -> "ProviderSessionState":
+        return replace(self, runtime_context=runtime_context)
+
     def with_updated_metadata(self, metadata: dict[str, object] | None = None) -> "ProviderSessionState":
         merged = dict(self.metadata)
         if metadata is not None:
             merged.update(metadata)
         return replace(self, metadata=merged)
+
+    def with_runtime_transport_metadata(
+        self,
+        transport_metadata: dict[str, object],
+    ) -> "ProviderSessionState":
+        if self.runtime_context is None:
+            return self
+        merged = dict(self.runtime_context.transport_metadata)
+        merged.update(transport_metadata)
+        return replace(
+            self,
+            runtime_context=replace(self.runtime_context, transport_metadata=merged),
+        )
 
     def with_native_handle_update(
         self,
@@ -331,10 +395,10 @@ class ProviderPromptBundle:
         sections.append(self.turn_decision_schema_text.strip())
         return self._join_user_sections(*sections)
 
-    def render_native_delta_text(self) -> str:
+    def render_remote_delta_text(self) -> str:
         return self._join_user_sections(self.turn_context_text)
 
-    def render_native_sync_text(self, *, include_memory: bool = True) -> str:
+    def render_remote_sync_text(self, *, include_memory: bool = True) -> str:
         return self.render_bootstrap_text(include_memory=include_memory)
 
     def render_retry_text(self, correction_note: str) -> str:
@@ -343,6 +407,13 @@ class ProviderPromptBundle:
             self.turn_decision_schema_text,
             correction_note,
         )
+
+    # Compatibility aliases kept while the rest of the runtime and tests are updated.
+    def render_native_delta_text(self) -> str:
+        return self.render_remote_delta_text()
+
+    def render_native_sync_text(self, *, include_memory: bool = True) -> str:
+        return self.render_remote_sync_text(include_memory=include_memory)
 
     def user_prompt_text(self, *, include_memory: bool = True) -> str:
         return self.render_bootstrap_text(include_memory=include_memory)
@@ -412,8 +483,9 @@ def make_provider_session_state(
     provider: str,
     model: str | None,
     memory_mode: ProviderMemoryMode = "deterministic",
-    continuation_mode: ProviderContinuationMode = "transcript-only",
+    continuation_mode: ProviderContinuationMode = "local-primary",
     native_sync_every: int = DEFAULT_NATIVE_SYNC_EVERY,
+    runtime_context: ProviderRuntimeContext | None = None,
     metadata: dict[str, object] | None = None,
 ) -> ProviderSessionState:
     return ProviderSessionState(
@@ -422,6 +494,7 @@ def make_provider_session_state(
         memory_mode=memory_mode,
         continuation_mode=continuation_mode,
         native_sync_every=native_sync_every,
+        runtime_context=runtime_context,
         metadata=dict(metadata or {}),
     )
 
@@ -433,6 +506,47 @@ def provider_turn_record(provider_turn: ProviderTurn) -> dict[str, object]:
         "session_state": provider_turn.session_state.summary_record(),
         "progress_updates": [update.to_record() for update in provider_turn.progress_updates],
     }
+
+
+def build_provider_turn_metadata(
+    *,
+    capabilities: ProviderCapabilities,
+    continuation_path: ProviderContinuationPath,
+    prompt_render_mode: str,
+    memory_injected: bool,
+    static_tool_schema_injected: bool,
+    decision_schema_injected: bool,
+    retry_count: int,
+    remote_handle_kind: str,
+    remote_handle_id: str | None,
+    fresh_remote_turn: bool,
+    resumed_remote: bool,
+    native_sync_used: bool = False,
+    working_directory: str | None = None,
+    extra: dict[str, object] | None = None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "continuation_mode": capabilities.continuation_mode,
+        "remote_strategy": capabilities.remote_strategy,
+        "continuation_path": continuation_path,
+        "prompt_render_mode": prompt_render_mode,
+        "memory_injected": memory_injected,
+        "static_tool_schema_injected": static_tool_schema_injected,
+        "decision_schema_injected": decision_schema_injected,
+        "retry_count": retry_count,
+        "remote_handle_kind": remote_handle_kind,
+        "remote_handle_id": remote_handle_id,
+        "remote_handle_present": remote_handle_id is not None,
+        "fresh_remote_turn": fresh_remote_turn,
+        "resumed_remote": resumed_remote,
+        "native_sync_used": native_sync_used,
+        "local_memory_fallback_used": continuation_path == "local-memory-fallback",
+    }
+    if working_directory is not None:
+        metadata["working_directory"] = working_directory
+    if extra is not None:
+        metadata.update(extra)
+    return metadata
 
 
 def provider_has_local_memory(session_state: ProviderSessionState) -> bool:

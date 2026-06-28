@@ -82,7 +82,7 @@ def test_provider_turn_carries_optional_session_and_progress_fields() -> None:
     session_state = make_provider_session_state(
         provider="codex-cli",
         model=None,
-        continuation_mode="transcript-only",
+        continuation_mode="local-primary",
     )
     turn = ProviderTurn(
         decision=TurnDecision(
