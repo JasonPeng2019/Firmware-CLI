@@ -223,12 +223,13 @@ Firmware-CLI/
     |-- firmware_agent_mcp_architecture.md
     |-- current-progress.md
     |-- repo_file_index.md
-    |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
-    |   |-- p0-0-doc-sync-superpowers-audit_spec.md
-    |   |-- p0-0-static-audit-fix_spec.md
-    |   |-- p0_0_layered_validation_plan.md
-    |   |-- p0_0_validation_report.md
-    |   `-- r12_turnkey_spec.md
+    |-- curr/                 # active current-step docs only; completed loop docs graduate to tmp/
+    |   |-- README.md
+    |   |-- things-to-change.md
+    |   |-- r12_turnkey_spec.md
+    |   |-- r12-branch-b-status.md
+    |   |-- r12-branch-b-official-portability-closure_spec.md
+    |   `-- uxlayer_gap_checklist.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
 
@@ -536,11 +537,10 @@ Current limitation:
 - Official STM32 runbook: [firmware/nucleo_l476rg/README.md](./firmware/nucleo_l476rg/README.md)
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
+- Current working-doc index: [markdowns/curr/README.md](./markdowns/curr/README.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
-- `P0.0` layered validation plan: [markdowns/curr/p0_0_layered_validation_plan.md](./markdowns/curr/p0_0_layered_validation_plan.md)
-- `P0.0` validation report: [markdowns/curr/p0_0_validation_report.md](./markdowns/curr/p0_0_validation_report.md)
-- `P0.0` doc-sync and superpowers audit spec: [markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md](./markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md)
-- `P0.0` static audit fix spec: [markdowns/curr/p0-0-static-audit-fix_spec.md](./markdowns/curr/p0-0-static-audit-fix_spec.md)
+- Branch B status handoff: [markdowns/curr/r12-branch-b-status.md](./markdowns/curr/r12-branch-b-status.md)
+- Active Branch B remaining-proof spec: [markdowns/curr/r12-branch-b-official-portability-closure_spec.md](./markdowns/curr/r12-branch-b-official-portability-closure_spec.md)
 - Archived Wave 0 reconcile spec: [markdowns/tmp/p0-wave0-main-reconcile_spec.md](./markdowns/tmp/p0-wave0-main-reconcile_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)

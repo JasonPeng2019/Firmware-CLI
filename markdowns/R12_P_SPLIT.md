@@ -74,10 +74,10 @@ For this prototype, Wave 0 uses a narrower proof boundary:
 Wave 0 owns:
 
 0. `P0.0` layered validation
-   - use `markdowns/curr/p0_0_layered_validation_plan.md` as the execution
+   - use `markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md` as the historical execution
      checklist for Wave 0 cleanup and proof
    - write the resulting pass/fail matrix to
-     `markdowns/curr/p0_0_validation_report.md`
+     `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`
 1. Current dirty-code cleanup
    - reconcile existing uncommitted/code changes against the build plan and docs
    - fix known broken tests or runtime regressions before adding new prototype
@@ -105,7 +105,7 @@ Wave 0 exit criteria:
 
 - the worktree baseline for prototype work is intentionally clean or has only
   documented, non-blocking changes
-- `markdowns/curr/p0_0_validation_report.md` exists and records the executed
+- `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md` exists and records the executed
   layers, elapsed times, artifacts, and remaining risks
 - non-hardware checks have been run and recorded
 - real STM32 and Nordic board checks have been run by a human/operator and
@@ -517,17 +517,16 @@ into the other branch, or into final integration.
 - Branch B attached-board deployment proof exists on this Windows host for
   `nucleo_l476rg + nrf52840dk`, including real Codex, the real MCP subprocess,
   public `--client-action` registration, workspace edit/build runs, and
-  repeated user-prompt / multi-loop runs. Evidence lives in:
-  - `markdowns/curr/r12-branch-b-action-boundary_review.md`
-  - `markdowns/curr/r12-branch-b-full-deployment-completion_review.md`
-  - `markdowns/curr/r12-branch-b-multi-loop-real-deployment_test_report.md`
+  repeated user-prompt / multi-loop runs. The current summary lives in
+  `markdowns/curr/r12-branch-b-status.md`; detailed loop artifacts are archived
+  under `markdowns/tmp/curr-archive-20260628/`.
 - Branch C now explicitly requires session/client-scoped timeout state and keeps
   brain-only timeout sync out of the model-facing tool surface.
 
 ## Pending Verification
 
 - Wave 0 now has an executed `P0.0` validation report in
-  `markdowns/curr/p0_0_validation_report.md`, including real proof on the
+  `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`, including real proof on the
   attached `nrf52840dk + nucleo_l476rg` pair and the merged `P-Wave-0` branch.
 - If the team wants the prototype gate tied back to the exact official scoped
   pair, a fresh `nrf52833dk + nucleo_l476rg` re-proof remains a separate

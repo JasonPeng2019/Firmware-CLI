@@ -102,9 +102,9 @@ Other docs or notes:
   fresh-machine Windows/macOS portability proof remains deferred/unverified.
 - `R12_P_SPLIT.md` now records Branch B as implemented and reviewed while
   keeping exact `nrf52833dk` Branch B deployment proof pending.
-- `r12-branch-b-full-deployment-completion_review.md` records the attached-board
-  proof as clean and identifies the same `nrf52833dk` and fresh-machine
-  portability pending items.
+- `markdowns/curr/r12-branch-b-status.md` records the attached-board proof as
+  clean and identifies the same `nrf52833dk` and fresh-machine portability
+  pending items.
 - `things-to-change.md` includes broader prototype items that Branch B does not
   own, including persistent sessions, progress/inspector, stream checkpoints,
   and scoped green approval.

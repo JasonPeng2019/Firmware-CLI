@@ -1429,8 +1429,9 @@ Simple branch schedule:
   - fix current dirty repo issues
   - self-diagnose with extensive tests
   - validate against the real scoped STM32 and Nordic boards
-  - execute `markdowns/curr/p0_0_layered_validation_plan.md` and record the
-    results in `markdowns/curr/p0_0_validation_report.md`
+  - execute the P0.0 layered validation plan and record the results; the
+    completed 2026-06-28 artifacts are archived under
+    `markdowns/tmp/curr-archive-20260628/`
 - serial next: `P0` foundation shared shapes and hook points
 - parallel Wave 1:
   - Branch A: provider session + tool schema prompt
@@ -1704,13 +1705,13 @@ That is the entire project, translated from stage language into execution langua
 
 - This document now references the Wave 0 / `P0.0` layered validation gate before
   prototype feature branches start.
-- The current `R12` prototype parallel frontier points to
-  `markdowns/curr/p0_0_layered_validation_plan.md` for clean-slate validation.
+- The completed `P0.0` clean-slate validation artifacts have been moved out of
+  `markdowns/curr/` and archived under `markdowns/tmp/curr-archive-20260628/`.
 
 ## Pending Verification
 
 - The current merged `P-Wave-0` branch now has an executed Wave 0 validation
-  report in `markdowns/curr/p0_0_validation_report.md`, including real proof on
+  report in `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`, including real proof on
   the attached `nrf52840dk + nucleo_l476rg` pair.
 - A fresh official-scope `nrf52833dk + nucleo_l476rg` re-proof is still a
   separate evidence task if the team wants the prototype gate tied back to the

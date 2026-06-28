@@ -105,7 +105,7 @@ second-provider proof and fresh-machine portability proof.
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
 
-- `markdowns/curr/p0_0_validation_report.md`
+- `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`
 
 That report covers the reconciled `P-Wave-0` branch after the `main` merge,
 including real stdio MCP client/server smoke, turnkey smoke, benchmark sanity,
