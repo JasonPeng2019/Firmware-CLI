@@ -21,7 +21,7 @@ TurnkeyProviderKind = Literal["openai-api", "anthropic-api", "codex-cli", "claud
 TurnkeyMemoryMode = Literal["deterministic", "model-summary"]
 
 DEFAULT_TURNKEY_MEMORY_MODE: TurnkeyMemoryMode = "deterministic"
-DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 4
+DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 10
 
 
 class BrainConfigError(RuntimeError):

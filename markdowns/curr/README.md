@@ -17,9 +17,6 @@ Completed process ledgers, superseded specs, and review artifacts should move to
 - `r12-branch-b-status.md` - compact Branch B implementation and proof handoff.
 - `r12-branch-b-official-portability-closure_spec.md` - remaining stricter
   Branch B closure proof for official board/fresh-machine claims.
-- `canonical-memory-layer_spec.md` - future improvement spec for stronger
-  recovery reliability and the Claude API facet; not implemented in the current
-  pass.
 - `r12-server-tool-action-hardening_spec.md` - completed no-credit hardening
   spec for centralized server-tool action parsing and redundant `tool_name`
   stripping.

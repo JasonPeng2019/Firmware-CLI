@@ -808,16 +808,14 @@ Current prototype capability target on top of that first pass:
    or one narrow automated flipped-value gate for a benchmark type. The model supplies the script,
    parameters, correct values, and flipped values; the brain runs both and accepts only pass-correct /
    fail-flipped.
-10. **Use canonical memory with an index/selective-recall layer.** The brain
-    owns durable memory as structured facts, not provider self-report alone:
-    working snapshot, exact recent boundary decisions, compact older history,
-    artifact index, and code/workspace map. On top of that store, render a short
-    memory index/table of contents every relevant turn: stable memory ids or
-    ranges, brain-derived action/result/key values, tags, artifact refs, pinned
-    facts, and optional model-generated one-line descriptions. Inject the index
-    and pinned facts by default, then recall selected full entries only when the
-    task/profile/model request needs detail. This is separate from provider KV
-    cache and artifact/result cache.
+10. **Use the existing compact provider memory plus periodic native safety
+    sync.** The brain owns durable memory as structured facts, not provider
+    self-report alone: working snapshot, exact recent boundary decisions,
+    compact older history, artifact refs, and code/workspace context. For
+    remote-primary providers, inject that compact memory into the native session
+    on a configurable cadence. The prototype default is every 10 provider turns,
+    configurable with `--native-sync-every` or
+    `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`; `0` disables periodic sync injection.
 11. **Keep static context cheap and cache-friendly.** Skill bodies and other
     large static prompt blocks should not be reprinted every turn. Render a
     selected-skill index plus safety lines in the cached prefix, let the model
@@ -829,7 +827,7 @@ Current prototype capability target on top of that first pass:
 
 **Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +
 `nucleo_l476rg`) and reuses the 12-case benchmark corpus, but the prototype is now judged by whether it can
-show a substantially more agentic loop: persistent work context, indexed/selective memory recall, cheap
+show a substantially more agentic loop: persistent work context, periodic compact-memory safety sync, cheap
 static context with on-demand detail, free host-side code work, governed board decisions, visible progress,
 bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
 Shipped-product polish and broad UI completeness are explicitly later work.

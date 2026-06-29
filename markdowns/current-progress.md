@@ -114,9 +114,10 @@ current prototype gate:
   evidence and no cross-prompt state leakage;
 - Anthropic API memory-ledger hardening before claiming parity with Claude Code
   CLI or OpenAI Responses.
-- canonical memory index/selective recall: pinned facts and a short memory
-  table of contents should be rendered by default, while full detailed memory
-  entries are recalled only when useful for the current turn or recovery.
+- memory continuity now relies on provider-native resume where available plus
+  the compact brain-owned memory ledger; remote-primary providers receive a
+  periodic safety sync every 10 provider turns by default, configurable with
+  `--native-sync-every` / `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`.
 
 Latest Branch A/B live-provider refresh proof on 2026-06-29:
 
@@ -187,9 +188,9 @@ board-decision boundary, real tool schemas, batched actions with `wait` and
 UART write, live progress/inspector output, timeout hardening with
 model-refined budgets, session-scoped client actions, scoped green approval via
 model-made flipped tests, stream checkpoints for UART/build/client-action
-flows, static-context/cache efficiency, and Wave 2 Branch H canonical memory
-index/selective recall. Those items are planned prototype work unless a later
-status entry says they have been implemented and verified.
+flows, static-context/cache efficiency, and the existing compact memory ledger
+with configurable periodic native memory sync. Those items are planned prototype
+work unless a later status entry says they have been implemented and verified.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower and currently deferred for the prototype:
@@ -437,9 +438,8 @@ Expected policy for deployment hardening:
   artifacts;
 - `anthropic-api` is not treated as a real-session provider because its
   continuity is currently brain-owned memory rather than provider-owned resume.
-- Future memory hardening should make that brain-owned path stronger with
-  canonical memory, pinned facts, a compact memory index/table of contents, and
-  selective recall of full entries.
+- Future memory hardening for `anthropic-api` may revisit stronger recovery
+  memory after the current prototype.
 
 Claude provider policy:
 

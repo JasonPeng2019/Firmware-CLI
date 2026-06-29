@@ -187,7 +187,7 @@ a glance before relying on detail.
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
-| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0/P0.0 clean-slate validation, serial P0, parallel Branches A/B/C, parallel Branches D/E/F/G/H, merge-back rules, and serial final integration. |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0/P0.0 clean-slate validation, serial P0, parallel Branches A/B/C, parallel Branches D/E/F/G, merge-back rules, and serial final integration. |
 | `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
 | `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |

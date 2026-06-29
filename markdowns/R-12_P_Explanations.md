@@ -192,7 +192,7 @@ laid out in the same sequence.
 4. **Visibility / Wave 2 branch work** - add live provider/brain progress,
    developer inspector logs, stream checkpoints for UART/build/client-action
    flows, skill index/on-demand skill bodies, cache-assisted setup/result reuse,
-   and canonical memory index/selective recall as additive parallel branches.
+   and the existing configurable provider-memory safety sync.
 5. **Prototype proof gate** - add scoped green approval with manual or narrow
    flipped-value tests.
 6. **Later MVP polish** - projects, broad skill-guided
@@ -442,31 +442,21 @@ summarize away a precise old observation; a brain-owned ledger re-pinned every
 turn survives compaction and preserves the "what have I tried and what happened"
 spine regardless of how the harness summarizes.
 
-### Sub-change: memory index + selective recall
+### Sub-change: periodic native memory safety sync
 
-Do not make the model reread full memory every turn. Keep the full canonical
-memory durable, but render a short **memory index / table of contents** into the
-prompt:
+The current implementation already persists compact provider-session memory
+after every provider/action turn and can inject that compact memory back into
+native/resumed providers on a configurable cadence.
 
-- stable memory id or turn range;
-- one-line model-generated title/description;
-- brain-derived action kind, result status, and key observed values;
-- tags such as `flash`, `uart`, `build`, `code-edit`, `refusal`, `blocked`,
-  `hypothesis-supported`, or `hypothesis-refuted`;
-- changed files and artifact refs when relevant;
-- pinned/critical flags for facts that must stay visible.
+For remote-primary providers (`codex-cli`, `claude-cli`, and `openai-api`), keep
+native continuation as the primary path and use periodic compact-memory
+injection as drift protection. The prototype default is **every 10 provider
+turns**, configurable through `--native-sync-every` or
+`PYOCD_TURNKEY_NATIVE_SYNC_EVERY`; `0` disables periodic sync injection.
 
-For the last N boundary decisions, keep one row per move. For older history,
-compact to range rows with model-generated descriptions anchored to structured
-facts. Then inject the working snapshot, pinned critical facts, the short memory
-index, and selected full memory entries only when the current task, render
-profile, or model request needs them.
-
-This is a stronger attention mechanism, not a second source of truth. The
-model-generated title helps orientation, but the brain anchors each row to exact
-tool results, artifacts, changed files, and verification facts. The goal is to
-reduce compute while giving the model an efficient way to know what happened and
-what detailed memory can be recalled.
+For `anthropic-api`, keep the local compact memory as the continuous
+local-primary context because the current Messages API path has no native
+resumable session handle.
 
 ### Where it belongs
 
@@ -485,20 +475,19 @@ what detailed memory can be recalled.
    `actions_taken` / `mcp_tools_used` to store the distilled result per action
    (today they store only names), so the ledger renderer has ground-truth result
    data to draw from.
-4. **`src/pyocd_debug_mcp/brain/provider_types.py` / canonical memory module** -
-   add memory-index rows, pinned-fact rows, and selective-recall renderers over
-   the canonical memory store.
+4. **`src/pyocd_debug_mcp/brain/provider_types.py` /
+   `src/pyocd_debug_mcp/brain/config.py`** - keep native memory-sync cadence as
+   a single configurable setting shared by CLI, API, shell, env, and run
+   artifacts.
 5. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — extend the per-tool salient
    result extraction beyond the current fields.
 
 ### Wave placement
 
-Implement the memory index/selective-recall layer in **Wave 2 Branch H**, in
-parallel with Branch D (progress/inspector), Branch E (stream checkpoints),
-Branch F (scoped green approval), and Branch G (static context/cache reuse).
-Branch H should consume Branch A provider-memory/session state and Branch C
-event shapes, but it should not own provider session semantics, progress UI,
-cache keys, skill body loading, or final integration prompt rewrites.
+Wave 2 is Branch D (progress/inspector), Branch E (stream checkpoints), Branch F
+(scoped green approval), and Branch G (static context/cache reuse). Provider
+memory semantics stay with the already-implemented Branch A provider/session
+layer plus the configurable native safety-sync cadence.
 
 ### What it is supposed to do
 

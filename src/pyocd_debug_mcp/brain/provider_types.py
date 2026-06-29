@@ -28,7 +28,7 @@ ProviderMemoryResultStatus = Literal["success", "failure", "refusal", "block", "
 DEFAULT_RECENT_TURN_LIMIT = 4  # PROJECT-DEFINED (hybrid memory recent-turn window)
 DEFAULT_RECENT_RENDER_CHAR_LIMIT = 8_000  # PROJECT-DEFINED (recent-memory prompt cap)
 DEFAULT_SUMMARY_CHAR_LIMIT = 4_000  # PROJECT-DEFINED (compacted-summary prompt cap)
-DEFAULT_NATIVE_SYNC_EVERY = 4  # PROJECT-DEFINED (remote safety-sync cadence)
+DEFAULT_NATIVE_SYNC_EVERY = 10  # PROJECT-DEFINED (remote safety-sync cadence)
 RESUME_RECOVERY_ACTION_METADATA_KEY = "resume_recovery_action"  # PROJECT-DEFINED
 RESUME_RECOVERY_FAILURE_METADATA_KEY = "resume_recovery_failure"  # PROJECT-DEFINED
 

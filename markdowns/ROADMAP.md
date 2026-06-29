@@ -1168,8 +1168,9 @@ This item builds the premium product tier on top of the proven substrate.
   gated server tools only through the brain
 - add scoped green approval through manual/human-confirmed model-made tests or
   one narrow automated flipped-value gate
-- add canonical memory with pinned facts, a compact memory index/table of
-  contents, selective recall of full entries, and recovery profiles
+- keep provider-native continuity plus brain-owned compact memory; default
+  remote-primary safety sync is every 10 provider turns and remains configurable
+  by CLI flag or environment variable
 - add static-context efficiency: selected-skill index, always-on safety lines,
   on-demand skill bodies, and cache-assisted reuse of deterministic setup/static
   artifacts
@@ -1187,8 +1188,8 @@ This item builds the premium product tier on top of the proven substrate.
 - bounded timeout policy with dynamic refinement
 - client-action store and governed execution path
 - scoped green-test script flow
-- canonical memory schema, memory index/selective-recall renderer, and recovery
-  memory profile
+- compact memory persistence, compaction, and configurable native safety-sync
+  policy
 - skill-index/on-demand body renderer and cache-assisted setup/static artifact
   reuse records
 - product #2 benchmark results
@@ -1204,14 +1205,15 @@ This item builds the premium product tier on top of the proven substrate.
 - How does the operator see progress before a long run finishes?
 - What timeout or iteration budget did the model request, and what did the
   brain clamp it to?
-- What durable memory does the model receive at each turn, what is only indexed,
-  and what full entries are recalled?
-- Which facts are pinned so recovery and long runs do not forget board identity,
-  verification state, irreversible operations, or blocked/refused paths?
+- What durable memory does the model receive continuously, and when is compact
+  memory injected into a provider-native session?
+- Which recovery facts must survive compaction so long runs do not forget board
+  identity, verification state, irreversible operations, or blocked/refused
+  paths?
 
 ### Definition of done
 
-`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory, use a compact memory index/selective-recall path instead of rereading all history, do substantial host-side work, request governed board actions only when needed, avoid unbounded waits, stream progress, and validate fixes with scoped evidence.
+`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work, request governed board actions only when needed, avoid unbounded waits, stream progress, and validate fixes with scoped evidence.
 
 ### What it does not include
 
@@ -1467,8 +1469,7 @@ Simple branch schedule:
   - Branch E: stream checkpoints
   - Branch F: scoped green approval
   - Branch G: static context efficiency and cache-assisted reuse
-  - Branch H: canonical memory index + selective recall
-- serial merge-back: D, E, F, G, and H merge into Wave 0 one at a time
+- serial merge-back: D, E, F, and G merge into Wave 0 one at a time
 - serial last: final integration + acceptance cleanup
 
 Parallelization rule:
@@ -1485,9 +1486,9 @@ Parallelization rule:
 - branches inside the same wave are parallel
 - cross-branch dependencies are called out in `markdowns/R12_P_SPLIT.md`
 - `P0` branches from Wave 0 and merges back before Wave 1 starts
-- Branches A/B/C branch from Wave 0 and merge back into Wave 0 before D/E/F/G/H
+- Branches A/B/C branch from Wave 0 and merge back into Wave 0 before D/E/F/G
   start
-- Branches D/E/F/G/H branch from the updated Wave 0 and merge back into Wave 0
+- Branches D/E/F/G branch from the updated Wave 0 and merge back into Wave 0
   before final integration starts
 - final integration branches from Wave 0 after Wave 2 and contains only final
   wiring / acceptance cleanup

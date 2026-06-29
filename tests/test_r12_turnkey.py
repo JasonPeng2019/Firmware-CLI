@@ -46,6 +46,7 @@ from pyocd_debug_mcp.brain.provider_claude_cli import (
 )
 from pyocd_debug_mcp.brain.provider_codex_cli import _build_codex_command
 from pyocd_debug_mcp.brain.provider_types import (
+    DEFAULT_NATIVE_SYNC_EVERY,
     apply_deterministic_compaction,
     append_memory_entry,
     plan_memory_compaction,
@@ -884,7 +885,8 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     monkeypatch.delenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", raising=False)
 
     assert resolve_memory_mode() == "deterministic"
-    assert resolve_native_sync_every() == 4
+    assert resolve_native_sync_every() == 10
+    assert DEFAULT_NATIVE_SYNC_EVERY == 10
 
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_MODE", "model-summary")
     monkeypatch.setenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", "7")

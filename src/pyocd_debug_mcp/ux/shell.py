@@ -23,6 +23,7 @@ if sys.platform == "win32":  # pragma: no cover - Windows import path only
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
 from pyocd_debug_mcp.brain.config import (
     BrainConfigError,
+    DEFAULT_TURNKEY_NATIVE_SYNC_EVERY,
     TurnkeyMemoryMode,
     TurnkeyProviderKind,
     cast_provider,
@@ -114,7 +115,7 @@ class ShellContext:
     last_session_id: str | None = None
     raw_output: RawOutputPolicy = "off"
     memory_mode: TurnkeyMemoryMode = "deterministic"
-    native_sync_every: int = 4
+    native_sync_every: int = DEFAULT_TURNKEY_NATIVE_SYNC_EVERY
     workspace_root: str | None = None
     build_command: str | None = None
     flash_artifact: str | None = None

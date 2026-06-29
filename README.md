@@ -73,9 +73,10 @@ The current live status is:
     even when no board session is ever created
 - turnkey provider continuity is now brain-owned and memory-first:
   - canonical compact local memory is persisted for every provider
-  - future memory hardening will add a compact memory index/table of contents,
-    pinned facts, and selective recall of detailed entries so long runs can keep
-    context without injecting all memory every turn
+  - Codex CLI, Claude CLI, and OpenAI Responses use native continuation as the
+    primary path and periodically inject the compact local memory as a safety
+    sync; the default cadence is every 10 provider turns, and users can change
+    it with `--native-sync-every` / `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
   - OpenAI uses native continuation when healthy; if a stored
     `previous_response_id` cannot resume, headless runs fail closed unless an
     explicit recovery path starts a newly labeled session from saved memory
@@ -312,6 +313,7 @@ Firmware-CLI/
   - `PYOCD_TURNKEY_MEMORY_MODE` for turnkey provider-memory compaction:
     `deterministic` or `model-summary`
   - `PYOCD_TURNKEY_NATIVE_SYNC_EVERY` for native-session safety-sync cadence
+    (default `10`; `0` disables periodic sync injection)
   - `OPENAI_API_KEY` for the native OpenAI API provider
   - `ANTHROPIC_API_KEY` for the native Anthropic API provider
 - With a board id set, the MCP server resolves that board's facts (target,
@@ -501,9 +503,9 @@ Turnkey provider rules:
   than Claude Code-style session resume.
 - provider continuity is unified across all backends:
   - the brain always persists compact local turn-fact memory
-  - future canonical-memory work should render pinned facts plus a short memory
-    index by default, then recall full entries only when the current turn needs
-    them
+  - remote-primary providers periodically receive that compact memory as a
+    safety sync; the default is every 10 provider turns, configurable with
+    `--native-sync-every` / `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
   - OpenAI is `remote-primary` via Responses `previous_response_id`; failed
     resume is a typed provider-resume failure unless the operator explicitly
     starts a new labeled session from saved memory
@@ -524,7 +526,7 @@ Turnkey provider rules:
     offer retry resume, start new session from saved local memory, or abort
 - turnkey memory controls are optional:
   - `--memory-mode deterministic|model-summary`
-  - `--native-sync-every N`
+  - `--native-sync-every N` (`10` by default; `0` disables periodic sync)
   - `.env`:
     `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
 

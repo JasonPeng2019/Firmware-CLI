@@ -93,10 +93,6 @@ The current implemented prototype increment adds or tightens:
 
 Later prototype waves remain open for:
 
-- Wave 2 Branch H: memory index / selective recall over the canonical memory
-  store
-- Wave 2 Branch H: pinned critical facts in every recovery/local-primary render
-  profile
 - Wave 2 Branch G: selected-skill index plus on-demand skill body loading
 - Wave 2 Branch G: cache-assisted reuse for deterministic setup/static
   artifacts
@@ -123,7 +119,7 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 - deterministic outer-loop control
 - turnkey benchmark orchestration helpers
 - provider-session state, compact local memory, and memory compaction
-- canonical memory index/selective-recall rendering
+- periodic native-session memory safety sync
 - model-facing prompt-bundle assembly
 - live tool-schema prompt rendering from MCP metadata
 - live event emission for the operator CLI and persisted run artifacts
@@ -162,9 +158,10 @@ Frozen provider rules:
 - every provider must return the same structured next-action shape
 - all providers participate in the same hybrid provider-session model:
   - canonical compact local memory is always persisted by the brain
-  - future hardening should add a memory index/table of contents with pinned
-    facts and selective recall of full entries, rather than injecting all memory
-    every turn
+  - remote-primary providers periodically inject the compact memory into the
+    native session as a safety sync; the default cadence is every 10 provider
+    turns and can be changed with `--native-sync-every` or
+    `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
   - provider-native handles are the preferred continuity path when healthy
   - canonical local memory remains the recovery and audit spine, not proof that a
     new provider session is equivalent to the original one
@@ -269,11 +266,9 @@ Claude API memory status:
   and a four-flag verification snapshot.
 - The memory ledger is intended to restart from facts, decisions, evidence, and
   results after a crash. It must not store hidden chain-of-thought.
-- Future canonical-memory hardening should add a short memory index/table of
-  contents: stable memory ids or ranges, optional model-generated titles,
-  brain-derived action/result/key values, tags, artifact refs, pinned facts, and
-  selective full-entry recall. This is an attention/retrieval layer over the
-  persisted memory, not a provider KV cache or artifact/result cache.
+- The active prototype direction is to rely on provider-native sessions plus
+  configurable periodic compact memory injection, with Anthropic API still using
+  compact local memory as its continuous local-primary context.
 - Before claiming Anthropic API parity with Claude Code CLI, prove this ledger
   through the same multi-turn live provider and hardware deployment scenarios.
 
@@ -313,8 +308,6 @@ The brain tracks, at minimum:
 - workspace/build context when code edits are allowed
 - provider-native handle state when a backend supports it
 - recent compact memory entries plus compacted memory summary
-- memory index rows, pinned facts, and selected recalled full entries once the
-  canonical memory hardening is implemented
 - memory compaction mode and native safety-sync cadence
 - typed evidence records:
   - observations
@@ -455,7 +448,7 @@ Optional:
 - `--provider`
 - `--model`
 - `--memory-mode`
-- `--native-sync-every`
+- `--native-sync-every` (default `10`; `0` disables periodic sync injection)
 - `--port`
 - `--flash-artifact`
 - `--elf`
@@ -478,7 +471,7 @@ Freeform mode rules:
 - The CLI owns server startup and teardown.
 - Both one-shot CLIs also accept optional provider-memory controls:
   - `--memory-mode deterministic|model-summary`
-  - `--native-sync-every N`
+  - `--native-sync-every N` (default `10`; `0` disables periodic sync injection)
 - The same settings can come from environment variables:
   - `PYOCD_TURNKEY_MEMORY_MODE`
   - `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
