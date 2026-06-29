@@ -324,6 +324,14 @@ async def _live_sync_check(board_id: str) -> CheckResult:
                 f"connect did not report a session_id: {connect_result.text}",
             )
 
+        halt_result = await client.halt()
+        if halt_result.is_error:
+            return CheckResult(
+                "live_sync_does_not_mutate_open_session",
+                FAIL,
+                f"halt before baseline read failed: {halt_result.text}",
+            )
+
         baseline = await client.read_core_register(name="pc")
         if baseline.is_error:
             return CheckResult(

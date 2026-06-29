@@ -46,12 +46,30 @@ Results:
 - mypy: passed
 - both official-board skip-hardware/no-Codex harness runs:
   `4 passed, 0 failed, 0 skipped`
+- after the live-sync halt fix, targeted Branch C tests:
+  `10 passed`
+- after the live-sync halt fix, targeted ruff for the touched harness/test
+  files: passed
+- after the live-sync halt fix, full non-hardware validation:
+  `uv run pytest -q` returned `286 passed`, `uv run ruff check .` passed, and
+  `uv run mypy src` passed
+- `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on-skip`:
+  `9 passed, 0 failed, 0 skipped`, run root
+  `runs/20260629T203611Z-88e44520`
+- `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --fail-on-skip`:
+  `9 passed, 0 failed, 0 skipped`, run root
+  `runs/20260629T203830Z-1b95fee0`
+- `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-skip`:
+  blocked in Stage 0 because the attached Nordic board reported
+  `FICR.INFO.PART actual=0x52840, expected=0x52833`
 
 ## Verified
 
 - Review doc restored.
 - Current non-hardware command output is recorded above.
+- Current STM32 and retained Nordic hardware command output is recorded above.
 
 ## Pending verification
 
-- Hardware/provider acceptance proof.
+- Official `nrf52833dk` hardware acceptance proof.
+- Provider-neutral / Claude Branch C acceptance proof.

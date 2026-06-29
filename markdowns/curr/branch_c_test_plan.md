@@ -99,10 +99,10 @@ result is clamped timeout values, `effective_max_iters=12`, a partial server
 update tied only to changed turnkey fields, and deferred sync while connected.
 
 **7 - live non-mutation proof.** Opens a real `LocalMCPClient` session against
-the attached board, reads `pc`, calls `_brain_sync_timeouts`, reads `pc` again,
-then disconnects. This proves the open session was not disrupted. It does not
-prove literal timeout firing under a deliberately hung board; killable worker
-enforcement is outside Branch C.
+the attached board, halts the core, reads `pc`, calls `_brain_sync_timeouts`,
+reads `pc` again, then disconnects. This proves the open halted session was not
+disrupted. It does not prove literal timeout firing under a deliberately hung
+board; killable worker enforcement is outside Branch C.
 
 **8 - Codex dry run of the real prompt.** Builds the same prompt text the live
 Codex provider uses, sends it to `codex exec`, and parses the response as a
@@ -131,12 +131,16 @@ contain clamped effective timeout values rather than raw out-of-range requests.
   `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware --skip-codex`
   and returned `4 passed, 0 failed, 0 skipped`.
 - Targeted unit tests for the Branch C harness and timeout policy were rerun
-  after restoration with:
+  after the live-sync halt fix with:
   `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
-  and returned `9 passed`.
+  and returned `10 passed`.
 - Full non-hardware unit/lint/type checks were rerun after restoration on
   June 29, 2026:
   `uv run pytest -q` returned `285 passed`, `uv run ruff check .` passed, and
+  `uv run mypy src` passed.
+- Full non-hardware unit/lint/type checks were rerun again after the live-sync
+  halt fix on June 29, 2026:
+  `uv run pytest -q` returned `286 passed`, `uv run ruff check .` passed, and
   `uv run mypy src` passed.
 - Both official-board Branch C skip-hardware/no-Codex harness commands were
   rerun and returned `4 passed, 0 failed, 0 skipped`.
@@ -146,9 +150,25 @@ contain clamped effective timeout values rather than raw out-of-range requests.
   - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware`
   Both returned `5 passed, 0 failed, 1 skipped`; the skipped check was the live
   Codex-plus-hardware run.
+- Full Branch C hardware acceptance on the attached STM32 board was rerun with:
+  `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on-skip`
+  and returned `9 passed, 0 failed, 0 skipped`; run root
+  `runs/20260629T203611Z-88e44520`.
+- Full Branch C hardware acceptance on the attached retained Nordic board was
+  rerun with:
+  `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --fail-on-skip`
+  and returned `9 passed, 0 failed, 0 skipped`; run root
+  `runs/20260629T203830Z-1b95fee0`.
+- Official `nrf52833dk` proof was attempted with:
+  `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-skip`
+  and did not reach Branch C hardware checks because Stage 0 reported
+  `FICR.INFO.PART actual=0x52840, expected=0x52833`. The attached Nordic board
+  is therefore not the official `nrf52833dk` for this proof.
 
 ## Pending verification
 
-- Full `--fail-on-skip` Branch C harness runs on `nrf52833dk` and
-  `nucleo_l476rg`.
-- Live Codex-plus-hardware check 9 on the official scoped pair.
+- Full `--fail-on-skip` Branch C harness run on the official `nrf52833dk`.
+  The attached Nordic board currently reports nRF52840 silicon, so this remains
+  blocked until an actual `nrf52833dk` is attached or the proof boundary is
+  explicitly changed to retained `nrf52840dk`.
+- Live Codex-plus-hardware check 9 on the official `nrf52833dk`.

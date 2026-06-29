@@ -1519,7 +1519,41 @@ Current Branch C non-hardware restoration status on this host:
     returned `4 passed, 0 failed, 0 skipped`
   - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --skip-codex`
     returned `4 passed, 0 failed, 0 skipped`
-- Still pending: full `--fail-on-skip` Branch C harness runs on both official
-  boards, live Codex-plus-hardware check 9 on both official boards, Claude CLI
-  provider coverage for Branch C, and separate fresh-host/macOS portability
-  proof.
+- Still pending after the non-hardware restoration run at that point: hardware
+  `--fail-on-skip` Branch C harness runs, live Codex-plus-hardware check 9,
+  Claude CLI provider coverage for Branch C, and separate fresh-host/macOS
+  portability proof. The later hardware status below supersedes this pending
+  hardware line for boards that were actually run.
+
+Current Branch C hardware status on this host after the live-sync halt fix:
+
+- The first `nucleo_l476rg` Branch C hardware acceptance run exposed a harness
+  bug: `live_sync_does_not_mutate_open_session` tried to read `pc` while the
+  core was running, and the MCP server correctly rejected that register read.
+- The harness now halts after connect before reading `pc`. Targeted regression
+  coverage was added for that ordering.
+- Targeted validation after the fix:
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    returned `10 passed`
+  - `uv run ruff check tests/harness/branch_c_tests.py tests/test_branch_c_harness.py`
+    passed
+- Full non-hardware validation after the fix:
+  - `uv run pytest -q` returned `286 passed`
+  - `uv run ruff check .` passed
+  - `uv run mypy src` passed
+- `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on-skip`
+  returned `9 passed, 0 failed, 0 skipped`, including live
+  `_brain_sync_timeouts` non-mutation proof and live Codex-plus-hardware Branch
+  C clamp/event proof. Run root:
+  `runs/20260629T203611Z-88e44520`.
+- `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --fail-on-skip`
+  returned `9 passed, 0 failed, 0 skipped` on the attached retained Nordic
+  board. Run root: `runs/20260629T203830Z-1b95fee0`.
+- `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-skip`
+  was attempted, but Stage 0 blocked official proof because the attached Nordic
+  silicon reported `FICR.INFO.PART actual=0x52840, expected=0x52833`. The
+  attached Nordic board is therefore valid `nrf52840dk` retained-board proof,
+  not official `nrf52833dk` proof.
+- Still pending: official `nrf52833dk` Branch C hardware proof, Claude/provider
+  neutral Branch C harness implementation, Claude Branch C provider proof, and
+  separate fresh-host/macOS portability proof.

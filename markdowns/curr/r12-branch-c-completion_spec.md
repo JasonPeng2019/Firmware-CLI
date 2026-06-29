@@ -213,11 +213,25 @@ uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on
   targeted Branch C tests returned `9 passed`, full pytest returned
   `285 passed`, full ruff passed, full mypy passed, and both official-board
   skip-hardware/no-Codex harness runs returned `4 passed, 0 failed, 0 skipped`.
-- No hardware proof is claimed by this spec.
+- Targeted validation after the live-sync halt fix returned `10 passed` for:
+  `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`.
+- Full non-hardware validation after the live-sync halt fix returned
+  `286 passed` for `uv run pytest -q`; `uv run ruff check .` and
+  `uv run mypy src` also passed.
+- Full Branch C hardware acceptance passed on `nucleo_l476rg` with
+  `9 passed, 0 failed, 0 skipped`; run root
+  `runs/20260629T203611Z-88e44520`.
+- Full Branch C hardware acceptance passed on retained `nrf52840dk` with
+  `9 passed, 0 failed, 0 skipped`; run root
+  `runs/20260629T203830Z-1b95fee0`.
+- Official `nrf52833dk` hardware acceptance was attempted, but Stage 0 reported
+  `FICR.INFO.PART actual=0x52840, expected=0x52833`, so the attached Nordic
+  board is not valid official `nrf52833dk` proof.
 
 ## Pending verification
 
-- Full `--fail-on-skip` Branch C harness runs remain pending on both official
-  boards.
+- Full `--fail-on-skip` Branch C harness remains pending on official
+  `nrf52833dk` until an actual nRF52833 DK is attached or the proof boundary is
+  explicitly changed to retained `nrf52840dk`.
 - Claude CLI Branch C coverage remains pending and is covered by the separate
   provider/portability coverage spec.

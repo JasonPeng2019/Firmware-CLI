@@ -528,6 +528,9 @@ into the other branch, or into final integration.
   session behavior still needs code, tests, and provider-specific verification.
 - Branch B behavior remains unimplemented here; the clarified boundary still
   needs code, tests, and any required real-board proof when Branch B is built.
-- Branch C has a restored completion spec and non-hardware harness path for the
-  event spine / timeout-policy surface. Full real hardware and provider-matrix
-  proof still need to be run before Branch C is called complete.
+- Branch C has a restored completion spec and harness path for the event spine /
+  timeout-policy surface. Current hardware proof is green for `nucleo_l476rg`
+  and retained `nrf52840dk`; official `nrf52833dk` remains pending because the
+  attached Nordic board reports nRF52840 silicon. Provider-neutral/Claude
+  Branch C proof remains pending before Branch C supports a deployable
+  multi-provider product claim.
