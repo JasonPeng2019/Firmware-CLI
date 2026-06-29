@@ -102,6 +102,19 @@ missing before this merge pass:
 What is still missing for broad turnkey closure is full official-pair
 second-provider proof and fresh-machine portability proof.
 
+What is still missing for true user-computer deployment is broader than the
+current prototype gate:
+
+- fresh Windows and macOS host proof;
+- multiple top-level prompts in one operator CLI session, each with its own
+  bounded provider/tool loop and isolated run artifacts;
+- strict provider-session handling, including fail-closed behavior when a
+  promised remote handle cannot resume;
+- real code-writing repair proof on the bug-repair cases, with build/flash/green
+  evidence and no cross-prompt state leakage;
+- Anthropic API memory-ledger hardening before claiming parity with Claude Code
+  CLI or OpenAI Responses.
+
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
 
@@ -334,16 +347,19 @@ What that code does:
   turnkey runs
 - now uses one unified hybrid provider-continuation model:
   - `openai-api` is `remote-primary` through Responses
-    `previous_response_id`, with local-memory fallback and periodic safety
-    sync
+    `previous_response_id`, with strict typed resume-failure handling and
+    periodic safety sync
   - `claude-cli` is `remote-primary` through real `--resume <session_id>`
-    reuse with `--fork-session` retries, local-memory fallback, and safety
-    sync
+    reuse with `--fork-session` retries and strict resume-failure handling
   - `codex-cli` is `remote-primary` through real `codex exec resume
-    <thread_id>` reuse with fresh-thread fallback and safety sync
+    <thread_id>` reuse with same-thread correction retry and strict
+    resume-failure handling
   - `anthropic-api` remains `local-primary` because the current Anthropic
     Messages API surface is stateless and does not expose a resumable
     conversation handle
+
+It also:
+
 - selects board-aware YAML skills
 - keeps local turnkey run state
 - supports freeform `run` mode and benchmark mode
@@ -353,6 +369,43 @@ What that code does:
   benchmark taxonomy
 - keeps deterministic repair/health-check helper playbooks in a separate
   internal layer rather than overloading the prompt-skill YAMLs
+
+Provider integration direction:
+
+The current CLI resume adapters are the working subscription-backed bridge, not
+the final high-reliability provider interface. The final provider direction is
+to keep this repo's brain-owned adapter protocol and move each subscription
+provider to its best programmable session surface:
+
+- Codex: SDK/app-server style thread and turn APIs.
+- Claude: Claude Agent SDK session APIs.
+
+If a run mode promises one continuous provider session, failed resume should be
+a hard failure or explicit operator decision. Silent fresh-session fallback is
+only acceptable in a labeled recovery mode.
+
+Expected policy for deployment hardening:
+
+- headless `pyocd-debug-brain` fails closed on provider resume failure by
+  default;
+- interactive `pyocd-debug` asks the operator to retry resume, start a new
+  provider session from saved local memory, or abort;
+- any recovery-created provider session is labeled as new in events and run
+  artifacts;
+- `anthropic-api` is not treated as a real-session provider because its
+  continuity is currently brain-owned memory rather than provider-owned resume.
+
+Claude provider policy:
+
+- `claude-cli` remains the safest current subscription-backed Claude path. It is
+  a BYO local Claude Code integration: the user installs and authenticates
+  Anthropic's official CLI, and this app invokes that local executable.
+- `anthropic-api` is the API-key-backed Claude path. It does not provide a
+  Claude Code-style session; it relies on the brain's compact memory and
+  compaction layer.
+- Future Claude Agent SDK work should be treated as API-key/approved-partner
+  work. Do not claim Claude subscription/rate-limit support through SDKs unless
+  Anthropic approves that product shape.
 
 ## Live Bench Facts
 

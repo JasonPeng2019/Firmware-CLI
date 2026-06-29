@@ -75,10 +75,11 @@ The current implemented prototype increment adds or tightens:
 
 - explicit provider capabilities and loop-owned provider session state
 - one canonical brain-owned provider memory model for every backend
-- native Responses continuation for OpenAI as an accelerator, with local
-  fallback and optional periodic safety sync
+- native Responses continuation for OpenAI as an accelerator, with strict
+  resume-failure handling and optional periodic safety sync
 - real remote continuation for Claude CLI and Codex CLI layered on top of the
-  same canonical local-memory model
+  same canonical local-memory model, with explicit recovery labeling when a new
+  provider session is started from saved memory
 - canonical local-memory-only continuation for Anthropic because the current
   Messages API surface is stateless
 - deterministic compaction by default, with optional `model-summary`
@@ -139,33 +140,126 @@ Frozen provider rules:
     - ChatGPT/Codex subscription
     - or Codex/OpenAI API-key login
   - may use `--model` / `PYOCD_TURNKEY_MODEL` when explicitly supplied
+  - current implementation resumes one persisted Codex thread with
+    `codex exec resume <thread_id>` between brain turns
 - `claude-cli`
   - shells out to local `claude --print`
   - uses whatever auth Claude Code already has configured:
     - Claude subscription / OAuth token
     - or `ANTHROPIC_API_KEY`
   - may use `--model` / `PYOCD_TURNKEY_MODEL` when explicitly supplied
+  - current implementation resumes one persisted Claude session with
+    `claude --print --resume <session_id>` between brain turns
 - the provider wrapper stays isolated from the orchestration loop
 - every provider must return the same structured next-action shape
 - all providers participate in the same hybrid provider-session model:
   - canonical compact local memory is always persisted by the brain
-  - provider-native handles are optional accelerators, not the source of truth
+  - provider-native handles are the preferred continuity path when healthy
+  - canonical local memory remains the recovery and audit spine, not proof that a
+    new provider session is equivalent to the original one
   - `openai-api` is `remote-primary` through Responses
-    `previous_response_id`, with local-memory fallback and periodic safety
-    sync
-  - `claude-cli` is `remote-primary` through real CLI `--resume <session_id>`
-    reuse with `--fork-session` retry support, local-memory fallback, and
+    `previous_response_id`, with typed fail-closed resume failures and periodic
     safety sync
+  - `claude-cli` is `remote-primary` through real CLI `--resume <session_id>`
+    reuse with `--fork-session` retry support and strict resume-failure
+    handling
   - `codex-cli` is `remote-primary` through real `codex exec resume
-    <thread_id>` reuse, with fresh local-memory fallback and safety sync
+    <thread_id>` reuse, with same-thread correction retry and strict
+    resume-failure handling
   - `anthropic-api` remains `local-primary` because the current Anthropic
     Messages API surface is stateless and does not expose a resumable
     conversation handle equivalent to the other remote-primary backends
   - memory compaction defaults to deterministic mode
   - `model-summary` compaction is optional and falls back to deterministic
     compaction on summarizer failure
+
+Final integration direction:
+
+- The current CLI resume adapters are the short-term compatibility bridge for
+  subscription-backed Codex and Claude Code use.
+- The final robust integration should keep the same brain-owned provider
+  adapter contract, but replace subprocess-per-turn CLI wrappers with
+  provider-specific programmable session APIs where they are available:
+  - Codex through SDK/app-server style thread and turn APIs.
+  - Claude through the Claude Agent SDK session interface.
+- The brain must not depend on a shared vendor API existing across both
+  providers. The shared layer is this repo's `DecisionProvider`/session-state
+  protocol; each provider adapter uses its own best official session surface.
+- If a product mode promises one continuous provider session, resume failure
+  must be surfaced as a hard failure or explicit operator decision. A silent
+  fresh-session fallback is acceptable only in a clearly labeled recovery mode.
 - subscription-vs-API billing is owned by the chosen provider surface, not by
   the R12 loop
+
+Provider session resume policy:
+
+- Real-session providers are:
+  - `openai-api` when `previous_response_id` exists.
+  - `codex-cli` when a Codex `thread_id` exists.
+  - `claude-cli` when a Claude Code `session_id` exists.
+- The default deployment policy should be strict continuity:
+  - once a real provider handle exists inside a top-level prompt, every later
+    provider turn for that prompt must resume that same handle;
+  - if the handle is missing, rejected, expired, or resumes to a different
+    provider conversation, the brain must stop before sending a fresh bootstrap
+    turn;
+  - the run artifact must record the expected handle, provider, turn index,
+    failure text, and that no replacement provider session was started.
+- Recovery is allowed only when explicitly requested:
+  - interactive `pyocd-debug` should ask the operator whether to retry resume,
+    start a new provider session from the saved local memory, or abort;
+  - non-interactive `pyocd-debug-brain` should fail closed by default and should
+    only start a new provider session when a future explicit recovery flag or
+    config says to do so;
+  - any recovery-created session must be labeled in events, provider metadata,
+    and run artifacts as a new provider session, not a continuation of the old
+    one.
+- This policy does not apply to `anthropic-api` as a real-session provider,
+  because Anthropic Messages API continuity is currently brain-owned memory, not
+  provider-owned session resume.
+
+Expected operator-facing recovery prompt:
+
+```text
+Provider session resume failed.
+Provider: claude-cli
+Expected session_id: <id>
+No new provider session has been started.
+
+Choose: retry resume, start a new provider session from saved local memory, or abort.
+```
+
+Claude provider policy:
+
+- `claude-cli` is the safest current subscription-backed Claude integration. It
+  is a BYO local Claude Code adapter: the user installs and authenticates
+  Anthropic's official CLI, and this app invokes that local executable. The app
+  must not collect credentials, proxy Claude subscription access, market bundled
+  Claude access, or hide provider/auth failures as app-owned failures.
+- `anthropic-api` is the packaged/API-backed Claude path. It uses
+  `ANTHROPIC_API_KEY` and the Messages API. It does not have Claude Code-style
+  resumable sessions, so it depends on the brain-owned memory/compaction layer.
+- A future Claude Agent SDK provider is valid for API-key-backed use. Claude
+  subscription/rate-limit use through SDKs should wait for Anthropic approval or
+  partnership. Until then, keep `claude-cli` for local subscription users and
+  `anthropic-api`/future Agent SDK for API-key users.
+
+Claude API memory status:
+
+- Current `anthropic-api` continuity is functional but weaker than `claude-cli`
+  session resume. The provider receives a rendered `Provider session memory`
+  block each turn, built from recent committed turn facts plus compacted older
+  facts.
+- The memory entry currently preserves an outcome-bearing debugging ledger:
+  `classification`, `observation_summary`, optional `hypothesis`, visible
+  decision rationale, exact structured action payload, compact action/result
+  summaries, result status, artifact paths, changed files, workspace/codebase
+  summary, failed hypotheses, refused/blocked paths, acceptance constraints,
+  and a four-flag verification snapshot.
+- The memory ledger is intended to restart from facts, decisions, evidence, and
+  results after a crash. It must not store hidden chain-of-thought.
+- Before claiming Anthropic API parity with Claude Code CLI, prove this ledger
+  through the same multi-turn live provider and hardware deployment scenarios.
 
 ### MCP Client
 
@@ -549,6 +643,64 @@ This proves:
 
 It does not require higher raw score than the `R11` BYO-agent path.
 
+## User-Computer Deployment Readiness
+
+The current branch is not yet proven ready for broad user-computer deployment.
+Deployment readiness means a user can install the repo on a supported machine,
+choose a provider, run several top-level prompts through the operator CLI, and
+have each top-level prompt execute its own bounded internal provider/tool loop
+that can inspect, edit, build, flash, and verify firmware without hidden manual
+setup.
+
+Deployment proof must cover:
+
+- **Fresh host setup**
+  - Windows fresh-machine post-bootstrap path.
+  - macOS fresh-machine post-bootstrap path.
+  - No reliance on an existing NCS install unless that dependency is explicitly
+    documented as a host prerequisite.
+- **Provider/auth matrix**
+  - `codex-cli` with local Codex subscription/auth.
+  - `claude-cli` with local Claude Code subscription/auth.
+  - `openai-api` with `OPENAI_API_KEY`.
+  - `anthropic-api` with `ANTHROPIC_API_KEY`, after the memory-ledger hardening
+    above if parity is being claimed.
+- **Multi-prompt CLI behavior**
+  - In one `pyocd-debug` shell process, run at least three top-level user prompts
+    back to back.
+  - Each prompt must create its own run root and own internal provider-session
+    state.
+  - No provider session, board session, workspace mutation, timeout config, or
+    convergence counter leaks incorrectly from one top-level prompt to the next.
+  - History/show/rerun must identify each prompt's run separately.
+- **Strict provider-session behavior**
+  - For providers with real remote handles, verify that every provider turn in a
+    single top-level prompt resumes the same intended handle.
+  - In strict mode, simulate a missing/bad resume handle and confirm the run
+    fails closed or asks for operator choice instead of silently starting a fresh
+    provider session.
+  - In recovery mode, confirm fresh-session fallback is explicitly labeled in
+    events and run artifacts.
+  - In the interactive shell, confirm the operator gets retry/new-session/abort
+    choices and that choosing new session creates a visibly new provider handle.
+  - In the headless CLI, confirm the same failure exits non-zero by default and
+    does not create a fresh provider session unless an explicit recovery option
+    is supplied.
+- **Code-writing proof**
+  - Run at least the bug-repair slice: `b001`, `b002`, `b003`, and `b004` on the
+    official scoped pair.
+  - Confirm the model edits only the case workspace/source files it is allowed to
+    edit.
+  - Confirm the edited code builds, flashes, and passes the scoped green check.
+  - Confirm negative/fault cases still diagnose runtime/observability faults
+    without source edits.
+- **Artifact/audit proof**
+  - Every run writes prompt, provider metadata, provider session state, tool
+    calls, code diffs, build output, flash/serial/register evidence, final
+    result, and memory/compaction records under `runs/<session_id>/...`.
+
+Until this ladder is green, this branch is prototype-ready, not deployment-ready.
+
 ## Manual Validation Sequence
 
 Before live turnkey validation, the scoped substrate must still be green:
@@ -583,7 +735,8 @@ uv run pyocd-debug history
 - no `nrf52840dk` critical-path work
 - no broad MCP server expansion beyond the currently implemented curated tool
   surface
-- no additional provider surfaces beyond the four frozen backends above
+- no additional provider surfaces beyond the four frozen backends above in this
+  pass; SDK/app-server provider adapters are future hardening work
 - no reconnect-tolerant benchmark accounting
 - no token-level provider streaming in Pass 1; that is the deliberate next UX
   follow-up after the current shell lands

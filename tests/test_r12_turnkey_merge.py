@@ -39,10 +39,13 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
+    ProviderResumeFailure,
+    ProviderResumeFailureRecord,
     ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
+    with_provider_resume_recovery_request,
 )
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain import loop as loop_mod
@@ -651,6 +654,45 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     assert provider.capabilities.supports_native_session is True
 
 
+def test_openai_provider_previous_response_failure_is_typed_resume_failure(
+    monkeypatch,
+) -> None:
+    class _FakeResponses:
+        def create(self, **kwargs: object) -> object:
+            del kwargs
+            raise RuntimeError("response chain expired")
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.responses = _FakeResponses()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_openai.OpenAI", _FakeOpenAI)
+
+    provider = OpenAIDecisionProvider(api_key="test-key", model="gpt-test")
+    session_state = make_provider_session_state(
+        provider="openai-api",
+        model="gpt-test",
+        continuation_mode="remote-primary",
+    ).with_native_handle_update(response_id="resp-prev")
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="decision schema",
+    )
+
+    with pytest.raises(ProviderResumeFailure) as exc_info:
+        provider._next_decision_sync(bundle, session_state)
+
+    record = exc_info.value.to_record()
+    assert record["provider"] == "openai-api"
+    assert record["remote_handle_kind"] == "response_id"
+    assert record["expected_handle_id"] == "resp-prev"
+    assert record["replacement_provider_session_started"] is False
+    assert "response chain expired" in str(record["failure_text"])
+
+
 def test_openai_provider_retry_updates_prompt_metadata(
     monkeypatch,
 ) -> None:
@@ -1175,45 +1217,19 @@ def test_claude_cli_provider_fork_retry_commits_child_session_only_on_success(
     assert turn.provider_metadata["fresh_remote_turn"] is False
 
 
-def test_claude_cli_provider_resume_failure_falls_back_to_fresh_local_memory_turn(
+def test_claude_cli_provider_resume_failure_fails_closed_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
-    outputs = iter(
-        (
-            SimpleNamespace(returncode=1, stdout="", stderr="resume failed"),
-            SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "session_id": "sess-fresh",
-                        "result": json.dumps(
-                            {
-                                "observation_summary": "connected",
-                                "classification": "healthy",
-                                "action": {
-                                    "kind": "finalize",
-                                    "final_status": "diagnosed_only",
-                                    "classification": "healthy",
-                                    "root_cause": "none",
-                                    "summary": "ok",
-                                },
-                            }
-                        ),
-                        "is_error": False,
-                    }
-                ),
-                stderr="",
-            ),
-        )
-    )
-    working_dir = tmp_path / "claude-fallback"
+
+    working_dir = tmp_path / "claude-strict"
     working_dir.mkdir(parents=True, exist_ok=True)
 
     def fake_run(command: list[str], **kwargs: object) -> object:
+        del kwargs
         calls.append(command)
-        return next(outputs)
+        return SimpleNamespace(returncode=1, stdout="", stderr="resume failed")
 
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
 
@@ -1235,17 +1251,102 @@ def test_claude_cli_provider_resume_failure_falls_back_to_fresh_local_memory_tur
         turn_decision_schema_text="decision schema",
     )
 
+    with pytest.raises(ProviderResumeFailure) as exc_info:
+        provider._next_decision_sync(bundle, session_state)
+
+    assert len(calls) == 1
+    assert "--resume" in calls[0] and "sess-parent" in calls[0]
+    record = exc_info.value.to_record()
+    assert record["provider"] == "claude-cli"
+    assert record["remote_handle_kind"] == "session_id"
+    assert record["expected_handle_id"] == "sess-parent"
+    assert record["replacement_provider_session_started"] is False
+    assert "resume failed" in str(record["failure_text"])
+
+
+def test_claude_cli_provider_explicit_recovery_starts_labeled_fresh_memory_session(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    working_dir = tmp_path / "claude-recovery"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        del kwargs
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "session_id": "sess-fresh",
+                    "result": json.dumps(
+                        {
+                            "observation_summary": "connected",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "none",
+                                "summary": "ok",
+                            },
+                        }
+                    ),
+                    "is_error": False,
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
+
+    provider = ClaudeCLIDecisionProvider(model="sonnet")
+    base_session_state = make_provider_session_state(
+        provider="claude-cli",
+        model="sonnet",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(native_session_id="sess-parent")
+    session_state = with_provider_resume_recovery_request(
+        base_session_state,
+        action="new-session-from-memory",
+        failure=ProviderResumeFailureRecord(
+            provider="claude-cli",
+            remote_strategy="claude-session-resume",
+            continuation_mode="remote-primary",
+            continuation_path="remote-resume",
+            remote_handle_kind="session_id",
+            expected_handle_id="sess-parent",
+            turn_index=2,
+            failure_text="resume failed",
+            local_memory_available=True,
+        ),
+    )
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
     turn = provider._next_decision_sync(bundle, session_state)
 
-    assert len(calls) == 2
-    assert "--resume" in calls[0] and "sess-parent" in calls[0]
-    assert "--resume" not in calls[1]
+    assert len(calls) == 1
+    assert "--resume" not in calls[0]
     assert turn.provider_metadata["continuation_path"] == "local-memory-fallback"
     assert turn.provider_metadata["local_memory_fallback_used"] is True
     assert turn.provider_metadata["memory_injected"] is True
     assert turn.provider_metadata["fresh_remote_turn"] is True
     assert turn.provider_metadata["resumed_remote"] is False
     assert turn.provider_metadata["remote_handle_id"] == "sess-fresh"
+    assert turn.provider_metadata["recovery_created_new_session"] is True
+    assert turn.provider_metadata["replaced_remote_handle_id"] == "sess-parent"
+    assert turn.session_state.metadata["resume_recovery_action"] is None
 
 
 def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
@@ -1316,18 +1417,66 @@ def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
     assert turn.provider_metadata["memory_injected"] is False
 
 
-def test_codex_cli_provider_resume_failure_falls_back_to_fresh_local_memory_thread(
+def test_codex_cli_provider_resume_failure_fails_closed_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
-    working_dir = tmp_path / "codex-fallback"
+    working_dir = tmp_path / "codex-strict"
     working_dir.mkdir(parents=True, exist_ok=True)
 
     def fake_run(command: list[str], **kwargs: object) -> object:
+        del kwargs
         calls.append(command)
-        if "resume" in command:
-            return SimpleNamespace(returncode=1, stdout="", stderr="resume failed")
+        return SimpleNamespace(returncode=1, stdout="", stderr="resume failed")
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
+
+    provider = CodexCLIDecisionProvider(model="gpt-5")
+    session_state = make_provider_session_state(
+        provider="codex-cli",
+        model="gpt-5",
+        continuation_mode="remote-primary",
+        runtime_context=ProviderRuntimeContext(
+            runtime_root=str(working_dir),
+            working_directory=str(working_dir),
+        ),
+    ).with_native_handle_update(
+        native_session_id="thread-parent",
+        provider_fields={"codex_thread_id": "thread-parent"},
+    )
+    bundle = ProviderPromptBundle(
+        system_instructions="system",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="turn context",
+        turn_decision_schema_text="decision schema",
+    )
+
+    with pytest.raises(ProviderResumeFailure) as exc_info:
+        provider._next_decision_sync(bundle, session_state)
+
+    assert len(calls) == 1
+    assert "resume" in calls[0] and "thread-parent" in calls[0]
+    record = exc_info.value.to_record()
+    assert record["provider"] == "codex-cli"
+    assert record["remote_handle_kind"] == "thread_id"
+    assert record["expected_handle_id"] == "thread-parent"
+    assert record["replacement_provider_session_started"] is False
+    assert "resume failed" in str(record["failure_text"])
+
+
+def test_codex_cli_provider_explicit_recovery_starts_labeled_fresh_memory_thread(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+    working_dir = tmp_path / "codex-recovery"
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        del kwargs
+        calls.append(command)
         output_path = Path(command[command.index("-o") + 1])
         output_path.write_text(
             json.dumps(
@@ -1354,7 +1503,7 @@ def test_codex_cli_provider_resume_failure_falls_back_to_fresh_local_memory_thre
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model="gpt-5")
-    session_state = make_provider_session_state(
+    base_session_state = make_provider_session_state(
         provider="codex-cli",
         model="gpt-5",
         continuation_mode="remote-primary",
@@ -1366,6 +1515,21 @@ def test_codex_cli_provider_resume_failure_falls_back_to_fresh_local_memory_thre
         native_session_id="thread-parent",
         provider_fields={"codex_thread_id": "thread-parent"},
     )
+    session_state = with_provider_resume_recovery_request(
+        base_session_state,
+        action="new-session-from-memory",
+        failure=ProviderResumeFailureRecord(
+            provider="codex-cli",
+            remote_strategy="codex-thread-resume",
+            continuation_mode="remote-primary",
+            continuation_path="remote-resume",
+            remote_handle_kind="thread_id",
+            expected_handle_id="thread-parent",
+            turn_index=2,
+            failure_text="resume failed",
+            local_memory_available=True,
+        ),
+    )
     bundle = ProviderPromptBundle(
         system_instructions="system",
         tool_schema_text="tool schema",
@@ -1376,13 +1540,15 @@ def test_codex_cli_provider_resume_failure_falls_back_to_fresh_local_memory_thre
 
     turn = provider._next_decision_sync(bundle, session_state)
 
-    assert len(calls) == 2
-    assert "resume" in calls[0] and "thread-parent" in calls[0]
-    assert "resume" not in calls[1]
-    assert "--ephemeral" not in calls[1]
+    assert len(calls) == 1
+    assert "resume" not in calls[0]
+    assert "--ephemeral" not in calls[0]
     assert turn.provider_metadata["continuation_path"] == "local-memory-fallback"
     assert turn.provider_metadata["local_memory_fallback_used"] is True
     assert turn.provider_metadata["memory_injected"] is True
     assert turn.provider_metadata["fresh_remote_turn"] is True
     assert turn.provider_metadata["resumed_remote"] is False
     assert turn.provider_metadata["remote_handle_id"] == "thread-fresh"
+    assert turn.provider_metadata["recovery_created_new_session"] is True
+    assert turn.provider_metadata["replaced_remote_handle_id"] == "thread-parent"
+    assert turn.session_state.metadata["resume_recovery_action"] is None

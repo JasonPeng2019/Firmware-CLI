@@ -30,6 +30,10 @@ from pyocd_debug_mcp.brain.config import (
     resolve_memory_mode,
     resolve_native_sync_every,
 )
+from pyocd_debug_mcp.brain.provider_types import (
+    ProviderResumeFailure,
+    ProviderResumeRecoveryChoice,
+)
 from pyocd_debug_mcp.ux.artifacts import find_shortcut_entries
 from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashCommand, TaskInput, parse_shell_input
 from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
@@ -383,9 +387,10 @@ class OperatorShell:
                     flash_artifact=self.context.flash_artifact,
                     elf=self.context.symbol_artifact,
                     workspace_root=workspace_root,
-                    build_command=build_command,
-                    event_sink=self.renderer.emit,
-                )
+                        build_command=build_command,
+                        event_sink=self.renderer.emit,
+                        provider_resume_recovery=self._prompt_provider_resume_recovery,
+                    )
             )
         except BrainConfigError as exc:
             self.renderer.print_error(str(exc))
@@ -543,6 +548,7 @@ class OperatorShell:
                         workspace_root=request.get("workspace_root") if isinstance(request.get("workspace_root"), str) else None,
                         build_command=request.get("build_command") if isinstance(request.get("build_command"), str) else None,
                         event_sink=self.renderer.emit,
+                        provider_resume_recovery=self._prompt_provider_resume_recovery,
                     )
                 )
             except BrainConfigError as exc:
@@ -582,3 +588,26 @@ class OperatorShell:
             f"Refused [ux/invalid-request]: session `{session_id}` uses unsupported mode `{mode}`."
         )
         return True
+
+    def _prompt_provider_resume_recovery(
+        self,
+        failure: ProviderResumeFailure,
+    ) -> ProviderResumeRecoveryChoice:
+        record = failure.record
+        self.renderer.print_error("Provider session resume failed.")
+        self.renderer.print_info(f"Provider: {record.provider}")
+        self.renderer.print_info(
+            f"Expected {record.remote_handle_kind}: {record.expected_handle_id}"
+        )
+        self.renderer.print_info("No new provider session has been started.")
+        while True:
+            choice = self._session.prompt(
+                "[r] retry resume   [n] new session from saved memory   [a] abort > "
+            ).strip().lower()
+            if choice in {"r", "retry"}:
+                return "retry"
+            if choice in {"n", "new"}:
+                return "new-session-from-memory"
+            if choice in {"a", "abort"}:
+                return "abort"
+            self.renderer.print_error("Choose r, n, or a.")

@@ -9,6 +9,11 @@ so existing cross-references like "entry #7" still point to the same change.
 ONLY INCLUDE for the first capability prototype:
 
 1. Persistent session and model memory.
+   - Future spec for the stronger canonical memory/recovery layer:
+     `markdowns/curr/canonical-memory-layer_spec.md`.
+     Implement later when improving recovery reliability and the
+     `anthropic-api` / Claude API facet; it is not implemented in the current
+     Branch A recovery work.
 2. Free host work with a final governed board-decision boundary.
 3. Real tool schemas in the prompt.
 4. Basic timeout hardening and timeout audit fixes.
@@ -123,26 +128,55 @@ laid out in the same sequence.
 
 ---
 
-## Cross-cutting: maintaining the native session over Claude / Codex API credits
+## Cross-cutting: provider-session integration for Codex and Claude
 
-All three entries below assume the entry #2 direction (a single persistent
-native tool-use session with the deterministic brain underneath). That session
-does **not** require the codex/claude CLIs — it is fully achievable on raw API
-credits, but the mechanism and who-owns-state differ by provider:
+All session work below assumes the entry #2 direction: one persistent provider
+conversation with the deterministic brain underneath. The brain remains the
+governed executor and safety gate; provider sessions are the model reasoning
+context.
 
-- **OpenAI / Codex API credits — server-side session.** Use the Responses API
-  and thread `previous_response_id` from each call into the next. The server
-  retains prior turns; we send only the new input. The repo's provider already
-  captures `response.id` and drops it
-  ([provider_openai.py:58](../src/pyocd_debug_mcp/brain/provider_openai.py#L58)) —
-  enabling the session is mostly threading that id back. Prefix caching is
-  automatic.
-- **Anthropic / Claude API credits — client-owned session.** The Messages API
-  is stateless: we hold the message array and resend the whole conversation each
-  turn (append the assistant `tool_use`, append our `tool_result`, resend).
-  Native tool use is first-class. For KV reuse we place explicit
-  `cache_control: {"type": "ephemeral"}` breakpoints on the stable prefix; it is
-  not automatic.
+Current implemented bridge:
+
+- **Codex subscription / Codex CLI.** The current adapter shells out once per
+  brain turn and resumes one persisted Codex thread with
+  `codex exec resume <thread_id>`. This is a real logical conversation resume,
+  but it is still a subprocess-per-turn wrapper with CLI output parsing.
+- **Claude subscription / Claude Code CLI.** The current adapter shells out once
+  per brain turn and resumes one persisted Claude session with
+  `claude --print --resume <session_id>`. This is a real logical conversation
+  resume, but it is still a subprocess-per-turn wrapper with CLI output parsing.
+- **OpenAI API credits.** The OpenAI adapter uses Responses
+  `previous_response_id` as the server-side conversation handle.
+- **Anthropic API credits.** The Anthropic Messages surface is stateless at the
+  message API layer, so the adapter owns and resends compact conversation
+  history.
+
+Final integration target:
+
+- Keep one repo-owned `DecisionProvider` / provider-session protocol.
+- Move Codex from `codex exec resume` to Codex SDK or app-server style
+  thread/turn APIs.
+- Move Claude from `claude --print --resume` to the Claude Agent SDK session
+  interface.
+- Treat CLI resume as the compatibility fallback, not the final high-reliability
+  product surface.
+- If a mode promises one continuous provider session, a failed resume must fail
+  closed or ask the operator. Automatic fresh-session fallback is allowed only in
+  an explicitly labeled recovery mode.
+
+Session resume policy to implement:
+
+- Real-session providers are OpenAI Responses with `previous_response_id`,
+  Codex CLI with `thread_id`, and Claude CLI with `session_id`.
+- Strict continuity should be the deployment default. Once a handle exists inside
+  a top-level prompt, a later turn must resume that handle or stop.
+- Interactive recovery may offer exactly three choices: retry resume, start a
+  new provider session from saved local memory, or abort.
+- Headless recovery must fail closed by default. Starting a new provider session
+  should require an explicit future flag/config and must be labeled in events and
+  artifacts.
+- Anthropic API is excluded from real-session strictness because its continuity
+  is brain-owned memory, not provider-owned session resume.
 
 Two caveats specific to this product, true for every entry:
 
@@ -231,30 +265,18 @@ sufficient.
 
 ### Problem / current behavior
 
-The turnkey brain gives the decision model almost no memory. Each turn the loop
-rebuilds the prompt from scratch (`_build_turn_prompt`,
-[src/pyocd_debug_mcp/brain/loop.py:196](../src/pyocd_debug_mcp/brain/loop.py#L196))
-and the model is invoked as a pure `text -> TurnDecision JSON` function with **no
-session continuity**:
+The original problem was that the decision model had almost no memory: the loop
+rebuilt the prompt from scratch and every provider behaved like a cold
+`text -> TurnDecision JSON` function.
 
-- Codex provider runs a fresh `codex exec ... --ephemeral` subprocess in a new
-  temp dir each turn ([provider_codex_cli.py:28](../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L28)).
-- Claude provider runs one-shot `claude --print` with no `--resume`
-  ([provider_claude_cli.py:28](../src/pyocd_debug_mcp/brain/provider_claude_cli.py#L28)).
-- OpenAI/Anthropic providers send a single user message and never chain
-  `previous_response_id` / prior messages, even though `response_id` is captured
-  and then dropped ([provider_openai.py:58](../src/pyocd_debug_mcp/brain/provider_openai.py#L58),
-  [provider_anthropic.py:49](../src/pyocd_debug_mcp/brain/provider_anthropic.py#L49)).
-
-So the model's entire memory of a run is whatever the prompt's "Current state"
-block serializes: **only the last action/result**, plus scalar counters and the
-verification flags ([loop.py:216](../src/pyocd_debug_mcp/brain/loop.py#L216)).
-Its own structured reasoning trail (observations/hypotheses/experiments/strategy
-evaluations) is recorded in `BrainState` but fed back only as `len()` counts
-([loop.py:232](../src/pyocd_debug_mcp/brain/loop.py#L232)), and the full ordered
-action logs (`actions_taken`, `mcp_tools_used`,
-[state.py:37](../src/pyocd_debug_mcp/brain/state.py#L37)) are never shown to the
-model at all.
+Current status: Branch A has partially closed that gap. Provider session state,
+Codex thread resume, Claude session resume, OpenAI Responses continuation,
+canonical local memory, prompt delta rendering, and coarse provider progress are
+implemented. The remaining problem is no longer "no session continuity"; it is
+that the subscription-backed providers still depend on subprocess-per-turn CLI
+wrappers, permissive fresh-session recovery, and CLI output parsing. Those are
+good enough for the current prototype bridge, but they are not the final robust
+provider integration.
 
 Consequence: the deterministic convergence watcher
 (`_check_local_convergence`, [loop.py:835](../src/pyocd_debug_mcp/brain/loop.py#L835))
@@ -283,14 +305,13 @@ axis only (session/memory) and is independent of the output-format axis: **we
 keep the `TurnDecision` JSON return.** (Switching to native tool calls is a
 separate, optional change — entry #4.)
 
-- Run the model in **a single persistent session** instead of re-prompting it
+- Run the model in **one logical persistent session** instead of re-prompting it
   cold each turn. The model keeps returning a `TurnDecision` JSON object; history
-  accumulates naturally as conversation turns — the model's JSON reply becomes
-  the assistant message, and the next turn's tool result is appended as the user
-  message. Works on either transport (see cross-cutting): codex/claude CLI
-  session-resume, or raw API credits — OpenAI Responses `previous_response_id`
-  (server-side) or Anthropic Messages with a client-owned, resent message array
-  plus `cache_control` breakpoints.
+  accumulates naturally as conversation turns. Current CLI resume adapters
+  satisfy this as a prototype bridge. The final implementation should use
+  provider SDK/session APIs for Codex and Claude so the brain gets structured
+  turn lifecycle, streaming events, and explicit session management without
+  scraping subprocess output.
 - Keep the deterministic brain **unchanged underneath**: it still parses the
   returned `TurnDecision`, dispatches `decision.action`, applies the existing
   checks (argument normalization, refusals, flash gate, convergence blocks in
@@ -358,11 +379,14 @@ spine regardless of how the harness summarizes.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/provider_types.py` + the four providers** — add a
-   **session-capable** provider mode that keeps one persistent conversation and
-   returns a `TurnDecision` JSON object per turn (still parsed exactly as today),
-   distinct from the current one-shot `next_decision`. No native tool-calling
-   required — that is entry #4. Keep the one-shot mode for the deterministic path.
+1. **`src/pyocd_debug_mcp/brain/provider_types.py` + provider adapters** - keep
+   the session-capable provider contract, but split adapter implementations by
+   transport quality:
+   - current bridge: CLI resume wrappers for `codex-cli` and `claude-cli`;
+   - final Codex adapter: SDK/app-server thread and turn APIs;
+   - final Claude adapter: Claude Agent SDK session API;
+   - API adapters: OpenAI Responses handle and Anthropic client-owned history.
+   No native tool-calling is required for this change; that remains entry #4.
 2. **`src/pyocd_debug_mcp/brain/loop.py`** — split `run_turnkey` into:
    - a persistent-session executor that appends each tool result as the next user
      turn, parses the returned `TurnDecision`, and dispatches `decision.action`
@@ -419,9 +443,32 @@ prior turns are cache-cheap to re-read after a long hardware op.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Supersedes the earlier
-"just feed more into the rebuilt prompt" idea, which survives only as the
-optional deterministic CI mode.
+Partially implemented by Branch A. The current branch has provider session
+state, CLI resume handles, OpenAI Responses continuation, local memory,
+prompt-delta rendering, tool schema forwarding, and provider progress events.
+
+Still open for the final integration:
+
+- replace Codex subprocess resume with Codex SDK/app-server thread APIs;
+- replace Claude subprocess resume with Claude Agent SDK sessions;
+- harden `anthropic-api` memory from compact per-turn notes into a real
+  outcome-bearing firmware-debugging ledger before claiming Claude API parity;
+- implement strict one-provider-session mode so resume failure stops the run or
+  asks the operator instead of silently starting a fresh provider session;
+- retain the CLI resume adapters as compatibility fallback and CI-friendly
+  smoke paths.
+
+Claude API-specific work:
+
+- The current `anthropic-api` path is stateless at the provider API layer. It
+  gets continuity only from the brain-rendered memory block.
+- Upgrade that memory block to preserve exact tool arguments, observed values,
+  build artifacts, source edits, failed hypotheses, ruled-out paths, refusal and
+  block reasons, and acceptance constraints.
+- Add tests that force compaction and prove old critical facts survive into a
+  later Anthropic API turn.
+- Run the Anthropic API repair slice after ledger hardening; do not infer
+  performance from Claude Code CLI session-resume proof.
 
 ---
 
@@ -3115,9 +3162,10 @@ exactly as shipped skills are. Explicitly **not** `.codex` / `.claude`:
 - Skills here are **brain-injected, not model-discovered** (loaded and rendered by
   `load_skills_for_context`, [skills.py:131](../src/pyocd_debug_mcp/brain/skills.py#L131)),
   so the "model is trained on `.codex`" advantage does not apply.
-- The turnkey providers run in an **ephemeral temp dir**
-  (`codex -C <tmp> --ephemeral`, claude `cwd=tmpdir`), so a `.codex`/`.claude` in
-  any human repo would not even be seen on the turnkey path.
+- The turnkey providers use brain-owned runtime working directories and provider
+  resume handles. Those directories are implementation detail, not the user's
+  project customization store, so a `.codex`/`.claude` in a human repo is not
+  the source of truth for turnkey skills or session tools.
 
 If a provider-style view ever helps native tool-authoring, the brain may *generate*
 a `.codex`/`AGENTS.md`-shaped mirror at runtime — a generated view, never the

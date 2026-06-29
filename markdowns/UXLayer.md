@@ -500,6 +500,32 @@ The prompt should show live context, for example:
 The shell should still allow one-shot execution for users who do not want a
 persistent session.
 
+### Provider Session Resume Failures
+
+For real-session providers (`openai-api`, `codex-cli`, `claude-cli`), the shell
+must not silently continue with a fresh provider session when resume fails.
+
+If a top-level run already has a provider handle and the next provider turn
+cannot resume it, the shell should show a blocking recovery prompt:
+
+```text
+Provider session resume failed.
+Provider: claude-cli
+Expected session_id: <id>
+No new provider session has been started.
+
+[r] retry resume   [n] new session from saved memory   [a] abort
+```
+
+Rules:
+
+- retry uses the same expected provider handle;
+- new session starts from the brain's saved local memory and must be visibly
+  labeled as a new provider session in the run events;
+- abort ends the top-level prompt with a provider-session failure result;
+- headless CLI mode should fail closed unless a future explicit recovery option
+  is supplied.
+
 ### 2. Streaming Progress While The Agent Is Thinking/Acting
 
 The UX layer should render progress from the structured event stream, not from

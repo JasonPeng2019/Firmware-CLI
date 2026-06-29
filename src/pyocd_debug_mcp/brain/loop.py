@@ -45,14 +45,18 @@ from pyocd_debug_mcp.brain.provider_types import (
     plan_memory_compaction,
     ProviderContinuationMode,
     ProviderMemoryEntry,
+    ProviderMemoryResultStatus,
     ProviderPromptBundle,
     ProviderProgressUpdate,
+    ProviderResumeFailure,
+    ProviderResumeRecoveryChoice,
     ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
     render_provider_memory_text,
     provider_turn_record,
+    with_provider_resume_recovery_request,
 )
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
@@ -95,6 +99,9 @@ class TurnkeyExecution:
     model_turns: tuple[dict[str, object], ...]
     brain_trace: tuple[dict[str, object], ...]
     brain_events: tuple[dict[str, object], ...]
+
+
+ProviderResumeRecoveryHandler = Callable[[ProviderResumeFailure], ProviderResumeRecoveryChoice]
 
 
 def load_board(board_id: str) -> BoardConfig:
@@ -547,11 +554,15 @@ def _compact_turn_text(text: str | None, *, limit: int = 320) -> str:
 
 def _build_provider_memory_entry(
     *,
+    invocation: TurnkeyInvocation,
+    board: BoardConfig,
     session_state: ProviderSessionState,
     state: BrainState,
     decision: TurnDecision,
     result_text: str,
+    workspace: WorkspaceSession | None,
 ) -> ProviderMemoryEntry:
+    flash_artifact, symbol_artifact = _default_artifacts(invocation, board)
     return ProviderMemoryEntry(
         turn_index=session_state.next_turn_index(),
         classification=decision.classification or state.last_classification,
@@ -561,17 +572,62 @@ def _build_provider_memory_entry(
         action_summary=_compact_turn_text(state.last_action_summary or decision.action.kind),
         result_summary=_compact_turn_text(result_text),
         verification_snapshot=_verification_snapshot_text(state.verification),
+        decision_rationale=(
+            _compact_turn_text(decision.strategy_evaluation)
+            if decision.strategy_evaluation
+            else None
+        ),
+        action_payload=decision.action.model_dump(mode="json"),
+        result_status=_memory_result_status(result_text),
+        artifact_paths=tuple(
+            str(path)
+            for path in (
+                flash_artifact,
+                symbol_artifact,
+                invocation.workspace_root,
+            )
+            if path is not None
+        ),
+        changed_files=tuple(workspace.changed_files()) if workspace is not None else (),
+        codebase_summary=_compact_turn_text(_workspace_summary(workspace)),
+        failed_hypotheses=tuple(
+            hypothesis.summary
+            for hypothesis in state.hypotheses
+            if hypothesis.status not in {"open", "supported"}
+        ),
+        refused_or_blocked_paths=tuple(
+            sorted((*state.refused_action_families, *state.blocked_action_families))
+        ),
+        acceptance_constraints=(
+            "do not finalize healthy/fixed without successful run_green_check",
+            "server-native board actions must route through governed MCP tools",
+            "recovery-created provider sessions must be labeled as new",
+        ),
     )
+
+
+def _memory_result_status(result_text: str) -> ProviderMemoryResultStatus:
+    if result_text.startswith("Refused ["):
+        return "refusal"
+    if result_text.startswith("Blocked ["):
+        return "block"
+    if "Error" in result_text or "failed" in result_text.lower() or "Traceback" in result_text:
+        return "failure"
+    if result_text.strip():
+        return "success"
+    return "unknown"
 
 
 async def _commit_provider_memory(
     *,
     provider: DecisionProvider,
     invocation: TurnkeyInvocation,
+    board: BoardConfig,
     state: BrainState,
     decision: TurnDecision,
     result_text: str,
     provider_metadata: dict[str, object],
+    workspace: WorkspaceSession | None,
     sink: EventSink | None,
     records: list[dict[str, object]],
 ) -> dict[str, object]:
@@ -579,10 +635,13 @@ async def _commit_provider_memory(
     if current_session is None:
         raise TurnkeyLoopError("Provider session state was missing during memory commit.")
     memory_entry = _build_provider_memory_entry(
+        invocation=invocation,
+        board=board,
         session_state=current_session,
         state=state,
         decision=decision,
         result_text=result_text,
+        workspace=workspace,
     )
     updated_session = append_memory_entry(current_session, memory_entry)
     compaction_plan = plan_memory_compaction(updated_session)
@@ -1467,6 +1526,7 @@ async def run_turnkey(
     provider: DecisionProvider,
     client_factory: Callable[[], LocalMCPClient] | None = None,
     event_sink: EventSink | None = None,
+    provider_resume_recovery: ProviderResumeRecoveryHandler | None = None,
 ) -> TurnkeyExecution:
     board = load_board(invocation.board_id)
     selected_skills = load_skills_for_context(
@@ -1570,33 +1630,104 @@ async def run_turnkey(
                     },
                 )
                 provider_started = time.perf_counter()
-                try:
-                    provider_turn = await provider.next_decision(
-                        prompt_bundle=prompt_bundle,
-                        session_state=state.provider_session_state
-                        or make_provider_session_state(
-                            provider=invocation.provider,
-                            model=invocation.model,
-                            memory_mode=invocation.memory_mode,
-                            continuation_mode=provider.capabilities.continuation_mode,
-                            native_sync_every=invocation.native_sync_every,
-                        ),
-                    )
-                except Exception as exc:  # noqa: BLE001 - provider/runtime failures become saved runs
-                    result = _tooling_failure_result(
-                        state,
-                        summary=f"Blocked [turnkey/provider-failed]: {type(exc).__name__}: {exc}",
-                        root_cause=f"Provider turn failed before a board diagnosis was completed: {type(exc).__name__}: {exc}",
-                    )
-                    await _record_brain_event(
-                        sink=event_sink,
-                        records=brain_events,
-                        invocation=invocation,
-                        state=state,
-                        event_kind="unexpected_failure",
-                        message=result.summary,
-                        details={"error_type": type(exc).__name__, "phase": "provider_turn"},
-                    )
+                provider_session_for_turn = state.provider_session_state or make_provider_session_state(
+                    provider=invocation.provider,
+                    model=invocation.model,
+                    memory_mode=invocation.memory_mode,
+                    continuation_mode=provider.capabilities.continuation_mode,
+                    native_sync_every=invocation.native_sync_every,
+                )
+                provider_turn: ProviderTurn | None = None
+                while provider_turn is None:
+                    try:
+                        provider_turn = await provider.next_decision(
+                            prompt_bundle=prompt_bundle,
+                            session_state=provider_session_for_turn,
+                        )
+                    except ProviderResumeFailure as exc:
+                        failure_record = exc.to_record()
+                        await _record_brain_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            event_kind="provider_resume_failed",
+                            message=(
+                                "Provider session resume failed; no replacement "
+                                "provider session has been started."
+                            ),
+                            details=failure_record,
+                        )
+                        if provider_resume_recovery is None:
+                            result = _tooling_failure_result(
+                                state,
+                                summary=(
+                                    "Blocked [turnkey/provider-resume-failed]: "
+                                    f"{exc}"
+                                ),
+                                root_cause=(
+                                    "Provider resume failed and the headless "
+                                    "runtime failed closed without starting a "
+                                    "replacement provider session."
+                                ),
+                            )
+                            break
+                        choice = provider_resume_recovery(exc)
+                        await _record_brain_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            event_kind="provider_resume_recovery_choice",
+                            message=f"Provider resume recovery choice: {choice}.",
+                            details={
+                                "choice": choice,
+                                "failure": failure_record,
+                            },
+                        )
+                        if choice == "retry":
+                            provider_session_for_turn = state.provider_session_state or provider_session_for_turn
+                            continue
+                        if choice == "new-session-from-memory":
+                            provider_session_for_turn = with_provider_resume_recovery_request(
+                                state.provider_session_state or provider_session_for_turn,
+                                action="new-session-from-memory",
+                                failure=exc.record,
+                            )
+                            state.provider_session_state = provider_session_for_turn
+                            continue
+                        result = _tooling_failure_result(
+                            state,
+                            summary=(
+                                "Blocked [turnkey/provider-resume-aborted]: "
+                                "operator aborted after provider session resume failure."
+                            ),
+                            root_cause=(
+                                "Provider resume failed and the operator chose "
+                                "to abort without starting a replacement "
+                                "provider session."
+                            ),
+                        )
+                        break
+                    except Exception as exc:  # noqa: BLE001 - provider/runtime failures become saved runs
+                        result = _tooling_failure_result(
+                            state,
+                            summary=f"Blocked [turnkey/provider-failed]: {type(exc).__name__}: {exc}",
+                            root_cause=f"Provider turn failed before a board diagnosis was completed: {type(exc).__name__}: {exc}",
+                        )
+                        await _record_brain_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            event_kind="unexpected_failure",
+                            message=result.summary,
+                            details={"error_type": type(exc).__name__, "phase": "provider_turn"},
+                        )
+                        break
+                if result is not None:
+                    break
+                if provider_turn is None:
                     break
                 provider_duration_ms = int((time.perf_counter() - provider_started) * 1000)
                 state.provider_session_state = provider_turn.session_state
@@ -1887,10 +2018,12 @@ async def run_turnkey(
                 compaction_record = await _commit_provider_memory(
                     provider=provider,
                     invocation=invocation,
+                    board=board,
                     state=state,
                     decision=decision,
                     result_text=result_text,
                     provider_metadata=provider_turn.provider_metadata,
+                    workspace=workspace,
                     sink=event_sink,
                     records=brain_events,
                 )
@@ -2023,9 +2156,15 @@ async def run_turnkey_with_openai(
     *,
     api_key: str,
     event_sink: EventSink | None = None,
+    provider_resume_recovery: ProviderResumeRecoveryHandler | None = None,
 ) -> TurnkeyExecution:
     config = BrainProviderConfig(provider="openai-api", api_key=api_key, model=invocation.model)
-    return await run_turnkey_with_provider(invocation, provider_config=config, event_sink=event_sink)
+    return await run_turnkey_with_provider(
+        invocation,
+        provider_config=config,
+        event_sink=event_sink,
+        provider_resume_recovery=provider_resume_recovery,
+    )
 
 
 async def run_turnkey_with_provider(
@@ -2033,6 +2172,7 @@ async def run_turnkey_with_provider(
     *,
     provider_config: BrainProviderConfig,
     event_sink: EventSink | None = None,
+    provider_resume_recovery: ProviderResumeRecoveryHandler | None = None,
 ) -> TurnkeyExecution:
     try:
         provider = create_decision_provider(provider_config)
@@ -2043,4 +2183,9 @@ async def run_turnkey_with_provider(
             root_cause=f"Provider setup failed before any board session was created: {type(exc).__name__}: {exc}",
             event_sink=event_sink,
         )
-    return await run_turnkey(invocation, provider=provider, event_sink=event_sink)
+    return await run_turnkey(
+        invocation,
+        provider=provider,
+        event_sink=event_sink,
+        provider_resume_recovery=provider_resume_recovery,
+    )

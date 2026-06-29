@@ -22,11 +22,15 @@ ProviderRemoteStrategy = Literal[
     "none",
 ]
 ProviderMemoryMode = Literal["deterministic", "model-summary"]
+ProviderResumeRecoveryChoice = Literal["retry", "new-session-from-memory", "abort"]
+ProviderMemoryResultStatus = Literal["success", "failure", "refusal", "block", "unknown"]
 
 DEFAULT_RECENT_TURN_LIMIT = 4  # PROJECT-DEFINED (hybrid memory recent-turn window)
 DEFAULT_RECENT_RENDER_CHAR_LIMIT = 8_000  # PROJECT-DEFINED (recent-memory prompt cap)
 DEFAULT_SUMMARY_CHAR_LIMIT = 4_000  # PROJECT-DEFINED (compacted-summary prompt cap)
 DEFAULT_NATIVE_SYNC_EVERY = 4  # PROJECT-DEFINED (remote safety-sync cadence)
+RESUME_RECOVERY_ACTION_METADATA_KEY = "resume_recovery_action"  # PROJECT-DEFINED
+RESUME_RECOVERY_FAILURE_METADATA_KEY = "resume_recovery_failure"  # PROJECT-DEFINED
 
 _ENTRY_FIELD_CHAR_LIMIT = 320
 _SUMMARY_COMPONENT_CHAR_LIMIT = 180
@@ -120,6 +124,15 @@ class ProviderMemoryEntry:
     action_summary: str
     result_summary: str
     verification_snapshot: str
+    decision_rationale: str | None = None
+    action_payload: dict[str, object] = field(default_factory=dict)
+    result_status: ProviderMemoryResultStatus = "unknown"
+    artifact_paths: tuple[str, ...] = ()
+    changed_files: tuple[str, ...] = ()
+    codebase_summary: str | None = None
+    failed_hypotheses: tuple[str, ...] = ()
+    refused_or_blocked_paths: tuple[str, ...] = ()
+    acceptance_constraints: tuple[str, ...] = ()
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -131,6 +144,15 @@ class ProviderMemoryEntry:
             "action_summary": self.action_summary,
             "result_summary": self.result_summary,
             "verification_snapshot": self.verification_snapshot,
+            "decision_rationale": self.decision_rationale,
+            "action_payload": dict(self.action_payload),
+            "result_status": self.result_status,
+            "artifact_paths": list(self.artifact_paths),
+            "changed_files": list(self.changed_files),
+            "codebase_summary": self.codebase_summary,
+            "failed_hypotheses": list(self.failed_hypotheses),
+            "refused_or_blocked_paths": list(self.refused_or_blocked_paths),
+            "acceptance_constraints": list(self.acceptance_constraints),
         }
 
     def render_text(self) -> str:
@@ -140,6 +162,7 @@ class ProviderMemoryEntry:
             f"observation: {_trim_text(self.observation_summary, _ENTRY_FIELD_CHAR_LIMIT)}",
             f"action: {self.action_kind} | {_trim_text(self.action_summary, _ENTRY_FIELD_CHAR_LIMIT)}",
             f"result: {_trim_text(self.result_summary, _ENTRY_FIELD_CHAR_LIMIT)}",
+            f"result_status: {self.result_status}",
             f"verification: {_trim_text(self.verification_snapshot, _ENTRY_FIELD_CHAR_LIMIT)}",
         ]
         if self.hypothesis:
@@ -147,7 +170,60 @@ class ProviderMemoryEntry:
                 3,
                 f"hypothesis: {_trim_text(self.hypothesis, _ENTRY_FIELD_CHAR_LIMIT)}",
             )
+        if self.decision_rationale:
+            lines.insert(
+                4 if self.hypothesis else 3,
+                f"rationale: {_trim_text(self.decision_rationale, _ENTRY_FIELD_CHAR_LIMIT)}",
+            )
+        if self.changed_files:
+            lines.append("changed_files: " + ", ".join(self.changed_files[:5]))
+        if self.refused_or_blocked_paths:
+            lines.append("blocked_or_refused: " + ", ".join(self.refused_or_blocked_paths[:5]))
+        if self.codebase_summary:
+            lines.append(f"codebase: {_trim_text(self.codebase_summary, _ENTRY_FIELD_CHAR_LIMIT)}")
         return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class ProviderResumeFailureRecord:
+    provider: str
+    remote_strategy: ProviderRemoteStrategy
+    continuation_mode: ProviderContinuationMode
+    continuation_path: ProviderContinuationPath
+    remote_handle_kind: str
+    expected_handle_id: str
+    turn_index: int
+    failure_text: str
+    local_memory_available: bool
+    replacement_provider_session_started: bool = False
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "provider": self.provider,
+            "remote_strategy": self.remote_strategy,
+            "continuation_mode": self.continuation_mode,
+            "continuation_path": self.continuation_path,
+            "remote_handle_kind": self.remote_handle_kind,
+            "expected_handle_id": self.expected_handle_id,
+            "turn_index": self.turn_index,
+            "failure_text": self.failure_text,
+            "local_memory_available": self.local_memory_available,
+            "replacement_provider_session_started": self.replacement_provider_session_started,
+        }
+
+
+class ProviderResumeFailure(RuntimeError):
+    """Raised when a real provider handle exists but cannot be resumed."""
+
+    def __init__(self, record: ProviderResumeFailureRecord) -> None:
+        super().__init__(
+            f"{record.provider} failed to resume {record.remote_handle_kind}="
+            f"{record.expected_handle_id}: {record.failure_text}"
+        )
+        self.record = record
+
+    def to_record(self) -> dict[str, object]:
+        return self.record.to_record()
 
 
 @dataclass(frozen=True)
@@ -496,6 +572,40 @@ def make_provider_session_state(
         native_sync_every=native_sync_every,
         runtime_context=runtime_context,
         metadata=dict(metadata or {}),
+    )
+
+
+def provider_resume_recovery_action(
+    session_state: ProviderSessionState,
+) -> ProviderResumeRecoveryChoice | None:
+    action = session_state.metadata.get(RESUME_RECOVERY_ACTION_METADATA_KEY)
+    if action in {"retry", "new-session-from-memory", "abort"}:
+        return cast(ProviderResumeRecoveryChoice, action)
+    return None
+
+
+def with_provider_resume_recovery_request(
+    session_state: ProviderSessionState,
+    *,
+    action: ProviderResumeRecoveryChoice,
+    failure: ProviderResumeFailureRecord,
+) -> ProviderSessionState:
+    return session_state.with_updated_metadata(
+        {
+            RESUME_RECOVERY_ACTION_METADATA_KEY: action,
+            RESUME_RECOVERY_FAILURE_METADATA_KEY: failure.to_record(),
+        }
+    )
+
+
+def clear_provider_resume_recovery_request(
+    session_state: ProviderSessionState,
+) -> ProviderSessionState:
+    return session_state.with_updated_metadata(
+        {
+            RESUME_RECOVERY_ACTION_METADATA_KEY: None,
+            RESUME_RECOVERY_FAILURE_METADATA_KEY: None,
+        }
     )
 
 

@@ -68,18 +68,30 @@ The current live status is:
     even when no board session is ever created
 - turnkey provider continuity is now brain-owned and memory-first:
   - canonical compact local memory is persisted for every provider
-  - OpenAI uses native continuation when healthy, with local fallback and
-    periodic safety-sync injection
+  - OpenAI uses native continuation when healthy; if a stored
+    `previous_response_id` cannot resume, headless runs fail closed unless an
+    explicit recovery path starts a newly labeled session from saved memory
   - Claude CLI now uses real remote session resume plus fork retry on top of
-    the same local-memory model
+    the same local-memory model; resume failure is not silently replaced by a
+    fresh session
   - Codex CLI now uses real remote thread resume plus same-thread retry /
-    fresh-thread fallback on top of the same local-memory model
+    explicit recovery labeling on top of the same local-memory model
   - Anthropic remains local-primary because the current Messages API is
     stateless and does not expose a resumable native conversation handle
   - deterministic compaction is the default; `model-summary` compaction is
     available as an explicit option
   - coarse provider progress checkpoints are now emitted as first-class brain
     events for runtime/UX inspection
+- current provider integration direction:
+  - `codex-cli` and `claude-cli` are the current subscription-backed local CLI
+    bridges
+  - future Codex hardening should use SDK/app-server style thread and turn APIs
+    behind the same brain-owned provider adapter
+  - Claude subscription use should remain a BYO local Claude Code CLI adapter
+    unless Anthropic approves SDK/subscription use for this product
+  - Claude API-key use should go through `ANTHROPIC_API_KEY` and, later, a
+    Claude Agent SDK adapter; the current Anthropic Messages path depends on the
+    brain-owned memory layer rather than a Claude Code-style session
 
 For the current prototype branch plan, second-provider parity and true
 fresh-machine Windows/macOS portability are explicit deferred risks, not the
@@ -104,8 +116,12 @@ Today that means:
 - a tracked Codex benchmark corpus and benchmark runner
 - a Codex-proven turnkey brain and turnkey benchmark path over the same corpus
 - an implemented Pass 1 operator-facing UX shell over the same brain
-- an open second-provider validation gap for Claude CLI on this host
+- an open official-pair second-provider validation gap; STM32 Claude CLI proof
+  exists, but full scoped-pair closure is not complete
 - deferred second-provider and fresh-machine portability proof work
+- deployment readiness is still open: the repo has not yet been proven on fresh
+  user computers across multiple top-level prompts, each with its own internal
+  provider/tool loop and code-writing repair proof
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -449,19 +465,32 @@ Turnkey provider rules:
 - `claude-cli` uses the locally installed `claude` CLI and inherits whatever
   Claude Code auth you already configured there, including a Claude
   subscription or `ANTHROPIC_API_KEY`
+- `claude-cli` is a local user-controlled provider dependency, not bundled
+  Claude access. The user authenticates Anthropic's official CLI; this app does
+  not collect, proxy, or repackage Claude subscription credentials.
+- `anthropic-api` is the API-key-backed Claude path. It is stateless at the
+  Messages API layer and uses the brain's compact memory/compaction layer rather
+  than Claude Code-style session resume.
 - provider continuity is unified across all backends:
   - the brain always persists compact local turn-fact memory
-  - OpenAI is `remote-primary` via Responses `previous_response_id`, with
-    local-memory fallback and periodic safety sync
+  - OpenAI is `remote-primary` via Responses `previous_response_id`; failed
+    resume is a typed provider-resume failure unless the operator explicitly
+    starts a new labeled session from saved memory
   - Claude CLI is `remote-primary` via real `--resume <session_id>` reuse, with
-    `--fork-session` retries plus local-memory fallback and safety sync
+    `--fork-session` retries plus strict resume-failure handling
   - Codex CLI is `remote-primary` via real `codex exec resume <thread_id>`
-    reuse, with same-thread correction retry, fresh local-memory fallback, and
-    safety sync
+    reuse, with same-thread correction retry and strict resume-failure handling
   - Anthropic Messages API remains `local-primary` because the current Messages
     API surface is stateless and does not expose a resumable conversation handle
     equivalent to OpenAI response chaining, Claude session resume, or Codex
     thread resume
+- deployment policy should treat real provider session handles strictly:
+  - after `openai-api`, `codex-cli`, or `claude-cli` establishes a real
+    provider handle, a later resume failure must stop the run or ask the
+    operator before starting a new provider session
+  - silent fresh-session fallback is a recovery mode, not normal continuation
+  - headless runs should fail closed by default; interactive shell runs should
+    offer retry resume, start new session from saved local memory, or abort
 - turnkey memory controls are optional:
   - `--memory-mode deterministic|model-summary`
   - `--native-sync-every N`
@@ -648,8 +677,8 @@ Verified:
 - the current Branch A provider/prompt layer is also in place:
   - provider capabilities and loop-owned provider session state are explicit
   - all providers share one canonical compact local-memory model
-  - OpenAI uses native continuation as an accelerator, with local fallback and
-    optional periodic safety sync
+  - OpenAI uses native continuation as an accelerator, with strict
+    resume-failure handling and optional periodic safety sync
   - Claude CLI and Codex CLI now add real remote continuation on top of that
     same canonical compact memory model
   - Anthropic remains local-primary because the current Messages API does not
@@ -686,6 +715,10 @@ Latest turnkey verification:
 - deferred prototype risk that is not yet re-proved:
   - full official-pair second-provider closure
   - true fresh-machine Windows/macOS portability proof
+  - multi-prompt user-computer deployment proof, including provider-session
+    isolation per prompt and real bug-repair code-writing validation
+  - strict provider-session resume-failure proof: bad/missing resume handles
+    must not silently create a fresh provider session
 - current official-pair second-provider gap:
   - the STM32 Claude CLI path is proven on this host, but the official-pair
     freeform + suite closure bar is still open

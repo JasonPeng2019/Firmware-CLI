@@ -175,8 +175,10 @@ possible, plus the model-facing tool schema prompt. It should not overclaim
   available, such as OpenAI Responses `previous_response_id`;
 - Anthropic API-style continuity may be client-owned history that is resent each
   turn, because that is the provider's session model;
-- CLI providers may use the best available local mechanism until true CLI resume
-  is implemented and verified;
+- CLI providers may use persisted CLI resume handles as the current bridge;
+- the final robust Codex/Claude integrations should use provider-specific
+  programmable session APIs behind the same brain-owned provider adapter
+  protocol;
 - do not call a CLI transcript/local-memory fallback a true native persistent
   provider session unless the provider CLI actually resumes the same session.
 
@@ -529,8 +531,14 @@ into the other branch, or into final integration.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.
-- Branch A behavior remains unimplemented here; provider-specific persistent
-  session behavior still needs code, tests, and provider-specific verification.
+- Branch A is now implemented on `P-Wave-A` through provider session state,
+  CLI resume handles, OpenAI Responses continuation, tool-schema forwarding,
+  and provider progress events. Remaining Branch A hardening is final-provider
+  integration quality: Codex SDK/app-server thread APIs, Claude Agent SDK
+  sessions, and strict no-silent-fresh-session policy for modes that promise one
+  continuous provider session. Strict policy means resume failure stops headless
+  runs by default, while the interactive shell must ask before retrying or
+  starting a new provider session from saved local memory.
 - Branch B behavior remains unimplemented here; the clarified boundary still
   needs code, tests, and any required real-board proof when Branch B is built.
 - Branch C behavior remains unimplemented here; session/client-scoped timeout

@@ -49,6 +49,9 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
     ProviderProgressUpdate,
+    ProviderResumeFailure,
+    ProviderResumeFailureRecord,
+    ProviderResumeRecoveryChoice,
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
@@ -419,10 +422,12 @@ def test_run_freeform_task_does_not_refuse_fix_wording_without_repair_context(
         *,
         provider_config: object,
         event_sink: object = None,
+        provider_resume_recovery: object = None,
     ) -> SimpleNamespace:
         captured["invocation"] = invocation
         captured["provider_config"] = provider_config
         captured["event_sink"] = event_sink
+        captured["provider_resume_recovery"] = provider_resume_recovery
         return SimpleNamespace(result=SimpleNamespace(final_status="diagnosed_only"))
 
     monkeypatch.setattr(
@@ -694,6 +699,243 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
     assert "provider exploded" in execution.result.summary
 
 
+def _resume_failure_record() -> ProviderResumeFailureRecord:
+    return ProviderResumeFailureRecord(
+        provider="codex-cli",
+        remote_strategy="codex-thread-resume",
+        continuation_mode="remote-primary",
+        continuation_path="remote-resume",
+        remote_handle_kind="thread_id",
+        expected_handle_id="thread-parent",
+        turn_index=2,
+        failure_text="resume failed",
+        local_memory_available=True,
+    )
+
+
+class ResumeFailureProvider:
+    def __init__(self, *, fail_count: int = 1) -> None:
+        self.calls = 0
+        self.session_metadata: list[dict[str, object]] = []
+        self._fail_count = fail_count
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            supports_native_session=False,
+            supports_transcript_continuation=True,
+            supports_response_id_continuation=False,
+            supports_tool_schema_prompt=True,
+            continuation_mode="remote-primary",
+            remote_strategy="codex-thread-resume",
+            resume_requires_stable_workdir=True,
+        )
+
+    async def next_decision(
+        self,
+        *,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
+        del prompt_bundle
+        self.calls += 1
+        self.session_metadata.append(dict(session_state.metadata))
+        if self.calls <= self._fail_count:
+            raise ProviderResumeFailure(_resume_failure_record())
+        recovery_action = session_state.metadata.get("resume_recovery_action")
+        provider_metadata = {
+            "continuation_path": "local-memory-fallback"
+            if recovery_action == "new-session-from-memory"
+            else "remote-resume",
+            "remote_handle_kind": "thread_id",
+            "remote_handle_id": "thread-fresh"
+            if recovery_action == "new-session-from-memory"
+            else "thread-parent",
+            "resumed_remote": recovery_action != "new-session-from-memory",
+            "fresh_remote_turn": recovery_action == "new-session-from-memory",
+            "memory_injected": recovery_action == "new-session-from-memory",
+            "recovery_created_new_session": recovery_action == "new-session-from-memory",
+            "replaced_remote_handle_id": "thread-parent"
+            if recovery_action == "new-session-from-memory"
+            else None,
+        }
+        return ProviderTurn(
+            decision=TurnDecision(
+                observation_summary="Provider continued after resume handling.",
+                classification="tooling_failure",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="tooling_failure",
+                    root_cause="Provider resume handling was exercised.",
+                    summary="Provider resume handling completed.",
+                ),
+            ),
+            output_text="{}",
+            response_id=None,
+            session_state=session_state.with_native_handle_update(
+                native_session_id=str(provider_metadata["remote_handle_id"]),
+                provider_fields={"codex_thread_id": provider_metadata["remote_handle_id"]},
+            ).with_last_continuation_path(
+                cast(Any, provider_metadata["continuation_path"]),
+                metadata=provider_metadata,
+            ),
+            provider_metadata=provider_metadata,
+        )
+
+    async def summarize_memory(
+        self,
+        *,
+        session_state: ProviderSessionState,
+        prior_summary_text: str,
+        evicted_entries: tuple[ProviderMemoryEntry, ...],
+    ) -> ProviderMemorySummaryResult:
+        del session_state, evicted_entries
+        return ProviderMemorySummaryResult(summary_text=prior_summary_text or "- summary")
+
+
+def test_run_turnkey_resume_failure_fails_closed_and_records_artifact_event(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Continue a crashed provider session.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = ResumeFailureProvider()
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, provider),
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert "turnkey/provider-resume-failed" in execution.result.summary
+    assert provider.calls == 1
+    events_path = execution.run_root / "logs" / "brain_events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    resume_event = next(record for record in events if record["event_kind"] == "provider_resume_failed")
+    assert resume_event["details"]["provider"] == "codex-cli"
+    assert resume_event["details"]["expected_handle_id"] == "thread-parent"
+    assert resume_event["details"]["replacement_provider_session_started"] is False
+
+
+def test_run_turnkey_resume_failure_retries_when_interactive_handler_chooses_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    provider = ResumeFailureProvider(fail_count=1)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Retry a failed provider resume.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, provider),
+            client_factory=cast(Any, lambda: FakeClient({})),
+            provider_resume_recovery=lambda failure: cast(
+                ProviderResumeRecoveryChoice,
+                "retry",
+            ),
+        )
+    )
+
+    assert execution.result.summary == "Provider resume handling completed."
+    assert provider.calls == 2
+    assert all(metadata.get("resume_recovery_action") is None for metadata in provider.session_metadata)
+    assert any(event["event_kind"] == "provider_resume_recovery_choice" for event in execution.brain_events)
+
+
+def test_run_turnkey_resume_failure_can_start_labeled_recovery_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    provider = ResumeFailureProvider(fail_count=1)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Recover a failed provider resume from memory.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, provider),
+            client_factory=cast(Any, lambda: FakeClient({})),
+            provider_resume_recovery=lambda failure: cast(
+                ProviderResumeRecoveryChoice,
+                "new-session-from-memory",
+            ),
+        )
+    )
+
+    assert execution.result.summary == "Provider resume handling completed."
+    assert provider.calls == 2
+    assert provider.session_metadata[1]["resume_recovery_action"] == "new-session-from-memory"
+    assert execution.model_turns[-1]["provider_metadata"]["recovery_created_new_session"] is True
+    assert execution.model_turns[-1]["provider_metadata"]["replaced_remote_handle_id"] == "thread-parent"
+    choice_event = next(
+        event
+        for event in execution.brain_events
+        if event["event_kind"] == "provider_resume_recovery_choice"
+    )
+    assert choice_event["details"]["choice"] == "new-session-from-memory"
+
+
+def test_run_turnkey_resume_failure_can_be_aborted_by_interactive_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Abort after provider resume failure.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = ResumeFailureProvider()
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=cast(Any, provider),
+            client_factory=cast(Any, lambda: FakeClient({})),
+            provider_resume_recovery=lambda failure: cast(
+                ProviderResumeRecoveryChoice,
+                "abort",
+            ),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert "turnkey/provider-resume-aborted" in execution.result.summary
+    assert provider.calls == 1
+
+
 def test_run_turnkey_forwards_provider_progress_updates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -958,6 +1200,7 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
                 {
                     "observation_summary": "Inspect the workspace file first.",
                     "classification": "code_bug",
+                    "strategy_evaluation": "Read the file before editing so the next action is grounded in workspace evidence.",
                     "action": {"kind": "read_file", "path": "src/firmware.bin"},
                 }
             ),
@@ -986,6 +1229,14 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
     assert execution.result.final_status == "diagnosed_only"
     assert "WorkspaceError" in execution.state.last_result_text
     assert "not UTF-8 text" in execution.state.last_result_text
+    assert execution.state.provider_session_state is not None
+    memory_entry = execution.state.provider_session_state.recent_memory_entries[0]
+    record = memory_entry.to_record()
+    assert record["decision_rationale"].startswith("Read the file before editing")
+    assert record["action_payload"]["path"] == "src/firmware.bin"
+    assert record["result_status"] == "failure"
+    assert str(record["codebase_summary"]).startswith("workspace_root=")
+    assert "do not finalize healthy/fixed without successful run_green_check" in record["acceptance_constraints"]
 
 
 def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(

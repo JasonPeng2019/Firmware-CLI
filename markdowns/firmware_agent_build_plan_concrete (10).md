@@ -743,7 +743,11 @@ Frozen implementation choices for the first pass:
    - `claude-cli` via local `claude --print`
    This lets the same turnkey loop run on either API credits or existing coding-agent subscriptions.
 3. **Own the orchestration loop directly** in the brain. Do not delegate loop ownership to the Agents SDK
-   in the first pass.
+   in the first pass. Future provider SDK work is allowed only as an adapter
+   implementation detail: Codex SDK/app-server thread APIs and Claude Agent SDK
+   sessions may replace subprocess wrappers, but the repo-owned brain still
+   decides prompts, parses `TurnDecision`, gates board actions, records evidence,
+   owns timeout/convergence policy, and controls run artifacts.
 4. **Add board-aware skills injection** as YAML data under `skills/`:
    - `skills/common/`
    - `skills/mcu_families/nrf52833/`
@@ -767,9 +771,17 @@ Frozen implementation choices for the first pass:
 Current prototype capability target on top of that first pass:
 
 1. **Use persistent provider sessions where available.** API providers should continue the same model
-   conversation through native session/conversation handles. CLI providers may keep using the best
-   available local mechanism until a true persistent CLI session exists, but the brain contract should be
-   written around session continuity instead of one-shot reopening.
+   conversation through native session/conversation handles. The current
+   subscription-backed bridge uses Codex and Claude CLI resume handles. Future
+   hardening should move Codex to SDK/app-server thread APIs and Claude API-key
+   use to Claude Agent SDK sessions, while keeping Claude subscription use as a
+   BYO local Claude Code CLI integration unless Anthropic approves another
+   product arrangement. The brain contract is written around session continuity
+   instead of one-shot reopening. For real-session providers, failed resume is
+   not normal continuation: headless runs fail closed by default, and the
+   interactive shell must ask before retrying or starting a new provider session
+   from saved local memory. Any recovery-created provider session is labeled as
+   new in events and artifacts.
 2. **Split host freedom from board governance.** The model can do host-only code/file/process work as
    model-native actions. It emits a final governed decision only when it needs server-native board tools
    or needs to return a final answer.

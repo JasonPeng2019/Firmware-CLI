@@ -14,7 +14,11 @@ from pyocd_debug_mcp.brain.config import (
 )
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
-from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
+from pyocd_debug_mcp.brain.loop import (
+    ProviderResumeRecoveryHandler,
+    TurnkeyExecution,
+    run_turnkey_with_provider,
+)
 from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 
@@ -34,6 +38,7 @@ async def run_freeform_task(
     workspace_root: str | None = None,
     build_command: str | None = None,
     event_sink: EventSink | None = None,
+    provider_resume_recovery: ProviderResumeRecoveryHandler | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
     iteration_estimate: IterationEstimate | None = None,
@@ -72,6 +77,7 @@ async def run_freeform_task(
         invocation,
         provider_config=provider_config,
         event_sink=event_sink,
+        provider_resume_recovery=provider_resume_recovery,
     )
 
 

@@ -15,15 +15,19 @@ from pyocd_debug_mcp.brain.provider_parsing import (
 )
 from pyocd_debug_mcp.brain.provider_types import (
     build_provider_turn_metadata,
+    clear_provider_resume_recovery_request,
     ProviderCapabilities,
     ProviderContinuationPath,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
+    ProviderResumeFailure,
+    ProviderResumeFailureRecord,
     ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
+    provider_resume_recovery_action,
     provider_has_local_memory,
     render_memory_summary_request,
     should_inject_native_memory_sync,
@@ -97,19 +101,26 @@ class CodexCLIDecisionProvider:
         has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
             session_state
         )
+        recovery_action = provider_resume_recovery_action(session_state)
+        explicit_new_session_recovery = recovery_action == "new-session-from-memory"
         use_local_memory = False
         native_sync_used = False
         fresh_session = False
         resumed_thread = False
         continuation_path: ProviderContinuationPath = "remote-resume"
         prompt_render_mode = "bootstrap/full"
+        current_resume_thread_id: str | None = None
 
-        if committed_thread_id is None:
+        if explicit_new_session_recovery:
             use_local_memory = has_local_memory
             continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
             prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
             fresh_session = True
-            current_resume_thread_id: str | None = None
+        elif committed_thread_id is None:
+            use_local_memory = has_local_memory
+            continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
+            prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
+            fresh_session = True
         elif should_inject_native_memory_sync(session_state):
             use_local_memory = True
             continuation_path = "remote-resume"
@@ -139,7 +150,6 @@ class CodexCLIDecisionProvider:
         current_decision_schema_injected = prompt_render_mode != "remote-delta"
         retry_count = 0
         same_thread_retry_used = False
-        fallback_attempted = False
         last_error: Exception | None = None
         progress_updates: list[ProviderProgressUpdate] = [
             ProviderProgressUpdate(
@@ -152,10 +162,22 @@ class CodexCLIDecisionProvider:
                     "fresh_session": fresh_session,
                     "resumed_thread": resumed_thread,
                     "working_directory": str(working_dir),
+                    "resume_recovery_action": recovery_action,
                 },
             )
         ]
-        if resumed_thread and committed_thread_id is not None:
+        if explicit_new_session_recovery:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Starting a new Codex thread from saved provider memory after explicit recovery.",
+                    details={
+                        "replaced_thread_id": committed_thread_id,
+                        "memory_available": has_local_memory,
+                    },
+                )
+            )
+        elif resumed_thread and committed_thread_id is not None:
             progress_updates.append(
                 ProviderProgressUpdate(
                     stage="continuation",
@@ -222,32 +244,20 @@ class CodexCLIDecisionProvider:
                 output_text = _extract_codex_agent_message(stdout_text)
             if result.returncode != 0 and not output_text:
                 last_error = ProviderResponseError(result.stderr.strip() or stdout_text.strip())
-                if current_resume_thread_id is not None and not fallback_attempted:
-                    fallback_attempted = True
-                    current_resume_thread_id = None
-                    current_memory_injected = has_local_memory
-                    continuation_path = "local-memory-fallback" if has_local_memory else "remote-resume"
-                    current_prompt_render_mode = (
-                        "remote-sync" if has_local_memory else "bootstrap/full"
-                    )
-                    current_static_tool_schema_injected = True
-                    current_decision_schema_injected = True
-                    current_prompt = (
-                        prompt_bundle.full_prompt_text(include_memory=has_local_memory).strip()
-                        if has_local_memory
-                        else prompt_bundle.full_prompt_text(include_memory=False).strip()
-                    )
-                    progress_updates.append(
-                        ProviderProgressUpdate(
-                            stage="continuation",
-                            message="Codex resume failed; falling back to a fresh local-memory-backed thread.",
-                            details={
-                                "thread_id": committed_thread_id,
-                                "fallback_reason": str(last_error),
-                            },
+                if current_resume_thread_id is not None:
+                    raise ProviderResumeFailure(
+                        ProviderResumeFailureRecord(
+                            provider="codex-cli",
+                            remote_strategy=self.capabilities.remote_strategy,
+                            continuation_mode=self.capabilities.continuation_mode,
+                            continuation_path="remote-resume",
+                            remote_handle_kind="thread_id",
+                            expected_handle_id=current_resume_thread_id,
+                            turn_index=session_state.next_turn_index(),
+                            failure_text=str(last_error),
+                            local_memory_available=has_local_memory,
                         )
                     )
-                    continue
                 break
 
             try:
@@ -277,8 +287,7 @@ class CodexCLIDecisionProvider:
                         )
                     )
                     continue
-                if not fallback_attempted:
-                    fallback_attempted = True
+                if current_resume_thread_id is None:
                     retry_count += 1
                     current_resume_thread_id = None
                     current_memory_injected = has_local_memory
@@ -304,6 +313,7 @@ class CodexCLIDecisionProvider:
             effective_thread_id = returned_thread_id or current_resume_thread_id
             resumed_remote = current_resume_thread_id is not None
             fresh_remote_turn = not resumed_remote
+            recovery_record = session_state.metadata.get("resume_recovery_failure")
             turn_metadata = build_provider_turn_metadata(
                 capabilities=self.capabilities,
                 continuation_path=continuation_path,
@@ -324,6 +334,12 @@ class CodexCLIDecisionProvider:
                     "fresh_session": fresh_remote_turn,
                     "resumed_thread": resumed_remote,
                     "same_thread_retry_used": same_thread_retry_used,
+                    "resume_recovery_action": recovery_action,
+                    "recovery_created_new_session": explicit_new_session_recovery,
+                    "replaced_remote_handle_id": (
+                        committed_thread_id if explicit_new_session_recovery else None
+                    ),
+                    "resume_recovery_failure": recovery_record,
                 },
             )
             updated_session = session_state.with_native_handle_update(
@@ -343,6 +359,15 @@ class CodexCLIDecisionProvider:
                 continuation_path,
                 metadata=turn_metadata,
             )
+            if explicit_new_session_recovery:
+                updated_session = clear_provider_resume_recovery_request(
+                    updated_session
+                ).with_updated_metadata(
+                    {
+                        "last_recovery_created_new_session": True,
+                        "last_replaced_remote_handle_id": committed_thread_id,
+                    }
+                )
             return ProviderTurn(
                 decision=decision,
                 output_text=output_text,

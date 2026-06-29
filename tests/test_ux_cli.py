@@ -9,6 +9,7 @@ import pytest
 from rich.console import Console
 
 from pyocd_debug_mcp.brain.events import BrainEvent
+from pyocd_debug_mcp.brain.provider_types import ProviderResumeFailure, ProviderResumeFailureRecord
 from pyocd_debug_mcp.ux import cli as ux_cli
 from pyocd_debug_mcp.ux import shell as ux_shell
 from pyocd_debug_mcp.ux.artifacts import artifact_entries
@@ -376,6 +377,38 @@ def test_shell_memory_commands_update_context_and_reject_invalid_values() -> Non
 
     assert shell._dispatch_command(parse_shell_input("/native-sync-every -1")) is True
     assert "ux/invalid-native-sync" in stream.getvalue()
+
+
+def test_shell_provider_resume_prompt_maps_retry_new_and_abort_choices() -> None:
+    stream = io.StringIO()
+    shell = _make_shell(_make_renderer(stream))
+    failure = ProviderResumeFailure(
+        ProviderResumeFailureRecord(
+            provider="codex-cli",
+            remote_strategy="codex-thread-resume",
+            continuation_mode="remote-primary",
+            continuation_path="remote-resume",
+            remote_handle_kind="thread_id",
+            expected_handle_id="thread-parent",
+            turn_index=3,
+            failure_text="resume failed",
+            local_memory_available=True,
+        )
+    )
+
+    for typed, expected in (
+        ("r", "retry"),
+        ("n", "new-session-from-memory"),
+        ("a", "abort"),
+    ):
+        shell._session = SimpleNamespace(prompt=lambda *_args, _typed=typed, **_kwargs: _typed)
+
+        assert shell._prompt_provider_resume_recovery(failure) == expected
+
+    output = stream.getvalue()
+    assert "Provider session resume failed" in output
+    assert "Expected thread_id: thread-parent" in output
+    assert "No new provider session has been started" in output
 
 
 def test_guided_verify_ignores_workspace_context_but_keeps_artifact_context(

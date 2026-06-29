@@ -14,14 +14,18 @@ from pyocd_debug_mcp.brain.provider_parsing import (
 )
 from pyocd_debug_mcp.brain.provider_types import (
     build_provider_turn_metadata,
+    clear_provider_resume_recovery_request,
     ProviderCapabilities,
     ProviderContinuationPath,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
+    ProviderResumeFailure,
+    ProviderResumeFailureRecord,
     ProviderSessionState,
     ProviderTurn,
+    provider_resume_recovery_action,
     provider_has_local_memory,
     render_memory_summary_request,
     should_inject_native_memory_sync,
@@ -95,15 +99,24 @@ class OpenAIDecisionProvider:
             if session_state.native_handle is not None
             else None
         )
+        committed_response_id = previous_response_id
         has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
             session_state
         )
+        recovery_action = provider_resume_recovery_action(session_state)
+        explicit_new_session_recovery = recovery_action == "new-session-from-memory"
         use_local_memory = False
         native_sync_used = False
         fresh_session = False
         continuation_path: ProviderContinuationPath = "remote-resume"
         prompt_render_mode = "bootstrap/full"
-        if previous_response_id is None:
+        if explicit_new_session_recovery:
+            previous_response_id = None
+            use_local_memory = has_local_memory
+            continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
+            prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
+            fresh_session = True
+        elif previous_response_id is None:
             use_local_memory = has_local_memory
             continuation_path = "local-memory-fallback" if use_local_memory else "remote-resume"
             prompt_render_mode = "remote-sync" if use_local_memory else "bootstrap/full"
@@ -135,10 +148,22 @@ class OpenAIDecisionProvider:
                     "native_response_id_present": previous_response_id is not None,
                     "memory_injected": current_memory_injected,
                     "fresh_session": fresh_session,
+                    "resume_recovery_action": recovery_action,
                 },
             )
         ]
-        if native_sync_used:
+        if explicit_new_session_recovery:
+            progress_updates.append(
+                ProviderProgressUpdate(
+                    stage="continuation",
+                    message="Starting a new OpenAI Responses chain from saved provider memory after explicit recovery.",
+                    details={
+                        "replaced_response_id": committed_response_id,
+                        "memory_available": has_local_memory,
+                    },
+                )
+            )
+        elif native_sync_used:
             progress_updates.append(
                 ProviderProgressUpdate(
                     stage="memory_sync",
@@ -185,9 +210,26 @@ class OpenAIDecisionProvider:
             }
             if previous_response_id:
                 kwargs["previous_response_id"] = previous_response_id
-            response = self._client.responses.create(
-                **kwargs,
-            )
+            try:
+                response = self._client.responses.create(
+                    **kwargs,
+                )
+            except Exception as exc:  # noqa: BLE001 - provider SDK error is part of resume failure
+                if previous_response_id:
+                    raise ProviderResumeFailure(
+                        ProviderResumeFailureRecord(
+                            provider="openai-api",
+                            remote_strategy=self.capabilities.remote_strategy,
+                            continuation_mode=self.capabilities.continuation_mode,
+                            continuation_path="remote-resume",
+                            remote_handle_kind="response_id",
+                            expected_handle_id=previous_response_id,
+                            turn_index=session_state.next_turn_index(),
+                            failure_text=f"{type(exc).__name__}: {exc}",
+                            local_memory_available=has_local_memory,
+                        )
+                    ) from exc
+                raise
             output_text = (response.output_text or "").strip()
             try:
                 decision = parse_turn_decision_json(output_text)
@@ -210,6 +252,7 @@ class OpenAIDecisionProvider:
                 )
                 continue
             response_id = getattr(response, "id", None)
+            recovery_record = session_state.metadata.get("resume_recovery_failure")
             turn_metadata = build_provider_turn_metadata(
                 capabilities=self.capabilities,
                 continuation_path=continuation_path,
@@ -227,18 +270,34 @@ class OpenAIDecisionProvider:
                     "native_response_id_present": response_id is not None,
                     "native_session_used": bool(previous_response_id),
                     "fresh_session": previous_response_id is None,
+                    "resume_recovery_action": recovery_action,
+                    "recovery_created_new_session": explicit_new_session_recovery,
+                    "replaced_remote_handle_id": (
+                        committed_response_id if explicit_new_session_recovery else None
+                    ),
+                    "resume_recovery_failure": recovery_record,
                 },
             )
+            updated_session = session_state.with_native_handle_update(
+                response_id=response_id,
+            ).with_last_continuation_path(
+                continuation_path,
+                metadata=turn_metadata,
+            )
+            if explicit_new_session_recovery:
+                updated_session = clear_provider_resume_recovery_request(
+                    updated_session
+                ).with_updated_metadata(
+                    {
+                        "last_recovery_created_new_session": True,
+                        "last_replaced_remote_handle_id": committed_response_id,
+                    }
+                )
             return ProviderTurn(
                 decision=decision,
                 output_text=output_text,
                 response_id=response_id,
-                session_state=session_state.with_native_handle_update(
-                    response_id=response_id,
-                ).with_last_continuation_path(
-                    continuation_path,
-                    metadata=turn_metadata,
-                ),
+                session_state=updated_session,
                 provider_metadata=turn_metadata,
                 progress_updates=tuple(progress_updates),
             )
