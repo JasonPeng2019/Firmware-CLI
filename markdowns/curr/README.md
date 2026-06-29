@@ -12,6 +12,8 @@ Completed process ledgers, superseded specs, and review artifacts should move to
   provider and hardware validation spec for `P-Wave-A`.
 - `branch-a-live-provider-hardware-suite_process.md` - live process ledger for
   the merged A/B provider/hardware suite.
+- `branch-a-live-provider-hardware-suite_review.md` - attached-board clean
+  review verdict for the merged A/B provider/hardware suite.
 - `r12-branch-b-status.md` - compact Branch B implementation and proof handoff.
 - `r12-branch-b-official-portability-closure_spec.md` - remaining stricter
   Branch B closure proof for official board/fresh-machine claims.
@@ -45,4 +47,6 @@ markdowns/tmp/curr-archive-20260628/
 
 ## Pending Verification
 
-- The active live provider/hardware suite is still running.
+- Official `nrf52833dk` second-provider closure still needs an actual
+  `nrf52833dk` attached; the current live suite is green for the attached
+  `nucleo_l476rg + nrf52840dk` pair.

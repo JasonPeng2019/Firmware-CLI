@@ -808,15 +808,31 @@ Current prototype capability target on top of that first pass:
    or one narrow automated flipped-value gate for a benchmark type. The model supplies the script,
    parameters, correct values, and flipped values; the brain runs both and accepts only pass-correct /
    fail-flipped.
-10. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
+10. **Use canonical memory with an index/selective-recall layer.** The brain
+    owns durable memory as structured facts, not provider self-report alone:
+    working snapshot, exact recent boundary decisions, compact older history,
+    artifact index, and code/workspace map. On top of that store, render a short
+    memory index/table of contents every relevant turn: stable memory ids or
+    ranges, brain-derived action/result/key values, tags, artifact refs, pinned
+    facts, and optional model-generated one-line descriptions. Inject the index
+    and pinned facts by default, then recall selected full entries only when the
+    task/profile/model request needs detail. This is separate from provider KV
+    cache and artifact/result cache.
+11. **Keep static context cheap and cache-friendly.** Skill bodies and other
+    large static prompt blocks should not be reprinted every turn. Render a
+    selected-skill index plus safety lines in the cached prefix, let the model
+    pull full skill bodies on demand, and use content hashes for rendered
+    tool/skill/schema blocks and deterministic setup artifacts.
+12. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
     UART reads, builds/external commands, and long client actions. Do not broaden this prototype into the
     pyOCD worker/job layer.
 
 **Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +
 `nucleo_l476rg`) and reuses the 12-case benchmark corpus, but the prototype is now judged by whether it can
-show a substantially more agentic loop: persistent work context, free host-side code work, governed board
-decisions, visible progress, bounded waits, model-tuned budgets inside hard caps, client actions, and a
-scoped green-test story. Shipped-product polish and broad UI completeness are explicitly later work.
+show a substantially more agentic loop: persistent work context, indexed/selective memory recall, cheap
+static context with on-demand detail, free host-side code work, governed board decisions, visible progress,
+bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
+Shipped-product polish and broad UI completeness are explicitly later work.
 
 ---
 

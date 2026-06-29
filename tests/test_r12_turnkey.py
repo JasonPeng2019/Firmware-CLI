@@ -389,6 +389,138 @@ async def test_run_turnkey_refuses_conflicting_tool_name_on_namespaced_server_to
 
 
 @pytest.mark.anyio
+async def test_run_turnkey_unwraps_nested_legacy_server_tool_arguments() -> None:
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to nRF52833 DK via probe TEST123. session_id=sess-1",
+                )
+            ],
+            "read_memory": [ToolTextResult(tool_name="read_memory", text="0x20001180")],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Provider emitted legacy server_tool with nested arguments.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {
+                                "action_type": "server_tool",
+                                "arguments": {
+                                    "tool_name": "connect",
+                                    "arguments": {"board_id": "nrf52833dk"},
+                                },
+                            },
+                            {
+                                "action_type": "server_tool",
+                                "arguments": {
+                                    "tool_name": "read_memory",
+                                    "arguments": {"address": "0x08000000", "word_size": 32},
+                                },
+                            }
+                        ]
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="Nested server tool arguments were normalized.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Legacy provider shape was normalized.",
+                    summary="read_memory received real MCP arguments.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise nested legacy server_tool normalization.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls == [
+        ("connect", {"board_id": "nrf52833dk"}),
+        ("read_memory", {"address": "0x08000000", "word_size": 32}),
+        ("disconnect", {}),
+    ]
+
+
+@pytest.mark.anyio
+async def test_run_turnkey_refuses_conflicting_nested_server_tool_argument() -> None:
+    client = FakeClient({"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]})
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Provider emitted conflicting nested arguments.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {
+                                "action_type": "server_tool",
+                                "arguments": {
+                                    "tool_name": "read_memory",
+                                    "address": "0x08000004",
+                                    "arguments": {"address": "0x08000000"},
+                                },
+                            }
+                        ]
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="Stop after conflicting provider shape refusal.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Conflicting provider arguments were refused.",
+                    summary="No MCP tool received ambiguous arguments.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise conflicting nested server_tool normalization.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert execution.brain_trace[0]["result_text"].startswith("Refused [brain/conflicting-server-tool-argument]")
+    assert client.calls == []
+
+
+@pytest.mark.anyio
 async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool() -> None:
     client = FakeClient(
         {

@@ -21,6 +21,11 @@ In scope:
   invoking the MCP server.
 - Refuse conflicting namespaced calls such as
   `action_type=server_tool:connect` with `arguments.tool_name=read_serial`.
+- Normalize the live-provider legacy shape
+  `action_type=server_tool` with nested `arguments.arguments={...}` so real MCP
+  tools receive only their own argument object.
+- Refuse duplicated outer/nested server-tool arguments when the two values
+  conflict.
 - Add focused smoke/regression tests for the above behavior.
 - Run no-credit validation: unit/regression tests, lint/type checks, the
   non-hardware ladder, and a Codex-compatible/local smoke where feasible.
@@ -66,6 +71,9 @@ Out of scope:
   - return `ServerToolAction(tool_name=<namespace name>, arguments=<stripped args>)`.
 - Keep legacy `action_type=server_tool` behavior unchanged: it still requires
   `arguments.tool_name` and strips that field before invoking the MCP tool.
+- If a real provider wraps MCP inputs as `arguments.arguments`, unwrap that
+  nested object before invocation. Same-value duplicated outer arguments are
+  tolerated; conflicting duplicates fail closed before any MCP tool call.
 
 ## Board-facts-as-data and origin tags
 
@@ -109,6 +117,10 @@ behavior.
   `connect` without forwarding `tool_name`.
 - `server_tool:connect` with conflicting `arguments.tool_name` is refused before
   any MCP tool call.
+- Legacy `server_tool` calls with nested `arguments.arguments` are unwrapped
+  before MCP invocation.
+- Conflicting outer/nested legacy server-tool arguments are refused before MCP
+  invocation.
 - All no-credit tests run in this pass are green.
 - Pending live-provider/API checks are documented with exact run intent.
 
@@ -143,9 +155,16 @@ behavior.
   - Parsed a provider-emitted `server_tool:connect` batch with redundant
     `arguments.tool_name`, and local normalization produced
     `ServerToolAction(tool_name=connect, arguments={'board_id': 'nrf52833dk'})`.
+- Follow-up live validation exposed and fixed a second provider-shape hardening
+  gap: Codex emitted legacy `server_tool` calls with nested
+  `arguments.arguments`. The loop now unwraps those nested arguments and refuses
+  conflicting duplicates. Regression tests and the full suite passed after the
+  fix.
+- Real Claude CLI run after usage refresh is complete for the attached
+  `nucleo_l476rg + nrf52840dk` pair, including multiple code-writing repair
+  prompts on both boards. Official `nrf52833dk` closure remains pending because
+  the attached Nordic board identifies as `0x52840`.
 
 ## Pending verification
 
-- Real Claude CLI run after usage refresh.
 - Anthropic/OpenAI API provider run after credits are available.
-- Hardware flashing is not required for this parser/policy hardening pass.

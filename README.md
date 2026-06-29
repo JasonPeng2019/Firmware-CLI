@@ -55,7 +55,12 @@ The current live status is:
 - `claude-cli` is no longer globally blocked on this host:
   - STM32 freeform and `k001` benchmark proof now exist through the local
     Claude CLI path
+  - after the 2026-06-29 usage refresh, Claude CLI also passed real
+    code-writing repair prompts on the attached `nucleo_l476rg + nrf52840dk`
+    pair (`b001_wrong_boot_text` and `b002_wrong_known_value` on both boards)
   - the official-pair second-provider closure bar is still open
+    because the attached Nordic board identifies as `0x52840`, not the
+    official `nrf52833dk`
   - the `--model sonnet` alias path that previously failed with
     `API Error: 404 ... model: claude-sonnet-4-20250514` should be treated as
     an alias-specific failure mode, not as proof that the provider path is
@@ -68,6 +73,9 @@ The current live status is:
     even when no board session is ever created
 - turnkey provider continuity is now brain-owned and memory-first:
   - canonical compact local memory is persisted for every provider
+  - future memory hardening will add a compact memory index/table of contents,
+    pinned facts, and selective recall of detailed entries so long runs can keep
+    context without injecting all memory every turn
   - OpenAI uses native continuation when healthy; if a stored
     `previous_response_id` cannot resume, headless runs fail closed unless an
     explicit recovery path starts a newly labeled session from saved memory
@@ -122,6 +130,9 @@ Today that means:
 - deployment readiness is still open: the repo has not yet been proven on fresh
   user computers across multiple top-level prompts, each with its own internal
   provider/tool loop and code-writing repair proof
+- the current attached-board deployment proof has now been run with both local
+  CLI providers on `nucleo_l476rg + nrf52840dk`; official `nrf52833dk`
+  second-provider closure and fresh-machine proof remain pending
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -490,6 +501,9 @@ Turnkey provider rules:
   than Claude Code-style session resume.
 - provider continuity is unified across all backends:
   - the brain always persists compact local turn-fact memory
+  - future canonical-memory work should render pinned facts plus a short memory
+    index by default, then recall full entries only when the current turn needs
+    them
   - OpenAI is `remote-primary` via Responses `previous_response_id`; failed
     resume is a typed provider-resume failure unless the operator explicitly
     starts a new labeled session from saved memory

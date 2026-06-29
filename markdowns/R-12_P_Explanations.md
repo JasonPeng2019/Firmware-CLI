@@ -190,11 +190,12 @@ laid out in the same sequence.
 3. **Action capability / Wave 1 branch work** - add batches, UART write, and
    client actions / model-authored scripts.
 4. **Visibility / Wave 2 branch work** - add live provider/brain progress,
-   developer inspector logs, and stream checkpoints for UART/build/client-action
-   flows.
+   developer inspector logs, stream checkpoints for UART/build/client-action
+   flows, skill index/on-demand skill bodies, cache-assisted setup/result reuse,
+   and canonical memory index/selective recall as additive parallel branches.
 5. **Prototype proof gate** - add scoped green approval with manual or narrow
    flipped-value tests.
-6. **Later MVP polish** - skill loading optimizations, projects, broad skill-guided
+6. **Later MVP polish** - projects, broad skill-guided
    host experiments, provider-native tool calls, and wider product/UI polish.
 
 ---
@@ -367,6 +368,15 @@ separate, optional change — entry #4.)
   session-resume, or raw API credits — OpenAI Responses `previous_response_id`
   (server-side) or Anthropic Messages with a client-owned, resent message array
   plus `cache_control` breakpoints.
+- Treat each `TurnDecision` as the **turn-closing memory checkpoint**, not as a
+  record of every private or provider-local substep. A checkpoint is required
+  when the model asks the brain to perform a governed board/build/
+  firmware-deliverable action or when it returns a terminal/communication
+  answer. For long self-directed runs, the checkpoint should be richer:
+  summarize the active user prompt, current plan, important local work already
+  done, decisions made, hypotheses opened/closed, files read or changed, and why
+  the selected governed action or answer is the right next step. That gives
+  recovery memory enough signal without forcing JSON after every local thought.
 - Keep the deterministic brain **unchanged underneath**: it still parses the
   returned `TurnDecision`, dispatches `decision.action`, applies the existing
   checks (argument normalization, refusals, flash gate, convergence blocks in
@@ -432,6 +442,32 @@ summarize away a precise old observation; a brain-owned ledger re-pinned every
 turn survives compaction and preserves the "what have I tried and what happened"
 spine regardless of how the harness summarizes.
 
+### Sub-change: memory index + selective recall
+
+Do not make the model reread full memory every turn. Keep the full canonical
+memory durable, but render a short **memory index / table of contents** into the
+prompt:
+
+- stable memory id or turn range;
+- one-line model-generated title/description;
+- brain-derived action kind, result status, and key observed values;
+- tags such as `flash`, `uart`, `build`, `code-edit`, `refusal`, `blocked`,
+  `hypothesis-supported`, or `hypothesis-refuted`;
+- changed files and artifact refs when relevant;
+- pinned/critical flags for facts that must stay visible.
+
+For the last N boundary decisions, keep one row per move. For older history,
+compact to range rows with model-generated descriptions anchored to structured
+facts. Then inject the working snapshot, pinned critical facts, the short memory
+index, and selected full memory entries only when the current task, render
+profile, or model request needs them.
+
+This is a stronger attention mechanism, not a second source of truth. The
+model-generated title helps orientation, but the brain anchors each row to exact
+tool results, artifacts, changed files, and verification facts. The goal is to
+reduce compute while giving the model an efficient way to know what happened and
+what detailed memory can be recalled.
+
 ### Where it belongs
 
 1. **`src/pyocd_debug_mcp/brain/provider_types.py` + the four providers** — add a
@@ -449,8 +485,20 @@ spine regardless of how the harness summarizes.
    `actions_taken` / `mcp_tools_used` to store the distilled result per action
    (today they store only names), so the ledger renderer has ground-truth result
    data to draw from.
-4. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — extend the per-tool salient
+4. **`src/pyocd_debug_mcp/brain/provider_types.py` / canonical memory module** -
+   add memory-index rows, pinned-fact rows, and selective-recall renderers over
+   the canonical memory store.
+5. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — extend the per-tool salient
    result extraction beyond the current fields.
+
+### Wave placement
+
+Implement the memory index/selective-recall layer in **Wave 2 Branch H**, in
+parallel with Branch D (progress/inspector), Branch E (stream checkpoints),
+Branch F (scoped green approval), and Branch G (static context/cache reuse).
+Branch H should consume Branch A provider-memory/session state and Branch C
+event shapes, but it should not own provider session semantics, progress UI,
+cache keys, skill body loading, or final integration prompt rewrites.
 
 ### What it is supposed to do
 

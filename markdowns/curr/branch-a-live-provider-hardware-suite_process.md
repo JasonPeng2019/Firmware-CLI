@@ -123,6 +123,101 @@ Roadmap anchor: `R12` / `G7`.
 - Retry of `claude-cli` + `nrf52840dk__b002_wrong_known_value` after the
   second fix is temporarily blocked by external Claude quota before any board
   session: `You're out of extra usage - resets 4:50am (America/New_York)`.
+- Claude quota refreshed on 2026-06-29 and the blocked/final matrix was rerun.
+- Post-refresh non-hardware suite ladder passed after the prior fixes:
+  - `uv run pytest -q`: 322 passed.
+  - `uv run ruff check .`: passed.
+  - `uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py`: passed.
+  - `uv run pytest -q tests/test_r11_benchmark.py`: 34 passed.
+  - `uv run python -m tests.harness.r11_benchmark --help`: passed.
+- Post-refresh board substrate proof passed:
+  - `nucleo_l476rg`: Stage 0 and Stage 1 passed on ST-Link
+    `066FFF514988525067233337`, serial `COM12`.
+  - `nrf52833dk`: Stage 0 probe/serial matched the Nordic attachment, but
+    silicon identity failed as expected for the current bench: actual
+    `0x52840`, expected `0x52833`.
+  - `nrf52840dk`: Stage 0 with recover and Stage 1 passed on J-Link
+    `683377322`, serial `COM11`.
+- Post-refresh compact Claude health smokes passed:
+  - `claude-cli` + `nucleo_l476rg`: `20260629T173532Z-e8ca0bf5`,
+    `HEALTHY_CONFIRMED`, flash/UART/symbol/green all true.
+  - `claude-cli` + `nrf52840dk`: `20260629T173629Z-34e78de1`,
+    `HEALTHY_CONFIRMED`, flash/UART/symbol/green all true.
+- Post-refresh Claude code-writing benchmark cases passed before the third
+  fix-bug loop:
+  - `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T174128Z-b65d618e`.
+  - `nrf52840dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T174320Z-39f2ec44`.
+  - `nucleo_l476rg__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T174946Z-23b2e920`.
+  - `nucleo_l476rg__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T175242Z-e8c9bb88`.
+- Post-refresh Codex comparison benchmark cases passed before the third
+  fix-bug loop:
+  - `nucleo_l476rg__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T175429Z-e90735bb`.
+  - `nucleo_l476rg__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T175715Z-44c9e403`.
+  - `nrf52840dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T180007Z-cdbc9c20`.
+  - `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T180342Z-45d026d7`.
+- Third fix-bug loop: the optional public client-action smoke exposed a real
+  provider-shape gap. Codex emitted legacy `action_type=server_tool` calls with
+  nested `arguments.arguments={...}`. The first run still executed
+  `uart_write`, but later nested `read_memory` arguments reached the MCP layer
+  as malformed input.
+- Third fix applied: `loop.py` now unwraps nested server-tool arguments for
+  legacy and direct server-native action names, tolerates same-value
+  duplicates, refuses conflicting duplicates, and rejects unknown legacy
+  server-tool names before any MCP call.
+- Third fix validation:
+  - focused pytest for nested legacy normalization, conflicting nested
+    argument refusal, and existing namespaced hardening: 4 passed.
+  - focused ruff for `loop.py` and `tests/test_r12_turnkey.py`: passed.
+  - focused mypy for `loop.py`: passed.
+  - public client-action smoke rerun passed on `codex-cli` +
+    `nucleo_l476rg`: `20260629T181205Z-d502704c`,
+    `HEALTHY_CONFIRMED`, flash/UART/symbol/green all true, and
+    `client_actions.json` records `uart_write` with `executed=true`.
+- Post-third-fix non-hardware suite ladder passed:
+  - `uv run pytest -q`: 324 passed.
+  - `uv run ruff check .`: passed.
+  - `uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py`: passed.
+  - `uv run pytest -q tests/test_r11_benchmark.py`: 34 passed.
+  - `uv run python -m tests.harness.r11_benchmark --help`: passed.
+- Post-third-fix Stage 1 passed again on both attached boards.
+- Post-third-fix Claude code-writing benchmark matrix passed:
+  - `nucleo_l476rg__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T181445Z-83140ead`.
+  - `nucleo_l476rg__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T181858Z-13304c13`.
+  - `nrf52840dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T182216Z-476ebc86`.
+  - `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T182622Z-a0ef098b`.
+- Post-third-fix Codex comparison benchmark matrix passed:
+  - `nucleo_l476rg__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T182803Z-f6063c6a`.
+  - `nucleo_l476rg__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T183109Z-d90d0f9b`.
+  - `nrf52840dk__b001_wrong_boot_text`: `FULL_SUCCESS`, score 100,
+    session `20260629T183358Z-85305768`.
+  - `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
+    session `20260629T183719Z-39a93fff`.
+- Artifact inspection passed:
+  - `runs/20260629T181205Z-d502704c/run-metadata/client_actions.json`
+    records `uart_write`, SHA-256, relative path, and `executed=true`.
+  - `runs/20260629T182622Z-a0ef098b/run-metadata/score.json` records Claude
+    runner-owned flash/UART/symbol/green all true, score 100, and one session
+    id.
+  - `runs/20260629T183719Z-39a93fff/run-metadata/score.json` records Codex
+    runner-owned flash/UART/symbol/green all true, score 100, and one session
+    id.
+  - Final representative Claude/Codex model-turn artifacts show remote
+    `session_id` / `thread_id` resume and no recovery-created replacement
+    provider session.
 - Representative artifact inspection passed:
   - `runs/20260629T043927Z-62698a08/run-metadata/client_actions.json`
     records `uart_write`, SHA-256, relative path, and `executed=true`.
@@ -147,16 +242,11 @@ Roadmap anchor: `R12` / `G7`.
 
 ## In progress
 
-- Complete local validation/artifact inspection while waiting for Claude quota
-  reset, then rerun the full live matrix on the final fixed branch state.
+- None.
 
 ## TODO
 
-- Inspect representative run artifacts.
-- If failures are code defects, route through fix-bug, rerun targeted checks,
-  then rerun this suite from the beginning.
-- Update README/current-progress if the live status boundary changes.
-- Create a review artifact and push `P-Wave-A` if the full matrix is green.
+- Create a review artifact and push `P-Wave-A` if requested.
 
 ## Limitations and known gaps
 
@@ -168,8 +258,8 @@ Roadmap anchor: `R12` / `G7`.
   retained alternate `nrf52840dk`.
 - Provider CLI auth/rate-limit failures are external deployment blockers unless
   the failure comes from this repo's adapter code.
-- Claude CLI is temporarily quota-blocked until 4:50am America/New_York during
-  the final rerun.
+- Official scoped-pair closure remains pending because the attached Nordic
+  board identifies as `0x52840`, not `0x52833`.
 
 ## Hardware hand-off
 
@@ -190,5 +280,6 @@ hardware commands directly.
 
 ## Pending verification
 
-- Final post-second-fix non-hardware suite ladder rerun.
-- Final post-second-fix live provider matrix after Claude quota reset.
+- Official `nrf52833dk` second-provider closure with an actually attached
+  `nrf52833dk`.
+- Anthropic/OpenAI API provider smoke when paid API credits are available.

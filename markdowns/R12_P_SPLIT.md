@@ -342,14 +342,16 @@ Should not own:
 Wave 2 starts only after Branch A, Branch B, and Branch C have each merged back
 into Wave 0 and the merged Wave 0 branch has passed the agreed checks.
 
-Branch D, Branch E, Branch F, and Branch G then branch from the updated Wave 0
-branch and run in parallel.
+Branch D, Branch E, Branch F, Branch G, and Branch H then branch from the
+updated Wave 0 branch and run in parallel.
 
 - Branch D needs Branch C module 1.
 - Branch E needs Branch B module 5 and Branch C module 1/module 2.
 - Branch F needs Branch B module 5 if green tests use client actions.
 - Branch G needs Branch A prompt/session metadata and Branch C event shapes if
   cache-reuse events are emitted.
+- Branch H needs Branch A provider-memory/session state and Branch C event
+  shapes if memory-index/recall events are emitted.
 
 ### Branch D - Progress UI + Inspector
 
@@ -368,6 +370,7 @@ Parallel with:
 - Branch E module 1 through module 4
 - Branch F module 1 through module 3
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Should not own:
 
@@ -375,7 +378,8 @@ Should not own:
 - timeout clamp rules
 - action execution semantics
 - proof escalation policy
-- static-context rendering, skill body loading, or cache key/reuse semantics
+- static-context rendering, skill body loading, cache key/reuse semantics, or
+  memory-index/selective-recall semantics
 
 ### Branch E - Stream Checkpoints
 
@@ -397,6 +401,7 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch F module 1 through module 3
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
@@ -407,7 +412,8 @@ Should not own:
 
 - pyOCD flash/connect/recover worker design
 - green approval logic
-- static-context rendering, skill body loading, or cache-assisted build/workspace reuse
+- static-context rendering, skill body loading, cache-assisted build/workspace
+  reuse, or memory-index/selective-recall semantics
 - proof escalation policy
 
 ### Branch F - Scoped Green Approval
@@ -432,6 +438,7 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch E module 1 through module 4
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
@@ -443,15 +450,16 @@ Should not own:
 - provider sessions
 - server tools
 - general benchmark scoring outside the narrow prototype gate
-- static-context rendering, skill body loading, cache keys, or cache-assisted reuse
+- static-context rendering, skill body loading, cache keys, cache-assisted
+  reuse, or memory-index/selective-recall semantics
 
 ### Branch G - Static Context Efficiency + Cache-Assisted Reuse
 
 Branch G exists only to keep static-context efficiency and cache/reuse additive
 and parallelizable. It owns skill-index rendering, on-demand skill bodies, and
 cache-assisted setup reuse because those all touch prompt/static-context assembly.
-It must not spread cache or skill-rendering policy into D/E/F-owned modules during
-the parallel wave.
+It must not spread cache or skill-rendering policy into D/E/F/H-owned modules
+during the parallel wave.
 
 Serial order inside Branch G:
 
@@ -483,12 +491,15 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch E module 1 through module 4
 - Branch F module 1 through module 4
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
 - Branch G may consume Branch C event shapes, but it must not redesign them.
 - Branch G may read Branch A prompt/session metadata, but it must not change
   provider session semantics.
+- Branch G may consume Branch H memory-index hook points in final integration,
+  but it must not own memory semantics.
 
 Should not own:
 
@@ -498,15 +509,72 @@ Should not own:
 - final hardware proof replacement; cache reuse can skip setup/non-final repeats
   but cannot replace required live final verification
 - broad edits to `loop.py`, `workspace.py`, `cli.py`, or `actions.py`; only small
-  hooks are allowed, and if they conflict with D/E/F they move to final wiring
+  hooks are allowed, and if they conflict with D/E/F/H they move to final wiring
 - project-level persistent custom tools/skills, owned by later MVP entry #10
 - skill-guided host-work A/B/C experiments, owned by later MVP entry #13
+- memory-index/selective-recall semantics, owned by Branch H
+
+### Branch H - Canonical Memory Index + Selective Recall
+
+Branch H exists to make brain-owned memory useful for long self-directed and
+multi-user-prompt prototype runs without injecting full memory every turn. It
+owns pinned facts, a compact memory table of contents, model-generated index
+descriptions anchored to structured brain facts, last-N detailed entry
+selection, older range summaries, and profile-aware recall rendering.
+
+Serial order inside Branch H:
+
+1. `provider_memory_index.py` or equivalent canonical memory module
+   - memory id / turn range schema
+   - brain-derived action/result/key-value fields
+   - optional model-generated title/description fields
+   - tags, changed files, artifact refs, and pinned flags
+2. Pinned facts renderer
+   - board identity, provider/session handle summary, verification state
+   - recover/flash history and irreversible operations
+   - refused/blocked paths and active constraints
+3. Index and recall renderers
+   - one row per last-N boundary decision
+   - compact model-labeled range rows for older history, anchored to facts
+   - selective full-entry recall by render profile, current task, or model
+     request
+4. Profile wiring tests
+   - remote-primary sync profile includes compact index and pinned facts
+   - local-primary profile includes index plus required recalled entries
+   - recovery profile includes full index, pinned facts, and high-value details
+5. Artifact/event/report hooks
+   - record which memory rows were indexed, pinned, and recalled
+   - keep deterministic replay ordering stable
+
+Parallel with:
+
+- Branch D module 1 through module 3
+- Branch E module 1 through module 4
+- Branch F module 1 through module 4
+- Branch G module 1 through module 5
+
+Cross-branch dependency:
+
+- Branch H consumes Branch A provider-memory/session state and Branch C event
+  shapes, but it must not change provider session semantics or event ownership.
+- Branch H may share prompt hook points with Branch G; conflicts move to final
+  integration instead of either branch owning broad prompt rewrites.
+
+Should not own:
+
+- skill-index rendering or on-demand skill bodies, owned by Branch G
+- artifact/result cache key semantics, owned by Branch G
+- progress/inspector UI rendering, owned by Branch D
+- stream checkpoint/cancel behavior, owned by Branch E
+- scoped green approval semantics, owned by Branch F
+- provider adapter/session semantics, owned by Branch A
+- hidden chain-of-thought storage
 
 ## Final Integration - Serial Last
 
-After Branch D, Branch E, Branch F, and Branch G have each merged back into Wave 0
-and the merged Wave 0 branch has passed the agreed checks, do one short serial
-integration branch.
+After Branch D, Branch E, Branch F, Branch G, and Branch H have each merged back
+into Wave 0 and the merged Wave 0 branch has passed the agreed checks, do one
+short serial integration branch.
 
 Owns:
 
@@ -562,13 +630,13 @@ Merge sequence:
 4. Branch A, B, and C from Wave 0.
 5. Merge A, B, and C back into Wave 0 one at a time, running checks after each
    merge.
-6. Branch D, E, F, and G from the updated Wave 0.
-7. Merge D, E, F, and G back into Wave 0 one at a time, running checks after each
-   merge.
+6. Branch D, E, F, G, and H from the updated Wave 0.
+7. Merge D, E, F, G, and H back into Wave 0 one at a time, running checks after
+   each merge.
 8. Branch `Final` from Wave 0.
 9. Merge `Final` back into Wave 0 after final acceptance cleanup.
 
-This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G
+This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G/H
 without carrying stale branch state forward.
 
 ## Conflict Escalation Rule

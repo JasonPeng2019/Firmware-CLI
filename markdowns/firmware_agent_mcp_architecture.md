@@ -212,6 +212,16 @@ Current `R12` prototype control model:
 - **Inspector:** developer builds can mirror prompt turns, provider stream text,
   parsed decisions, tool calls, server observations, and state snapshots into a
   terminal/log stream for debugging.
+- **Canonical memory + selective recall:** the brain owns structured memory
+  independent of provider session internals. It stores a working snapshot,
+  exact recent boundary decisions, compact older history, artifact refs, and
+  code/workspace context. Each prompt can receive pinned facts plus a short
+  memory index/table of contents; full memory entries are recalled selectively
+  by profile, task, or model request.
+- **Static-context efficiency:** selected skill safety lines and a compact skill
+  index stay always visible, while expensive skill bodies and repeated static
+  prompt blocks are loaded or reused on demand. Artifact/result cache may skip
+  deterministic setup repeats, but never replaces required final live proof.
 
 ---
 

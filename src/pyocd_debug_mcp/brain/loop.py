@@ -395,7 +395,10 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
                     f"{namespaced_tool_name!r}, but arguments.tool_name was {embedded_tool_name!r}."
                 ),
             )
-        return ServerToolAction(tool_name=cast(AllowedServerToolName, namespaced_tool_name), arguments=args)
+        return ServerToolAction(
+            tool_name=cast(AllowedServerToolName, namespaced_tool_name),
+            arguments=_normalize_server_tool_arguments(args, namespaced_tool_name),
+        )
     if action_type == "server_tool":
         tool_name = args.pop("tool_name", None)
         if not isinstance(tool_name, str):
@@ -403,9 +406,20 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
                 "brain/batch-server-tool-missing-name",
                 "Batched server_tool calls must include arguments.tool_name.",
             )
-        return ServerToolAction(tool_name=cast(AllowedServerToolName, tool_name), arguments=args)
+        if tool_name not in SERVER_NATIVE_ACTIONS:
+            raise TurnkeyRefusal(
+                "brain/unknown-server-tool-name",
+                f"Batched server_tool call selected unknown tool {tool_name!r}.",
+            )
+        return ServerToolAction(
+            tool_name=cast(AllowedServerToolName, tool_name),
+            arguments=_normalize_server_tool_arguments(args, tool_name),
+        )
     if action_type in SERVER_NATIVE_ACTIONS:
-        return ServerToolAction(tool_name=cast(AllowedServerToolName, action_type), arguments=args)
+        return ServerToolAction(
+            tool_name=cast(AllowedServerToolName, action_type),
+            arguments=_normalize_server_tool_arguments(args, action_type),
+        )
     if action_type == "wait":
         return WaitAction.model_validate({"kind": "wait", **args})
     if action_type == "run_script":
@@ -419,6 +433,38 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
     if action_type == "run_green_check":
         return RunGreenCheckAction.model_validate({"kind": "run_green_check", **args})
     raise TurnkeyRefusal("brain/unsupported-batch-action", f"Unsupported batched action: {action_type}")
+
+
+def _normalize_server_tool_arguments(args: dict[str, object], tool_name: str) -> dict[str, object]:
+    nested = args.pop("arguments", None)
+    if nested is None:
+        return args
+    if not isinstance(nested, dict):
+        raise TurnkeyRefusal(
+            "brain/invalid-server-tool-arguments",
+            f"Batched server_tool call for {tool_name!r} used non-object arguments.",
+        )
+    normalized = dict(cast(dict[str, object], nested))
+    embedded_tool_name = normalized.pop("tool_name", None)
+    if embedded_tool_name is not None and embedded_tool_name != tool_name:
+        raise TurnkeyRefusal(
+            "brain/conflicting-server-tool-name",
+            (
+                "Batched server_tool call selected "
+                f"{tool_name!r}, but nested arguments.tool_name was {embedded_tool_name!r}."
+            ),
+        )
+    for key, value in args.items():
+        if key in normalized and normalized[key] != value:
+            raise TurnkeyRefusal(
+                "brain/conflicting-server-tool-argument",
+                (
+                    "Batched server_tool call for "
+                    f"{tool_name!r} supplied conflicting values for argument {key!r}."
+                ),
+            )
+        normalized[key] = value
+    return normalized
 
 
 def _actions_for_decision(decision: TurnDecision) -> tuple[ActionUnion, ...]:

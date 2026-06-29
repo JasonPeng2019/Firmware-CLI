@@ -113,7 +113,7 @@ Ambiguity list:
 The canonical memory layer lives in the brain layer. It is derived from observed
 results and brain state, not from provider self-report alone.
 
-The memory model has five tiers.
+The memory model has six tiers.
 
 ### 1. Working State Snapshot
 
@@ -136,16 +136,65 @@ It should include:
 This snapshot is the most important part for resuming after a crash. It answers:
 "Where was I, what is true, what should I do next, and what must I not redo?"
 
-### 2. Exact Recent Turn Ledger
+### 2. Memory Index And Selective Recall
+
+Always render a short table-of-contents over the canonical memory before
+rendering or retrieving detailed entries.
+
+The index should include:
+
+- stable memory id or turn range;
+- one-line model-generated title/description;
+- brain-derived action kind, result status, and key observed values;
+- tags such as `flash`, `uart`, `build`, `code-edit`, `refusal`, `blocked`,
+  `hypothesis-supported`, or `hypothesis-refuted`;
+- changed files or artifact refs when relevant;
+- pinned/critical flags for facts that must stay visible.
+
+Recent entries should get one short index row each for the last N committed
+boundary decisions. Older entries should compact into range rows, for example
+`M01-M08: board identity verified; initial UART mismatch isolated; two failed
+build attempts fixed`.
+
+The model-generated title is useful for attention, but it is not trusted as the
+source of truth. Every row must be anchored to structured brain facts and
+artifact references. The index should tell the model what memory exists; the
+brain then injects selected full entries only when the render profile, the
+current task, or the model's explicit request makes them useful.
+
+This is not provider KV cache and not artifact/result cache. It is a retrieval
+and attention layer over canonical memory:
+
+- full canonical memory remains durable and structured;
+- the prompt gets the working snapshot, pinned facts, short memory index, and
+  selected recalled entries;
+- the model can keep track of the run without rereading full memory every turn;
+- recovery profiles can start with the index, then include the high-value recent
+  or pinned entries in full.
+
+### 3. Exact Recent Turn Ledger
 
 Keep the last N committed turns as structured JSON and render them faithfully.
+
+In this design, a "turn" means the provider's **turn-closing decision boundary**:
+either a governed board/build/firmware-deliverable action or a
+terminal/communication decision. The provider may do model-native thinking or
+allowed host-side work inside its own session before that boundary. The memory
+does not attempt to store hidden chain-of-thought or every internal substep.
+Instead, the boundary decision must carry enough visible, user-safe detail to
+make the next prompt or recovery session coherent.
 
 Each recent turn should include:
 
 - turn index;
+- top-level user prompt or subgoal being handled;
 - visible observation summary;
 - hypothesis;
 - visible strategy/rationale;
+- concise summary of important self-directed/provider-local work completed
+  before the boundary;
+- decisions made and why the selected governed action or terminal answer is the
+  right next step;
 - exact action kind and exact action payload;
 - exact normalized tool call arguments when applicable;
 - result status;
@@ -157,8 +206,11 @@ Each recent turn should include:
 - provider metadata relevant to continuity.
 
 This should replace lossy action summaries as the main recent-memory surface.
+For long self-directed runs, this ledger should be more detailed at each
+boundary than the current compact `ProviderMemoryEntry` render, because these
+entries are the recovery checkpoints a new provider session will rely on.
 
-### 3. Compact Older History
+### 4. Compact Older History
 
 Older turns should compact into a structured summary, not plain prose only.
 
@@ -174,7 +226,7 @@ The compacted form should preserve:
 Never compact an old turn to only "success" or "failed"; keep the value that
 made it useful.
 
-### 4. Artifact Index
+### 5. Artifact Index
 
 The memory should carry a short index of durable artifacts and what each is for:
 
@@ -191,7 +243,7 @@ The memory should carry a short index of durable artifacts and what each is for:
 The prompt should include paths and short descriptions, not full raw logs by
 default. The provider can request or read details when a profile allows it.
 
-### 5. Codebase / Workspace Map
+### 6. Codebase / Workspace Map
 
 For code-writing tasks, memory should include a bounded workspace map:
 
@@ -216,6 +268,7 @@ continuity exists and only periodic safety sync is needed.
 Render:
 
 - compact working state;
+- pinned facts and memory index;
 - exact recent turn ledger only when native sync is due;
 - compact older summary;
 - artifact index.
@@ -230,6 +283,7 @@ provider session layer in this implementation.
 Render:
 
 - full working-state snapshot every turn;
+- pinned facts and memory index every turn;
 - exact recent turn ledger every turn;
 - compact older history;
 - artifact index;
@@ -247,6 +301,7 @@ Render:
 - recovery banner with provider, expected handle, failure text, turn index, and
   confirmation that the new session is not the old session;
 - full working-state snapshot;
+- pinned facts and full memory index;
 - exact recent turn ledger;
 - compact older history;
 - artifact index;
@@ -379,6 +434,10 @@ The feature is complete when:
 
 - canonical provider memory has a documented JSON schema;
 - `provider_memory.json` is written for each turnkey run;
+- memory index rows are rendered from structured memory facts with optional
+  model-generated titles/descriptions;
+- prompt rendering includes pinned facts and the memory index, with selected
+  full entries recalled by profile/task/request;
 - prompt rendering uses named render profiles;
 - recovery profile contains enough state to continue after a provider failure
   without pretending the old provider session survived;

@@ -114,6 +114,48 @@ current prototype gate:
   evidence and no cross-prompt state leakage;
 - Anthropic API memory-ledger hardening before claiming parity with Claude Code
   CLI or OpenAI Responses.
+- canonical memory index/selective recall: pinned facts and a short memory
+  table of contents should be rendered by default, while full detailed memory
+  entries are recalled only when useful for the current turn or recovery.
+
+Latest Branch A/B live-provider refresh proof on 2026-06-29:
+
+- the Claude quota-blocked handoff was resumed after the five-hour window
+  refreshed
+- the non-hardware suite ladder passed after the final provider-shape fix:
+  `324` pytest tests, ruff, mypy, `34` R11 benchmark tests, and R11 benchmark
+  help
+- the attached boards were proven as `nucleo_l476rg + nrf52840dk`
+- `nrf52833dk` was not attached for official closure: the Nordic probe/serial
+  matched, but Stage 0 read FICR `0x52840` where the official `nrf52833dk`
+  config expects `0x52833`
+- `claude-cli` completed real code-writing repair prompts on both attached
+  boards:
+  - `nucleo_l476rg__b001_wrong_boot_text` -> `FULL_SUCCESS`
+    (`20260629T181445Z-83140ead`)
+  - `nucleo_l476rg__b002_wrong_known_value` -> `FULL_SUCCESS`
+    (`20260629T181858Z-13304c13`)
+  - `nrf52840dk__b001_wrong_boot_text` -> `FULL_SUCCESS`
+    (`20260629T182216Z-476ebc86`)
+  - `nrf52840dk__b002_wrong_known_value` -> `FULL_SUCCESS`
+    (`20260629T182622Z-a0ef098b`)
+- `codex-cli` completed the same attached-board comparison repair prompts:
+  - `nucleo_l476rg__b001_wrong_boot_text` -> `FULL_SUCCESS`
+    (`20260629T182803Z-f6063c6a`)
+  - `nucleo_l476rg__b002_wrong_known_value` -> `FULL_SUCCESS`
+    (`20260629T183109Z-d90d0f9b`)
+  - `nrf52840dk__b001_wrong_boot_text` -> `FULL_SUCCESS`
+    (`20260629T183358Z-85305768`)
+  - `nrf52840dk__b002_wrong_known_value` -> `FULL_SUCCESS`
+    (`20260629T183719Z-39a93fff`)
+- the public client-action smoke passed on the final fixed branch state:
+  `codex-cli + nucleo_l476rg`, session `20260629T181205Z-d502704c`,
+  `HEALTHY_CONFIRMED`, with `uart_write` recorded as executed
+- a live provider-shape gap found during that smoke was fixed: legacy
+  `server_tool` batch calls with nested `arguments.arguments` are now unwrapped
+  before MCP invocation, and conflicting duplicate arguments fail closed
+- representative artifacts show provider remote resume handles and no
+  recovery-created replacement provider sessions
 
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
@@ -144,9 +186,10 @@ persistent provider sessions, free host-side model work with a final governed
 board-decision boundary, real tool schemas, batched actions with `wait` and
 UART write, live progress/inspector output, timeout hardening with
 model-refined budgets, session-scoped client actions, scoped green approval via
-model-made flipped tests, and stream checkpoints for UART/build/client-action
-flows. Those items are planned prototype work unless a later status entry says
-they have been implemented and verified.
+model-made flipped tests, stream checkpoints for UART/build/client-action
+flows, static-context/cache efficiency, and Wave 2 Branch H canonical memory
+index/selective recall. Those items are planned prototype work unless a later
+status entry says they have been implemented and verified.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower and currently deferred for the prototype:
@@ -394,6 +437,9 @@ Expected policy for deployment hardening:
   artifacts;
 - `anthropic-api` is not treated as a real-session provider because its
   continuity is currently brain-owned memory rather than provider-owned resume.
+- Future memory hardening should make that brain-owned path stronger with
+  canonical memory, pinned facts, a compact memory index/table of contents, and
+  selective recall of full entries.
 
 Claude provider policy:
 
