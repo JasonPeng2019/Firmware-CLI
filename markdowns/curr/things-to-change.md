@@ -26,12 +26,12 @@ ONLY INCLUDE for the first capability prototype:
 11. Prompt incentive for targeted debug prints.
 12. Proof escalation ladder for expensive live validation.
 13. Cache-assisted artifact/result reuse for setup and repeated non-final checks.
+14. Skill index/on-demand skill bodies for static-context efficiency.
 
 # Later MVP / Nice-To-Have Priority
 
 Defer until after the prototype proves the core loop:
 
-- skill index/on-demand skill bodies;
 - broader project-level persistent custom tools;
 - skill-guided A/B/C host-work experiments;
 - provider-native tool-call output format;
@@ -109,10 +109,10 @@ north star.
 - [16. Scoped success gates (replace the whole-board green check)](#16-scoped-success-gates-replace-the-whole-board-green-check)
 - [22. Proof escalation ladder for expensive live validation](#22-proof-escalation-ladder-for-expensive-live-validation)
 - [23. Cache-assisted artifact/result reuse for setup and repeated non-final checks](#23-cache-assisted-artifactresult-reuse-for-setup-and-repeated-non-final-checks)
+- [3. Inject skills as a cached index + on-demand bodies, not a full per-turn block](#3-inject-skills-as-a-cached-index--on-demand-bodies-not-a-full-per-turn-block)
 
 ### Later MVP / nice-to-have backlog
 
-- [3. Inject skills as a cached index + on-demand bodies, not a full per-turn block](#3-inject-skills-as-a-cached-index--on-demand-bodies-not-a-full-per-turn-block)
 - [13. Skill-guided self-directed host work (A/B/C experiment)](#13-skill-guided-self-directed-host-work-abc-experiment)
 - [10. Projects: persistent client-side custom skills and tools](#10-projects-persistent-client-side-custom-skills-and-tools)
 - [4. (Optional) Switch the output format to provider-native tool calls](#4-optional-switch-the-output-format-to-provider-native-tool-calls)
@@ -133,12 +133,13 @@ laid out in the same sequence.
 3. **Action capability / Wave 1 branch work** - add batches, UART write, and
    client actions / model-authored scripts.
 4. **Visibility / Wave 2 branch work** - add live provider/brain progress,
-   developer inspector logs, and stream checkpoints for UART/build/client-action
-   flows.
+   developer inspector logs, stream checkpoints for UART/build/client-action
+   flows, skill index/on-demand skill bodies, and cache-assisted setup/result
+   reuse as additive parallel branches.
 5. **Prototype proof gate** - add scoped green approval with manual or narrow
-   flipped-value tests.
-6. **Later MVP polish** - skill loading optimizations, projects, broad skill-guided
-   host experiments, provider-native tool calls, and wider product/UI polish.
+   flipped-value tests and the proof escalation ladder.
+6. **Later MVP polish** - projects, broad skill-guided host experiments,
+   provider-native tool calls, and wider product/UI polish.
 
 ---
 

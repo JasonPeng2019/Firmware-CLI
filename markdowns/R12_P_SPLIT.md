@@ -51,7 +51,7 @@ SERIAL:
   merge D + E + F back into Wave 0
 
 SERIAL:
-  G final integration + acceptance cleanup
+  Final integration + acceptance cleanup
 ```
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
@@ -337,17 +337,19 @@ Should not own:
 - provider adapter rewrites beyond the stable timeout-consumption hook
 - model-facing timeout admin tools
 
-## Wave 2 - Three Parallel Branches
+## Wave 2 - Parallel Branches
 
 Wave 2 starts only after Branch A, Branch B, and Branch C have each merged back
 into Wave 0 and the merged Wave 0 branch has passed the agreed checks.
 
-Branch D, Branch E, and Branch F then branch from the updated Wave 0 branch and
-run in parallel.
+Branch D, Branch E, Branch F, and Branch G then branch from the updated Wave 0
+branch and run in parallel.
 
 - Branch D needs Branch C module 1.
 - Branch E needs Branch B module 5 and Branch C module 1/module 2.
 - Branch F needs Branch B module 5 if green tests use client actions.
+- Branch G needs Branch A prompt/session metadata and Branch C event shapes if
+  cache-reuse events are emitted.
 
 ### Branch D - Progress UI + Inspector
 
@@ -365,12 +367,15 @@ Parallel with:
 
 - Branch E module 1 through module 4
 - Branch F module 1 through module 3
+- Branch G module 1 through module 5
 
 Should not own:
 
 - event shape redesign
 - timeout clamp rules
 - action execution semantics
+- proof escalation policy
+- static-context rendering, skill body loading, or cache key/reuse semantics
 
 ### Branch E - Stream Checkpoints
 
@@ -391,6 +396,7 @@ Parallel with:
 
 - Branch D module 1 through module 3
 - Branch F module 1 through module 3
+- Branch G module 1 through module 5
 
 Cross-branch dependency:
 
@@ -401,6 +407,8 @@ Should not own:
 
 - pyOCD flash/connect/recover worker design
 - green approval logic
+- static-context rendering, skill body loading, or cache-assisted build/workspace reuse
+- proof escalation policy
 
 ### Branch F - Scoped Green Approval
 
@@ -413,11 +421,17 @@ Serial order inside Branch F:
    - brain accepts pass-correct/fail-flipped only
 3. Evidence/result capture:
    - use existing state/evidence helpers
+4. Proof escalation policy:
+   - `proof_ladder.py`
+   - records the proof rung reached, why the next rung is required/skipped/pending,
+     and which expensive live proof remains
+   - integrates with spec/review/test-suite reports, not provider/session runtime
 
 Parallel with:
 
 - Branch D module 1 through module 3
 - Branch E module 1 through module 4
+- Branch G module 1 through module 5
 
 Cross-branch dependency:
 
@@ -429,11 +443,69 @@ Should not own:
 - provider sessions
 - server tools
 - general benchmark scoring outside the narrow prototype gate
+- static-context rendering, skill body loading, cache keys, or cache-assisted reuse
 
-## G Final Integration - Serial Last
+### Branch G - Static Context Efficiency + Cache-Assisted Reuse
 
-After Branch D, Branch E, and Branch F have each merged back into Wave 0 and the
-merged Wave 0 branch has passed the agreed checks, do one short serial
+Branch G exists only to keep static-context efficiency and cache/reuse additive
+and parallelizable. It owns skill-index rendering, on-demand skill bodies, and
+cache-assisted setup reuse because those all touch prompt/static-context assembly.
+It must not spread cache or skill-rendering policy into D/E/F-owned modules during
+the parallel wave.
+
+Serial order inside Branch G:
+
+1. `skills.py` static-context split
+   - render selected-skill index and always-on safety lines
+   - render one selected skill body on demand
+   - keep safety lines always present; only diagnostic bodies are pullable
+   - validate requested skill IDs against the already-selected set
+2. `artifact_cache.py`
+   - content-addressed cache record schema
+   - source/workspace hash, build-command fingerprint, toolchain fingerprint
+   - firmware artifact hash, board/probe identity fields
+   - prompt/tool/skill render hash fields
+   - provenance links back to original run artifacts
+3. Cache artifact writer/reader tests:
+   - deterministic JSON ordering
+   - conservative invalidation keys
+   - portable repo-relative artifact references where possible
+4. Reuse event/report records:
+   - cache hit/miss/skipped reason events
+   - report fields stating whether final live proof still ran
+5. Small prompt/CLI hooks:
+   - expose `load_skill(skill_id)` or equivalent on-demand body retrieval through
+     the turn-closing decision/native-tool path selected by the branch spec
+   - keep hooks minimal; broad prompt assembly rewrites move to final wiring
+
+Parallel with:
+
+- Branch D module 1 through module 3
+- Branch E module 1 through module 4
+- Branch F module 1 through module 4
+
+Cross-branch dependency:
+
+- Branch G may consume Branch C event shapes, but it must not redesign them.
+- Branch G may read Branch A prompt/session metadata, but it must not change
+  provider session semantics.
+
+Should not own:
+
+- workspace build chunking or cancellation, owned by Branch E
+- progress/inspector UI rendering, owned by Branch D
+- scoped green approval semantics, owned by Branch F
+- final hardware proof replacement; cache reuse can skip setup/non-final repeats
+  but cannot replace required live final verification
+- broad edits to `loop.py`, `workspace.py`, `cli.py`, or `actions.py`; only small
+  hooks are allowed, and if they conflict with D/E/F they move to final wiring
+- project-level persistent custom tools/skills, owned by later MVP entry #10
+- skill-guided host-work A/B/C experiments, owned by later MVP entry #13
+
+## Final Integration - Serial Last
+
+After Branch D, Branch E, Branch F, and Branch G have each merged back into Wave 0
+and the merged Wave 0 branch has passed the agreed checks, do one short serial
 integration branch.
 
 Owns:
@@ -442,6 +514,8 @@ Owns:
 - final wiring in `brain/actions.py`
 - final wiring in `brain/cli.py`
 - final server wrapper cleanup in `server.py`
+- wiring already-implemented proof-ladder and artifact-cache hooks where the
+  shared integration files would otherwise create parallel-branch conflicts
 - acceptance tests/docs cleanup
 
 Rules:
@@ -488,13 +562,13 @@ Merge sequence:
 4. Branch A, B, and C from Wave 0.
 5. Merge A, B, and C back into Wave 0 one at a time, running checks after each
    merge.
-6. Branch D, E, and F from the updated Wave 0.
-7. Merge D, E, and F back into Wave 0 one at a time, running checks after each
+6. Branch D, E, F, and G from the updated Wave 0.
+7. Merge D, E, F, and G back into Wave 0 one at a time, running checks after each
    merge.
-8. Branch `G` from Wave 0.
-9. Merge `G` back into Wave 0 after final acceptance cleanup.
+8. Branch `Final` from Wave 0.
+9. Merge `Final` back into Wave 0 after final acceptance cleanup.
 
-This lets the people or branch slots used for A/B/C be repurposed for D/E/F
+This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G
 without carrying stale branch state forward.
 
 ## Conflict Escalation Rule
