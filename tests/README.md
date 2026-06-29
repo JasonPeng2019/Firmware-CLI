@@ -19,6 +19,9 @@ Tracked harnesses:
   `src/pyocd_debug_mcp/benchmark_support.py`
 - `tests/harness/r12_turnkey_benchmark.py`: the `R12` turnkey benchmark
   entrypoint over `pyocd-debug-brain`
+- `tests/harness/branch_c_tests.py`: validates the `P-Wave-C` event-spine /
+  timeout-policy implementation against `markdowns/R12_P_SPLIT.md`'s Branch
+  C spec; see `markdowns/curr/branch_c_test_plan.md` for the check matrix
 
 Product/runtime note:
 
