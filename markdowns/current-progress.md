@@ -118,7 +118,7 @@ current prototype gate:
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
 
-- `markdowns/curr/p0_0_validation_report.md`
+- `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`
 
 That report covers the reconciled `P-Wave-0` branch after the `main` merge,
 including real stdio MCP client/server smoke, turnkey smoke, benchmark sanity,
@@ -1209,6 +1209,51 @@ New mainline-hardening proof now also exists on this Windows host:
   `nrf52840dk__b003_silent_uart` repair loop
 - Windows Codex CLI provider turns and local rebuild captures now tolerate
   non-ASCII subprocess output through UTF-8-with-replacement decoding
+
+Branch B deployment-completion proof now exists on this Windows host for the
+attached pair `nucleo_l476rg + nrf52840dk`:
+
+- non-hardware ladder passed after adding the public client-action path:
+  `uv run pytest -q`, `uv run ruff check .`,
+  `uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py`,
+  `uv run pytest -q tests/test_r11_benchmark.py`, and
+  `uv run python -m tests.harness.r11_benchmark --help`
+- focused Branch B tests now cover client-action loading, CLI/app threading,
+  prompt visibility, `run_script` execution, and `client_actions.json` audit
+  metadata
+- real hardware preflight passed on the attached boards:
+  - `nucleo_l476rg`: `host_bootstrap.py`, Stage 0 flash/UART, and Stage 1 smoke
+  - `nrf52840dk`: `host_bootstrap.py`, Stage 0 silicon identity/flash/UART/recover,
+    and Stage 1 smoke after one transient post-recover attach retry
+- real Codex + real MCP + public `--client-action` smoke passed on both
+  attached boards:
+  - `20260628T210308Z-8b42e2ce` (`nucleo_l476rg`)
+  - `20260628T210353Z-79827461` (`nrf52840dk`)
+- full customer-like Codex runs also passed on both attached boards through
+  `--task-file`, avoiding shell quoting problems for prompts with JSON-like
+  examples. Each run used multiple provider turns, edited an isolated temporary
+  workspace, ran `python app.py`, then executed a governed Branch B batch
+  containing `connect`, `wait`, `run_script:uart_write`, and `read_serial`:
+  - `20260628T211451Z-f2bc0136` (`nucleo_l476rg`)
+  - `20260628T211628Z-3d17f3d8` (`nrf52840dk`)
+- repeated user-prompt / multi-loop Codex deployment proof also passed on the
+  same attached pair. Each board received two separate public
+  `pyocd-debug-brain run` prompts, each prompt started a real MCP subprocess
+  and ran a complete provider-driven brain loop:
+  - prompt 1 on each board: ordered `connect`, `wait`,
+    `run_script:uart_write`, `read_serial` board batch
+  - prompt 2 on each board: inspect/replace/build in an isolated temporary
+    workspace, then the same ordered board batch
+  - evidence is summarized in `markdowns/curr/r12-branch-b-status.md`; the
+    detailed test report is archived at
+    `markdowns/tmp/curr-archive-20260628/r12-branch-b-multi-loop-real-deployment_test_report.md`
+  - run roots:
+    - `20260628T212402Z-9b730979` (`nucleo_l476rg`, prompt 1)
+    - `20260628T212523Z-fa129f2f` (`nucleo_l476rg`, prompt 2)
+    - `20260628T212604Z-e86cf36a` (`nrf52840dk`, prompt 1)
+    - `20260628T212720Z-c8244c8c` (`nrf52840dk`, prompt 2)
+- exact `nrf52833dk` Branch B deployment proof is still pending because the
+  attached Nordic board in this session identified as `NRF52840_xxAA_REV2`
 
 For the six-case pilot and full Codex suite above, the turnkey path has also
 now been shown to:

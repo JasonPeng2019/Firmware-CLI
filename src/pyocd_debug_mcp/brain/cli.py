@@ -17,6 +17,7 @@ from pyocd_debug_mcp.brain.cli_parsing import (
 )
 from pyocd_debug_mcp.brain.config import BrainConfigError
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution
+from pyocd_debug_mcp.brain.task_input import add_task_input_arguments, resolve_task_input
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run one turnkey freeform task.")
     run_parser.add_argument("--board-id", required=True)
-    run_parser.add_argument("--task", required=True)
+    add_task_input_arguments(run_parser)
     run_parser.add_argument("--provider")
     run_parser.add_argument("--model")
     run_parser.add_argument("--port")
@@ -37,6 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--workspace-root")
     run_parser.add_argument("--build-command")
+    run_parser.add_argument(
+        "--client-action",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="Register a session-scoped client action script. Repeatable.",
+    )
     _add_planning_hook_arguments(run_parser)
 
     benchmark_parser = subparsers.add_parser("benchmark", help="Run turnkey benchmark cases.")
@@ -78,20 +86,22 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
     timeout_config = _parse_timeout_config_json(args.timeout_config_json)
     timeout_proposal = _parse_timeout_proposal_json(args.timeout_proposal_json)
     iteration_estimate = _parse_iteration_estimate_json(args.iteration_estimate_json)
+    task = resolve_task_input(args)
     return await run_freeform_task(
         board_id=args.board_id,
-        task=args.task,
+        task=task,
         provider=args.provider,
         model=args.model,
         max_iters=args.max_iters,
         serial_read_seconds=args.serial_read_seconds,
-        memory_mode=args.memory_mode,
-        native_sync_every=args.native_sync_every,
+        memory_mode=getattr(args, "memory_mode", None),
+        native_sync_every=getattr(args, "native_sync_every", None),
         port=args.port,
         flash_artifact=args.flash_artifact,
         elf=args.elf,
         workspace_root=args.workspace_root,
         build_command=args.build_command,
+        client_action_specs=tuple(args.client_action or ()),
         timeout_config=timeout_config,
         timeout_proposal=timeout_proposal,
         iteration_estimate=iteration_estimate,

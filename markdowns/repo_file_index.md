@@ -199,12 +199,11 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `p0-0-doc-sync-superpowers-audit_spec.md` | Active Wave 0 follow-up spec for markdown cleanup, superpowers audit, and code/doc compliance fixes after the merge-validation pass. |
+| `README.md` | Short index for the reduced current-doc set and the current archive location. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
+| `r12-branch-b-status.md` | Compact Branch B implementation/proof handoff, replacing the overlapping Branch B spec/process/review/test-report files now archived. |
+| `r12-branch-b-official-portability-closure_spec.md` | Remaining stricter proof spec for exact official `nrf52833dk` and fresh-machine Branch B closure claims. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
-| `p0-0-static-audit-fix_spec.md` | Active Wave 0 static-audit fix spec for repo/runtime hardening issues found before the latest merge-validation pass. |
-| `p0_0_layered_validation_plan.md` | Wave 0/P0.0 clean-slate validation ladder: repo hygiene, non-hardware checks, timeout/hang negative tests, real-board proof, MCP smoke, turnkey smoke, benchmark slice, and soak criteria before branching P0. |
-| `p0_0_validation_report.md` | Evidence-backed execution report for the P0.0 validation ladder, including merge fixes, real-board results, and deferred-risk notes. |
 | `uxlayer_gap_checklist.md` | Current-state Pass 1 vs Pass 2 checklist for the operator shell implementation. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
@@ -222,6 +221,7 @@ a glance before relying on detail.
 | `threadx_nucleo_l476rg_button_blink_spec.md` | Retained ThreadX STM32 scaffold proposal that is intentionally outside the active prototype gate. |
 | `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
 | `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
+| `curr-archive-20260628/` | Archived docs moved out of `markdowns/curr/` after Branch B deployment cleanup: completed P0, portability, Branch B, and CLI robustness specs/process/reviews/reports. |
 
 ## `superpowers/` — internal authoring playbooks
 
@@ -243,10 +243,10 @@ a glance before relying on detail.
 
 ## Verified
 
-- This index now reflects the current `markdowns/curr/` folder after the Wave 0
-  merge-validation pass and the moved completed docs under `markdowns/tmp/`.
-- The current `markdowns/curr/p0_0_validation_report.md` is listed as the
-  executed Wave 0 / `P0.0` validation report.
+- This index now reflects the reduced `markdowns/curr/` folder after the
+  Branch B documentation cleanup.
+- Completed P0, portability, Branch B, and CLI robustness artifacts are listed
+  as archived under `markdowns/tmp/curr-archive-20260628/`.
 
 ## Pending Verification
 

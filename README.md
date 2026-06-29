@@ -417,6 +417,22 @@ uv run pyocd-debug-brain run --board-id nrf52833dk --task "Verify this reference
 uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --provider claude-cli --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
 uv run pyocd-debug-brain run --board-id nrf52833dk --task "Diagnose this board interaction." --memory-mode model-summary --native-sync-every 0
+uv run pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk --task-file prompt.txt
+```
+
+For long prompts, prompts with JSON examples, or prompts containing many shell
+quotes, prefer `--task-file prompt.txt` or `--task-stdin` over inline `--task`.
+That keeps the task text portable across Windows PowerShell, macOS shells, and
+CI before the turnkey brain receives it.
+
+Register run-local Branch B client actions with repeatable
+`--client-action NAME=PATH`. The action is loaded into the current brain run,
+listed in the provider prompt with its content hash, and executed by
+`run_script(name, inputs)` through the brain gate rather than as a general host
+executor:
+
+```bash
+uv run pyocd-debug-brain run --provider codex-cli --board-id nucleo_l476rg --client-action uart_write=tests/fixtures/client_actions/uart_write.py --task "Use the registered uart_write action, then verify UART boot text."
 ```
 
 Run the operator-facing CLI over the same turnkey brain:
@@ -424,6 +440,7 @@ Run the operator-facing CLI over the same turnkey brain:
 ```bash
 uv run pyocd-debug
 uv run pyocd-debug run --board-id nrf52833dk --task "Verify this reference firmware is healthy and explain why."
+uv run pyocd-debug run --board-id nrf52833dk --task-file prompt.txt
 uv run pyocd-debug benchmark --case-id nrf52833dk__k001_reference_green
 uv run pyocd-debug history
 ```
@@ -683,6 +700,12 @@ Verified:
     same canonical compact memory model
   - Anthropic remains local-primary because the current Messages API does not
     expose a resumable native conversation handle
+- the current Branch B action layer is also in place:
+  - ordered `action_batch` decisions execute through the brain gate
+  - bounded `wait`, UART `write_serial`, and `run_script` client actions are
+    model-visible action choices
+  - session-scoped client actions are audited in run artifacts and server-native
+    calls from those actions route back through the same governed brain path
   - model-facing server-tool docs now come from live MCP metadata through
     `brain/tool_schemas.py`
 - the first Pass 1 UX-layer code path now also exists in the repo:

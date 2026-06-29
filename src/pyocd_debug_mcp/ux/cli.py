@@ -9,6 +9,7 @@ import anyio
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
 from pyocd_debug_mcp.brain.config import BrainConfigError
+from pyocd_debug_mcp.brain.task_input import add_task_input_arguments, resolve_task_input
 from pyocd_debug_mcp.ux.history import UXHistoryError, load_session_bundle, list_history
 from pyocd_debug_mcp.ux.renderer import UXRenderer
 from pyocd_debug_mcp.ux.shell import OperatorShell
@@ -20,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run one turnkey task with live rendering.")
     run_parser.add_argument("--board-id", required=True)
-    run_parser.add_argument("--task", required=True)
+    add_task_input_arguments(run_parser)
     run_parser.add_argument("--provider")
     run_parser.add_argument("--model")
     run_parser.add_argument("--port")
@@ -62,10 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
 def _render_run(args: argparse.Namespace) -> int:
     renderer = UXRenderer(raw_output=args.raw_output)
     try:
+        task = resolve_task_input(args)
         execution = anyio.run(
             lambda: run_freeform_task(
                 board_id=args.board_id,
-                task=args.task,
+                task=task,
                 provider=args.provider,
                 model=args.model,
                 port=args.port,

@@ -63,7 +63,7 @@ from pyocd_debug_mcp.services.session_runtime import (
 )
 from pyocd_debug_mcp.services import target_control
 from pyocd_debug_mcp.services.symbols import read_symbol_u32 as read_symbol_u32_from_elf
-from pyocd_debug_mcp.services.uart_capture import capture_uart_output
+from pyocd_debug_mcp.services.uart_capture import capture_uart_output, write_uart_output
 from pyocd_debug_mcp.target_errors import (
     LockedTargetError,
     ProbeNotFoundError,
@@ -1061,6 +1061,114 @@ def read_serial(
                 "reopen_count": capture.reopen_count,
                 "capture_duration_seconds": round(capture.duration_seconds, 3),
                 "excerpt": excerpt,
+            },
+            session=runtime,
+        )
+        if runtime is not None:
+            _handle_mutation_event(event)
+        return result
+
+
+@mcp.tool()
+def write_serial(
+    text: str,
+    baudrate: int | None = None,
+    port: str | None = None,
+    append_newline: bool = False,
+    timeout_seconds: float = 1.0,
+) -> str:
+    """Write bounded UTF-8 text to the connected board UART.
+
+    The tool uses the same board-aware serial-port resolution as ``read_serial``.
+    It never executes host commands and only writes bytes to the resolved UART
+    transport for the active connected session. Set ``port`` to override serial
+    resolution explicitly. Set ``append_newline`` when the target firmware
+    expects line-oriented UART input.
+    """
+    with _lock:
+        started = time.monotonic()
+        runtime = _runtime_session
+        normalized_args: dict[str, object] = {
+            "port": port,
+            "baudrate": baudrate,
+            "text_length": len(text),
+            "append_newline": append_newline,
+            "timeout_seconds": timeout_seconds,
+        }
+        if baudrate is not None and baudrate <= 0:
+            refusal = PolicyRefusal("uart/invalid-baudrate", "baudrate must be > 0.")
+            _record_event(
+                "write_serial",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=refusal.code,
+                duration_ms=_duration_ms(started),
+                details={"message": refusal.message},
+                session=runtime,
+            )
+            return _format_refusal(refusal, session_id=_active_session_id())
+        if timeout_seconds <= 0:
+            refusal = PolicyRefusal("uart/invalid-timeout", "timeout_seconds must be > 0.")
+            _record_event(
+                "write_serial",
+                normalized_args,
+                outcome_kind=ToolOutcome.REFUSED,
+                error_code=refusal.code,
+                duration_ms=_duration_ms(started),
+                details={"message": refusal.message},
+                session=runtime,
+            )
+            return _format_refusal(refusal, session_id=_active_session_id())
+        if runtime is not None:
+            try:
+                _watcher.ensure_allowed(runtime, UART_TOOL)
+            except WatcherBlocked as blocked:
+                _record_blocked_event(
+                    "write_serial",
+                    normalized_args,
+                    blocked,
+                    started=started,
+                    session=runtime,
+                )
+                return _format_block(blocked, session_id=runtime.session_id)
+
+        handle = _handle()
+        if handle.board is None:
+            return NO_BOARD_CONFIG_MESSAGE
+
+        board = handle.board
+        resolved_port = _resolve_serial_port_for_session(handle, override=port)
+        resolved_baudrate = baudrate or board.default_baudrate
+        payload_text = f"{text}\n" if append_newline else text
+        payload = payload_text.encode("utf-8")
+        normalized_args = {
+            "port": resolved_port.device,
+            "baudrate": resolved_baudrate,
+            "text_length": len(text),
+            "bytes_to_write": len(payload),
+            "append_newline": append_newline,
+            "timeout_seconds": timeout_seconds,
+        }
+        write_result = write_uart_output(
+            resolved_port.device,
+            resolved_baudrate,
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
+        result = (
+            f"UART wrote {write_result.bytes_written} byte(s) on {resolved_port.device} "
+            f"at {resolved_baudrate} baud via {handle.route_used}; "
+            f"duration={write_result.duration_seconds:.2f}s"
+        )
+        event = _record_event(
+            "write_serial",
+            normalized_args,
+            outcome_kind=ToolOutcome.SUCCESS,
+            error_code=None,
+            duration_ms=_duration_ms(started),
+            details={
+                "bytes_written": write_result.bytes_written,
+                "write_duration_seconds": round(write_result.duration_seconds, 3),
             },
             session=runtime,
         )
