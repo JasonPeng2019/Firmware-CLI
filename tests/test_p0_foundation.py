@@ -6,7 +6,7 @@ import io
 import pytest
 
 from pyocd_debug_mcp.brain import cli as brain_cli
-from pyocd_debug_mcp.brain.action_policy import classify_action
+from pyocd_debug_mcp.brain.action_policy import classify_action, namespaced_server_tool_name
 from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision, WaitAction
 from pyocd_debug_mcp.brain.client_actions import (
     ClientActionLoadError,
@@ -210,9 +210,9 @@ def test_turn_decision_accepts_action_batch_and_wait_action() -> None:
 
 
 def test_action_policy_accepts_namespaced_server_tool_action() -> None:
-    from pyocd_debug_mcp.brain.action_policy import classify_action
-
     assert classify_action("server_tool:connect") == "server_native"
+    assert namespaced_server_tool_name("server_tool:connect") == "connect"
+    assert namespaced_server_tool_name("server_tool:missing") is None
     assert WaitAction(seconds=0.1).seconds == 0.1
 
 

@@ -18,6 +18,15 @@ Completed process ledgers, superseded specs, and review artifacts should move to
 - `canonical-memory-layer_spec.md` - future improvement spec for stronger
   recovery reliability and the Claude API facet; not implemented in the current
   pass.
+- `r12-server-tool-action-hardening_spec.md` - completed no-credit hardening
+  spec for centralized server-tool action parsing and redundant `tool_name`
+  stripping.
+- `r12-server-tool-action-hardening_process.md` - process ledger and validation
+  matrix for the server-tool action hardening pass.
+- `r12-server-tool-action-hardening_review.md` - no-credit review verdict for
+  the server-tool action hardening pass.
+- `r12-claude-refresh-hardening-test-plan_spec.md` - deferred live Claude/API
+  validation plan for when usage and credits are available.
 
 ## Archive
 

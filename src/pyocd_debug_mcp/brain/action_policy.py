@@ -34,12 +34,22 @@ SERVER_NATIVE_ACTIONS = frozenset(
     }
 )
 
+SERVER_TOOL_ACTION_PREFIX = "server_tool:"
+
+
+def namespaced_server_tool_name(action_type: str) -> str | None:
+    """Return the server tool selected by a `server_tool:<name>` action."""
+    if not action_type.startswith(SERVER_TOOL_ACTION_PREFIX):
+        return None
+    tool_name = action_type.removeprefix(SERVER_TOOL_ACTION_PREFIX)
+    if tool_name in SERVER_NATIVE_ACTIONS:
+        return tool_name
+    return None
+
 
 def classify_action(action_type: str) -> ActionClass:
-    if action_type.startswith("server_tool:"):
-        tool_name = action_type.split(":", 1)[1]
-        if tool_name in SERVER_NATIVE_ACTIONS:
-            return "server_native"
+    if namespaced_server_tool_name(action_type) is not None:
+        return "server_native"
     if action_type in MODEL_NATIVE_HOST_ACTIONS:
         return "model_native_host"
     if action_type in BRAIN_LOCAL_ACTIONS:

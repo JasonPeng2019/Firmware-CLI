@@ -273,6 +273,122 @@ async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_writ
 
 
 @pytest.mark.anyio
+async def test_run_turnkey_strips_redundant_tool_name_from_namespaced_server_tool() -> None:
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to nRF52833 DK via probe TEST123. session_id=sess-1",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Provider emitted a redundant embedded tool_name.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {
+                                "action_type": "server_tool:connect",
+                                "arguments": {"tool_name": "connect", "board_id": "nrf52833dk"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="Connected without leaking provider-shape fields.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Namespaced server tool normalization worked.",
+                    summary="Connect received only real MCP arguments.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise redundant namespaced server tool normalization.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls == [
+        ("connect", {"board_id": "nrf52833dk"}),
+        ("disconnect", {}),
+    ]
+
+
+@pytest.mark.anyio
+async def test_run_turnkey_refuses_conflicting_tool_name_on_namespaced_server_tool() -> None:
+    client = FakeClient({"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]})
+    provider = FakeProvider(
+        [
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Provider emitted contradictory server tool names.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {
+                                "action_type": "server_tool:connect",
+                                "arguments": {"tool_name": "read_serial"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="Stop after fail-closed parser refusal.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Conflicting provider shape was refused before any MCP call.",
+                    summary="No replacement server tool was selected.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise conflicting namespaced server tool normalization.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert execution.brain_trace[0]["result_text"].startswith("Refused [brain/conflicting-server-tool-name]")
+    assert client.calls == []
+
+
+@pytest.mark.anyio
 async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool() -> None:
     client = FakeClient(
         {

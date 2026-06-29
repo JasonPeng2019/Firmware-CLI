@@ -18,6 +18,7 @@ from pyocd_debug_mcp.board_config import (
     BoardConfig,
     load_selected_board_configs,
 )
+from pyocd_debug_mcp.brain.action_policy import SERVER_NATIVE_ACTIONS, namespaced_server_tool_name
 from pyocd_debug_mcp.brain.actions import (
     ActionUnion,
     AllowedServerToolName,
@@ -294,8 +295,7 @@ def _build_turn_prompt(
         f"{skills_text}\n\n"
         f"{render_client_action_prompt_section(client_actions or InMemoryClientActionStore())}\n\n"
         "Available action kinds:\n"
-        "- server_tool: connect, disconnect, get_board_info, get_state, halt, resume, reset, "
-        "read_core_register, read_memory, flash_firmware, read_serial, write_serial, unlock_recover\n"
+        f"- server_tool: {', '.join(sorted(SERVER_NATIVE_ACTIONS))}\n"
         "- read_file(path)\n"
         "- replace_file(path, content)\n"
         "- run_build(build_command?)\n"
@@ -384,24 +384,18 @@ def _brain_trace_record(
 def _action_from_call(call: ActionCall) -> ActionUnion:
     args = dict(call.arguments)
     action_type = call.action_type
-    if action_type.startswith("server_tool:"):
-        tool_name = action_type.split(":", 1)[1]
-        if tool_name in {
-            "connect",
-            "disconnect",
-            "get_board_info",
-            "get_state",
-            "halt",
-            "resume",
-            "reset",
-            "read_core_register",
-            "read_memory",
-            "flash_firmware",
-            "read_serial",
-            "write_serial",
-            "unlock_recover",
-        }:
-            return ServerToolAction(tool_name=cast(AllowedServerToolName, tool_name), arguments=args)
+    namespaced_tool_name = namespaced_server_tool_name(action_type)
+    if namespaced_tool_name is not None:
+        embedded_tool_name = args.pop("tool_name", None)
+        if embedded_tool_name is not None and embedded_tool_name != namespaced_tool_name:
+            raise TurnkeyRefusal(
+                "brain/conflicting-server-tool-name",
+                (
+                    "Namespaced server_tool action selected "
+                    f"{namespaced_tool_name!r}, but arguments.tool_name was {embedded_tool_name!r}."
+                ),
+            )
+        return ServerToolAction(tool_name=cast(AllowedServerToolName, namespaced_tool_name), arguments=args)
     if action_type == "server_tool":
         tool_name = args.pop("tool_name", None)
         if not isinstance(tool_name, str):
@@ -410,21 +404,7 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
                 "Batched server_tool calls must include arguments.tool_name.",
             )
         return ServerToolAction(tool_name=cast(AllowedServerToolName, tool_name), arguments=args)
-    if action_type in {
-        "connect",
-        "disconnect",
-        "get_board_info",
-        "get_state",
-        "halt",
-        "resume",
-        "reset",
-        "read_core_register",
-        "read_memory",
-        "flash_firmware",
-        "read_serial",
-        "write_serial",
-        "unlock_recover",
-    }:
+    if action_type in SERVER_NATIVE_ACTIONS:
         return ServerToolAction(tool_name=cast(AllowedServerToolName, action_type), arguments=args)
     if action_type == "wait":
         return WaitAction.model_validate({"kind": "wait", **args})
