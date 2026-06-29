@@ -384,6 +384,24 @@ def _brain_trace_record(
 def _action_from_call(call: ActionCall) -> ActionUnion:
     args = dict(call.arguments)
     action_type = call.action_type
+    if action_type.startswith("server_tool:"):
+        tool_name = action_type.split(":", 1)[1]
+        if tool_name in {
+            "connect",
+            "disconnect",
+            "get_board_info",
+            "get_state",
+            "halt",
+            "resume",
+            "reset",
+            "read_core_register",
+            "read_memory",
+            "flash_firmware",
+            "read_serial",
+            "write_serial",
+            "unlock_recover",
+        }:
+            return ServerToolAction(tool_name=cast(AllowedServerToolName, tool_name), arguments=args)
     if action_type == "server_tool":
         tool_name = args.pop("tool_name", None)
         if not isinstance(tool_name, str):

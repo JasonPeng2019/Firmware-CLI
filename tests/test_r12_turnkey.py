@@ -221,7 +221,7 @@ async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_writ
                     "classification": "observability_fault",
                     "action_batch": {
                         "calls": [
-                            {"action_type": "connect", "arguments": {}},
+                            {"action_type": "server_tool:connect", "arguments": {}},
                             {"action_type": "wait", "arguments": {"seconds": 0.01}},
                             {
                                 "action_type": "write_serial",
@@ -2604,12 +2604,12 @@ def test_claude_cli_command_supports_optional_model() -> None:
     command = _build_claude_command(
         model="claude-sonnet-4-20250514",
         instructions="system",
-        prompt="prompt",
     )
     assert command[:4] == ["claude", "--print", "--output-format", "json"]
     assert "--append-system-prompt" in command
     assert "--model" in command
     assert "claude-sonnet-4-20250514" in command
+    assert "prompt" not in command
 
 
 def test_claude_output_extractor_surfaces_provider_error() -> None:

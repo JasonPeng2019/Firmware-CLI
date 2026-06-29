@@ -207,6 +207,12 @@ def test_turn_decision_accepts_action_batch_and_wait_action() -> None:
     assert decision.action is None
     assert decision.action_batch is not None
     assert decision.action_batch.calls[0].action_type == "wait"
+
+
+def test_action_policy_accepts_namespaced_server_tool_action() -> None:
+    from pyocd_debug_mcp.brain.action_policy import classify_action
+
+    assert classify_action("server_tool:connect") == "server_native"
     assert WaitAction(seconds=0.1).seconds == 0.1
 
 

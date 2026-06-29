@@ -1,0 +1,6 @@
+Verify this board's currently flashed reference firmware.
+
+Use the turnkey action surface only. Connect by board_id, do not pass a probe UID
+or serial port, gather board evidence, confirm UART contains boot ok, confirm the
+known stage1 symbol value is 0x1234ABCD if the action surface allows it, and
+finalize with a concise evidence summary. Do not edit source files.

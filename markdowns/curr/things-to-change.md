@@ -24,6 +24,8 @@ ONLY INCLUDE for the first capability prototype:
 9. Stream checkpoints for UART/build/client-action flows.
 10. Scoped green approval via model-made flipped tests.
 11. Prompt incentive for targeted debug prints.
+12. Proof escalation ladder for expensive live validation.
+13. Cache-assisted artifact/result reuse for setup and repeated non-final checks.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -65,6 +67,16 @@ governed decision per turn as the seam between them. Entries #9, #11, and #12 de
 this directly; the others (memory, batches, device I/O, timeouts, verdicts, scripts,
 projects) hang off it.
 
+### Non-regression rule: do not re-gate inert local work
+
+No local inert action may require a `TurnDecision` unless it feeds convergence,
+bounded execution, firmware-deliverable state, or hardware access. File reads,
+directory listing, local scratch computation, native script authoring, and pure-local
+script execution stay model-native/free and are only observed at the next governed
+boundary. If a future entry appears to require a brain turn for those actions, read
+it as describing the current bridge or deterministic CI mode, not the prototype
+north star.
+
 ## Contents
 
 ### Prototype foundation and safety
@@ -95,6 +107,8 @@ projects) hang off it.
 - [20. Developer turn inspector for live brain/provider/server traffic](#20-developer-turn-inspector-for-live-brainproviderserver-traffic)
 - [21. Model-cancellable checkpoints for chunked UART/build/client-action streams](#21-model-cancellable-checkpoints-for-chunked-uartbuildclient-action-streams)
 - [16. Scoped success gates (replace the whole-board green check)](#16-scoped-success-gates-replace-the-whole-board-green-check)
+- [22. Proof escalation ladder for expensive live validation](#22-proof-escalation-ladder-for-expensive-live-validation)
+- [23. Cache-assisted artifact/result reuse for setup and repeated non-final checks](#23-cache-assisted-artifactresult-reuse-for-setup-and-repeated-non-final-checks)
 
 ### Later MVP / nice-to-have backlog
 
@@ -192,15 +206,16 @@ Two caveats specific to this product, true for every entry:
   is our responsibility. The brain-owned action ledger (entry #2) is the
   deterministic spine that must survive whatever compaction we add.
 
-In the default session design (entries #1-#3) the model keeps returning a
-`TurnDecision` JSON object; history accumulates as ordinary conversation turns
-(the model's JSON reply becomes the assistant message, the next tool result is
+In the default session design (entries #1-#3 plus the host/board split in #9/#11/#12)
+the model keeps returning a `TurnDecision` JSON object only for the turn-closing
+governed/terminal decision; history accumulates as ordinary conversation turns
+(the model's JSON reply becomes the assistant message, the next governed result is
 appended as the user message), and tool descriptions + skills live as **cached
-text in the session prefix**. The append-only shape is what preserves the KV
-cache — a JSON object in an assistant message caches exactly as well as a native
-tool call would. Switching the output format to the provider's native `tools`
-parameter and `tool_result` blocks is a **separate, optional** change (entry #4),
-not required for memory or caching.
+text in the session prefix**. The append-only shape is what preserves the KV cache
+— a JSON object in an assistant message caches exactly as well as a native tool
+call would. Switching the output format to the provider's native `tools` parameter
+and `tool_result` blocks is a **separate, optional** change (entry #4), not required
+for memory or caching.
 
 ---
 
@@ -300,24 +315,30 @@ Stop conflating two different concerns the current design merges into
 For the goal of **one most-accurate / most-efficient agent** (explicitly not
 optimizing for cross-provider comparison or provider symmetry), the recommended
 shape is to **give the model a persistent, append-only session while keeping the
-turnkey brain exactly where it is** — as the executor and gate. Note this is one
-axis only (session/memory) and is independent of the output-format axis: **we
-keep the `TurnDecision` JSON return.** (Switching to native tool calls is a
-separate, optional change — entry #4.)
+turnkey brain exactly where it is** — as the executor and gate for governed
+boundaries. Note this is one axis only (session/memory) and is independent of the
+output-format axis: **we keep the `TurnDecision` JSON return for the final
+governed/terminal decision of a turn.** (Switching to native tool calls is a
+separate, optional change — entry #4.) Keeping JSON here must not be read as
+keeping old per-local-action mediation; entries #9, #11, and #12 supersede that
+for model-native host work.
 
 - Run the model in **one logical persistent session** instead of re-prompting it
-  cold each turn. The model keeps returning a `TurnDecision` JSON object; history
+  cold each turn. The model works freely inside that session and returns a
+  `TurnDecision` JSON object only to close the turn with a governed board/build/
+  firmware-deliverable action or a terminal/communication decision. History
   accumulates naturally as conversation turns. Current CLI resume adapters
   satisfy this as a prototype bridge. The final implementation should use
   provider SDK/session APIs for Codex and Claude so the brain gets structured
   turn lifecycle, streaming events, and explicit session management without
   scraping subprocess output.
 - Keep the deterministic brain **unchanged underneath**: it still parses the
-  returned `TurnDecision`, dispatches `decision.action`, applies the existing
-  checks (argument normalization, refusals, flash gate, convergence blocks in
-  `_execute_server_tool` [loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)),
-  runs the tool against the MCP server, and appends the result into the session
-  as the next user turn.
+  returned governed decision, dispatches the selected server-native/client-action/
+  terminal action, applies the existing checks (argument normalization, refusals,
+  flash gate, convergence blocks in `_execute_server_tool`
+  [loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)), runs the tool against
+  the MCP server when needed, observes workspace/tool-store diffs at the boundary,
+  and appends the result into the session as the next user turn.
 - `BrainState` still exists, derived from observed tool results exactly as now,
   and still drives convergence refusals — but it is the safety spine, no longer
   the model's memory.
@@ -388,9 +409,10 @@ spine regardless of how the harness summarizes.
    - API adapters: OpenAI Responses handle and Anthropic client-owned history.
    No native tool-calling is required for this change; that remains entry #4.
 2. **`src/pyocd_debug_mcp/brain/loop.py`** — split `run_turnkey` into:
-   - a persistent-session executor that appends each tool result as the next user
-     turn, parses the returned `TurnDecision`, and dispatches `decision.action`
-     through `_execute_server_tool` exactly as the current loop does; and
+   - a persistent-session executor that lets the provider perform model-native
+     host work inside its own session, appends each governed result as the next
+     user turn, parses the returned turn-closing `TurnDecision`, and dispatches
+     only the governed action through the brain gate; and
    - the existing re-serializing loop, retained as the deterministic mode.
    Add `_format_action_ledger(state)` and inject it in both modes.
 3. **`src/pyocd_debug_mcp/brain/state.py`** — extend the records behind
@@ -736,9 +758,10 @@ on the floor in the turnkey path.
 
 ### Constraints / watch-outs
 
-- **Prompt size.** Full docstrings + schemas for 12 tools add tokens to every
-  turn (the prompt is rebuilt each iteration). Render compactly; consider
-  one-line descriptions + a terse arg list rather than full schema JSON.
+- **Prompt size.** In the current bridge / deterministic mode, full docstrings +
+  schemas for 12 tools add tokens to every rebuilt turn prompt. In the persistent
+  session path they should live in the cached prefix. Render compactly either way;
+  consider one-line descriptions + a terse arg list rather than full schema JSON.
 - **Whitelist coupling.** The catalog must be filtered by `AllowedServerToolName`,
   not by the server's full tool set, or it will advertise tools the loop will
   reject. This is the same *curated-allowlist* discipline as entry #3's
@@ -1556,7 +1579,7 @@ result, and give the model an explicit, bounded delay primitive.
   to `ActionUnion` ([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)),
   executed by the brain as a bounded sleep. Most useful as a batch step
   (write -> wait -> read), but valid standalone. It is brain-local (not an MCP
-  tool), like `run_build` / `read_file`.
+  tool), like `run_build`; it is not a reason to re-gate inert host reads.
 
 ### Making timeouts *enforceable* — the layer model (corrected priority)
 
@@ -1801,6 +1824,12 @@ Let the model emit an ordered **batch** of actions in a single turn, executed in
 order by the brain, so it can drive a full sequence "as if it were manning the MCP
 server itself."
 
+This is a current-bridge convenience for governed actions, not a replacement for
+the free-host-work design. Once entries #9, #11, and #12 land, batches must not be
+used to keep inert local work (`read_file`, directory listing, scratch computation,
+pure-local scripts) inside the brain decision loop. Use batches only for governed
+server-native/client-action/terminal steps that genuinely need the brain boundary.
+
 Lower-risk schema: add a `BatchAction` to `ActionUnion`
 ([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)):
 
@@ -1808,22 +1837,26 @@ Lower-risk schema: add a `BatchAction` to `ActionUnion`
 { "kind": "batch", "steps": [ <action>, <action>, ... ] }
 ```
 
-where each step is an existing single action (`server_tool`, `read_file`,
-`replace_file`, `run_build`, ...). Single-action turns keep working unchanged;
-batching is opt-in. (Alternative: make the top-level `action` a list and rename
-to `actions` — cleaner semantically but a breaking change to every existing
-decision.)
+where each step is an existing governed single action (`server_tool`, `run_script`,
+`run_build`, firmware-deliverable edits, terminal/finalize actions, ...). The
+current bridge may still carry legacy local actions for compatibility, but the
+north star is that model-native host work is not batched through the brain.
+Single-action turns keep working unchanged; batching is opt-in. (Alternative: make
+the top-level `action` a list and rename to `actions` — cleaner semantically but a
+breaking change to every existing decision.)
 
 ### Execution semantics (the important part)
 
 The batch is **not** a guardrail bypass — it is sequential single-tool execution
 with the same gates, just without a model round-trip between steps:
 
-- **Per-step gating.** Every step runs through the *same* `_execute_server_tool`
-  path ([loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)) — argument
-  normalization, `TurnkeyRefusal` checks, the flash gate, the whitelist. A batch
-  step has no more power than the same call made alone. (Same curated-allowlist
-  discipline as entries #1 and #3.)
+- **Per-step gating.** Every step runs through the same brain dispatch/gate it
+  would use alone: server tools through `_execute_server_tool`
+  ([loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)), client actions
+  through `run_script`, and terminal decisions through their terminal validators.
+  Argument normalization, `TurnkeyRefusal` checks, the flash gate, the whitelist,
+  and convergence accounting still apply. A batch step has no more power than the
+  same call made alone. (Same curated-allowlist discipline as entries #1 and #3.)
 - **Early-abort.** Stop the batch at the first step that refuses, is blocked,
   errors, **or times out** (a timeout is a failed step — see entry #7). Return the
   results of completed steps plus which step aborted and why, so the model reacts
@@ -2027,10 +2060,10 @@ difference from free code mode is *granularity*, not capability:**
   gated tool calls (`for addr in ...: client.read_memory(addr)` → analyze →
   `client.flash(...)`) in **one** model round-trip — the efficiency win of code
   mode is fully preserved.
-- *At* the turn boundary: the model still emits the `run_script` decision (and a
-  decision to read the result), so the brain keeps parsing each `TurnDecision`,
-  updating `BrainState`, running convergence, and applying caps. The brain is never
-  a bystander where it matters — execution.
+- *At* the turn boundary: the model still emits the `run_script` decision, and the
+  brain appends the script result as the next user message. The brain keeps parsing
+  each turn-closing `TurnDecision`, updating `BrainState`, running convergence, and
+  applying caps. The brain is never a bystander where it matters — execution.
 
 Whether a script survives the run depends on context (ephemeral without a project, a
 retained candidate inside a project — see entry #10). The named file in the tool
@@ -3326,13 +3359,14 @@ entry #9 (session tools) as the persistence tier between shipped and session.
 
 ### Problem / current behavior
 
-The model expresses its move by returning a `TurnDecision` JSON object whose
-`action` field is a discriminated union ([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)),
-which the brain parses (`parse_turn_decision_json`) and dispatches. This is
-**independent of the session/memory work in entry #2** — entry #2 keeps this JSON
-return as-is and only changes how turns are delivered (one persistent session vs.
-cold re-prompts). This entry is the *separate* question of whether to change the
-output **format** itself.
+The model closes a turn by returning a `TurnDecision` JSON object whose governed
+`action` field is a discriminated union
+([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)), which the brain
+parses (`parse_turn_decision_json`) and dispatches. This is **independent of the
+session/memory work in entry #2** — entry #2 keeps this JSON return for the final
+governed/terminal decision and only changes how turns are delivered (one
+persistent session vs. cold re-prompts). This entry is the *separate* question of
+whether to change the output **format** itself.
 
 The current free-form-JSON contract works and is provider-agnostic, but the model
 is emitting a schema by hand rather than using the function-calling mechanism the
@@ -3346,10 +3380,12 @@ provider's native `tools` parameter, the model emits real `tool_use` calls, and
 the brain intercepts each call, runs it through the same `_execute_server_tool`
 gate, and appends a native `tool_result`.
 
-The logical action set is unchanged — `connect`, `flash_firmware`,
-`read_file`, `replace_file`, `run_build`, `run_green_check`, `finalize`, etc. all
-become tools. The brain's guardrails, ledger, and `BrainState` are untouched in
-spirit; only the wire format of "what the model said to do" changes.
+The logical governed action set is unchanged — `connect`, `flash_firmware`,
+`run_script`, `run_build`, firmware-deliverable edits, `run_green_check`,
+`finalize`, terminal decisions, etc. become provider-native calls. Model-native
+host work stays outside this tool surface. The brain's guardrails, ledger, and
+`BrainState` are untouched in spirit; only the wire format of "what the model said
+to do at the governed boundary" changes.
 
 ### Why it is optional (and the trade-off)
 

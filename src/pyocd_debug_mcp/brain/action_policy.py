@@ -36,6 +36,10 @@ SERVER_NATIVE_ACTIONS = frozenset(
 
 
 def classify_action(action_type: str) -> ActionClass:
+    if action_type.startswith("server_tool:"):
+        tool_name = action_type.split(":", 1)[1]
+        if tool_name in SERVER_NATIVE_ACTIONS:
+            return "server_native"
     if action_type in MODEL_NATIVE_HOST_ACTIONS:
         return "model_native_host"
     if action_type in BRAIN_LOCAL_ACTIONS:

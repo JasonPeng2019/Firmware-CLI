@@ -1,0 +1,6 @@
+Verify this board's reference firmware and exercise the registered client action.
+
+Use the turnkey action surface only. Connect by board_id, do not pass a probe UID
+or serial port, wait briefly if needed, call the registered uart_write client
+action through run_script, then read UART evidence and finalize with a concise
+summary. Do not edit source files.

@@ -217,10 +217,10 @@ class ClaudeCLIDecisionProvider:
                     _build_claude_command(
                         model=self._model,
                         instructions=prompt_bundle.system_instructions,
-                        prompt=current_prompt,
                         resume_session_id=current_resume_session_id,
                         fork_session=current_fork_session,
                     ),
+                    input=current_prompt,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
@@ -404,9 +404,9 @@ class ClaudeCLIDecisionProvider:
                     _build_claude_command(
                         model=self._model,
                         instructions=system,
-                        prompt=current_prompt,
                         no_session_persistence=True,
                     ),
+                    input=current_prompt,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
@@ -454,7 +454,6 @@ def _build_claude_command(
     *,
     model: str | None,
     instructions: str,
-    prompt: str,
     resume_session_id: str | None = None,
     fork_session: bool = False,
     no_session_persistence: bool = False,
@@ -475,7 +474,6 @@ def _build_claude_command(
         command.extend(["--resume", resume_session_id])
         if fork_session:
             command.append("--fork-session")
-    command.append(prompt)
     return command
 
 
