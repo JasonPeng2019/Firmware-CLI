@@ -528,5 +528,6 @@ into the other branch, or into final integration.
   session behavior still needs code, tests, and provider-specific verification.
 - Branch B behavior remains unimplemented here; the clarified boundary still
   needs code, tests, and any required real-board proof when Branch B is built.
-- Branch C behavior remains unimplemented here; session/client-scoped timeout
-  state and brain-only server timeout sync still need code and tests.
+- Branch C has a restored completion spec and non-hardware harness path for the
+  event spine / timeout-policy surface. Full real hardware and provider-matrix
+  proof still need to be run before Branch C is called complete.

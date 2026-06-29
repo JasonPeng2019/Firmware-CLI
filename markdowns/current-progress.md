@@ -1494,3 +1494,32 @@ Current Windows STM32 retest status on this host:
     they stall
   - longer operations such as rebuilds, flashes, and full benchmark cases can
     legitimately run longer when they are still making progress
+
+Current Branch C non-hardware restoration status on this host:
+
+- Branch C's event-spine / timeout-policy completion docs and harness changes
+  have been restored after an accidental cleanup in this checkout.
+- The restored harness uses the shared probe inventory path instead of treating
+  a Windows pyOCD console-table return-code quirk as "no probes."
+- The live Codex task now requests a schema-valid `tooling_failure`
+  classification instead of the invalid `other` classification.
+- `tests/harness/branch_c_tests.py` has an acceptance-oriented
+  `--fail-on-skip` mode, so required skipped checks are reported as incomplete
+  rather than green.
+- `host_bootstrap.assess_board_attachment_statuses(...)` and
+  `board_attachment_summary(...)` accept omitted `port_overrides` for existing
+  test callers and treat that as no overrides.
+- The restored non-hardware verification was rerun on June 29, 2026:
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    returned `9 passed`
+  - `uv run pytest -q` returned `285 passed`
+  - `uv run ruff check .` passed
+  - `uv run mypy src` passed
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware --skip-codex`
+    returned `4 passed, 0 failed, 0 skipped`
+  - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --skip-codex`
+    returned `4 passed, 0 failed, 0 skipped`
+- Still pending: full `--fail-on-skip` Branch C harness runs on both official
+  boards, live Codex-plus-hardware check 9 on both official boards, Claude CLI
+  provider coverage for Branch C, and separate fresh-host/macOS portability
+  proof.

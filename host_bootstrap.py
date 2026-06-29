@@ -427,9 +427,10 @@ def assess_board_attachment_statuses(
     boards: list[BoardConfig],
     *,
     pyserial_ok: bool,
-    port_overrides: dict[str, str],
+    port_overrides: dict[str, str] | None = None,
     run_cmd: Callable[[list[str]], tuple[int, str, str]],
 ) -> tuple[BoardAttachmentStatus, ...]:
+    effective_port_overrides = port_overrides or {}
     ports: list[SerialPortInfo] | None
     if not pyserial_ok:
         ports = None
@@ -473,7 +474,7 @@ def assess_board_attachment_statuses(
                 board,
                 ports,
                 probe_resolution.probe,
-                override=port_overrides.get(board.board_id),
+                override=effective_port_overrides.get(board.board_id),
                 allow_single_fallback=False,
                 run_cmd=run_cmd,
                 interactive=False,
@@ -498,7 +499,7 @@ def board_attachment_summary(
     boards: list[BoardConfig],
     *,
     pyserial_ok: bool,
-    port_overrides: dict[str, str],
+    port_overrides: dict[str, str] | None = None,
     run_cmd: Callable[[list[str]], tuple[int, str, str]],
 ) -> bool:
     header("Selected-board attachment readiness")

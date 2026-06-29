@@ -1,136 +1,154 @@
-# Branch C Test Plan — Event Spine + Timeout Policy
+# Branch C Test Plan - Event Spine + Timeout Policy
 
 ## Scope
 
 Validates the `P-Wave-C` implementation against its written spec in
-`markdowns/R12_P_SPLIT.md` ("Branch C - Event Spine + Timeout Policy",
-lines 275-331). Branch C owns four things:
+`markdowns/R12_P_SPLIT.md` ("Branch C - Event Spine + Timeout Policy"). Branch C
+owns four things:
 
-1. `brain/events.py` — the canonical `BrainEvent` taxonomy plus sink/fanout
+1. `brain/events.py` - the canonical `BrainEvent` taxonomy plus sink/fanout
    helpers.
-2. `brain/timeout_policy.py` — parses model timeout/iteration proposals,
+2. `brain/timeout_policy.py` - parses model timeout/iteration proposals,
    applies brain-owned clamps, builds partial server timeout-sync requests.
-3. `src/pyocd_debug_mcp/timeouts.py` — single source of truth for timeout
+3. `src/pyocd_debug_mcp/timeouts.py` - single source of truth for timeout
    defaults and clamp ranges, plus session/client-scoped effective timeout
    state.
-4. The timeout-consumption hooks — providers consume `provider_seconds`,
-   tool calls consume action timeouts, server sync applies partial updates
-   only to *future* connects.
+4. The timeout-consumption hooks - providers consume `provider_seconds`, tool
+   calls consume action timeouts, server sync applies partial updates only to
+   future connects.
 
-Branch C must **not** own: batch execution semantics, client-action
-execution, checkpoint continue/cancel decisions, inspector UI, provider
-adapter rewrites beyond the stable timeout-consumption hook, or a
-model-facing timeout-admin tool.
+Branch C must not own: batch execution semantics, client-action execution,
+checkpoint continue/cancel decisions, inspector UI, provider adapter rewrites
+beyond the stable timeout-consumption hook, or a model-facing timeout-admin
+tool.
 
 ## Harness
 
-`tests/harness/branch_c_tests.py`. Run with:
+`tests/harness/branch_c_tests.py`. Default development run:
 
 ```bash
 uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk
 ```
 
-Each check below prints `PASS` / `FAIL` / `SKIP` with a one-line reason.
-The process exit code is non-zero iff at least one check is `FAIL`.
-`SKIP` (missing hardware, missing/unauthenticated `codex`) does not fail
-the run — those are environment preconditions, not Branch C defects.
+Each check prints `PASS` / `FAIL` / `SKIP` with a one-line reason. The process
+exit code is non-zero if any check fails. By default, `SKIP` is allowed for
+missing hardware or unavailable/unauthenticated Codex CLI because those are
+environment preconditions, not necessarily Branch C defects.
+
+For acceptance, use `--fail-on-skip` so every selected check must run:
+
+```bash
+uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-skip
+uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on-skip
+```
+
+For non-hardware-only validation while boards are busy, intentionally skip the
+hardware and Codex-dependent checks:
+
+```bash
+uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware --skip-codex
+uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --skip-codex
+```
 
 ## Preconditions
 
-- The board under test (`nrf52840dk` by default — the retained alternate
-  Nordic profile noted live-proven in `markdowns/current-progress.md`) is
-  plugged in and idle (no other pyOCD/J-Link session holding it).
-- `codex` CLI installed and authenticated (`codex login`) for the checks
-  that drive a real model turn. If unauthenticated, those checks `SKIP`
-  rather than `FAIL` — see the conversation history for the exact 401
-  symptom and the `codex logout && codex login` fix.
-- Repo's non-hardware ladder (`uv run pytest -q`, `uv run ruff check .`,
-  `uv run mypy src`) is already green. This harness does not re-run that
-  ladder; it is a Branch C-specific, hardware-aware supplement to it.
+- The board under test is plugged in and idle for hardware runs. `nrf52840dk`
+  is the harness default because it has retained alternate-board proof in
+  `markdowns/current-progress.md`; official Branch C merge proof should still
+  use the scoped pair `nrf52833dk + nucleo_l476rg` unless the user explicitly
+  accepts retained-board proof instead.
+- `codex` CLI must be installed and authenticated for checks that drive a real
+  model turn. In development mode those checks may `SKIP`; in acceptance mode
+  `--fail-on-skip` makes that pending proof visible.
+- The repo's non-hardware ladder (`uv run pytest -q`, `uv run ruff check .`,
+  `uv run mypy src`) should be green before trusting the hardware-aware harness.
 
 ## Check matrix
 
-| # | Name | Needs HW | Needs codex | Spec clause it proves |
-|---|------|----------|--------------|------------------------|
-| 1 | `probe_visible` | yes | no | precondition only — gates the rest |
+| # | Name | Needs HW | Needs Codex | Spec clause it proves |
+|---|------|----------|-------------|------------------------|
+| 1 | `probe_visible` | yes | no | precondition only; gates the rest |
 | 2 | `timeout_defaults_and_clamp_ranges` | no | no | `timeouts.py` is the single source of truth for defaults/clamp ranges |
-| 3 | `timeout_admin_not_model_facing` | no | no | "server timeout sync is brain-only/internal and must not appear in the model-facing tool schema bundle" |
-| 4 | `no_overreach_into_other_branches` | no | no | "Should not own" list (batch/client-action/checkpoint/inspector) |
-| 5 | `policy_clamps_and_partial_update` | no | no | `timeout_policy.py` clamps proposals, derives a *partial* server update, and never lets the model own the hard iteration cap |
-| 6 | `stage0_bringup` | yes | no | precondition — board is real and alive before trusting any hardware-touching check below |
-| 7 | `live_sync_does_not_mutate_open_session` | yes | no | "does not mutate an already-open pyOCD session" / "applies ... only forward", proven against a real live session |
-| 8 | `codex_dry_run_prompt_render` | no | yes | the real rendered turn prompt (incl. the Branch C `effective_timeouts` line) is well-formed and codex returns a schema-valid `TurnDecision` from it |
-| 9 | `codex_live_run_events_and_clamp` | yes | yes | end-to-end: a real codex-driven turnkey run against real hardware produces well-formed `BrainEvent` rows and an invocation-level timeout/iteration proposal is visibly clamped, not passed through raw |
+| 3 | `timeout_admin_not_model_facing` | no | no | timeout sync remains brain-only/internal and absent from model-facing schema |
+| 4 | `no_overreach_into_other_branches` | no | no | Branch C does not absorb batch/client-action/checkpoint/inspector ownership |
+| 5 | `policy_clamps_and_partial_update` | no | no | policy clamps proposals, derives partial server updates, and preserves the operator iteration cap |
+| 6 | `stage0_bringup` | yes | no | precondition; board is real and alive before hardware-touching checks |
+| 7 | `live_sync_does_not_mutate_open_session` | yes | no | sync does not disrupt an already-open live session |
+| 8 | `codex_dry_run_prompt_render` | no | yes | real rendered prompt includes `effective_timeouts` and Codex returns a schema-valid `TurnDecision` |
+| 9 | `codex_live_run_events_and_clamp` | yes | yes | real Codex + hardware run emits valid events and clamps invocation timeout/iteration proposals |
 
 ## Per-check detail
 
-**2 — timeout defaults and clamp ranges.** Pure Python: load
+**2 - timeout defaults and clamp ranges.** Pure Python: load
 `default_turnkey_timeout_config()` and confirm `clamp_turnkey_timeout_value`
-actually rejects/clips out-of-range values rather than passing them
-through. No hardware, no model.
+clips out-of-range values rather than passing them through.
 
-**3 — timeout-admin tool hidden from the model.** Confirms
+**3 - timeout-admin tool hidden from the model.** Confirms
 `_brain_sync_timeouts` is absent from both `AllowedServerToolName` and
-`decision_schema_text()` — the model never sees the timeout-sync tool name
-or shape, even though it is registered as a real MCP tool the brain calls
-directly.
+`decision_schema_text()`, even though it is registered as a real MCP tool the
+brain can call directly.
 
-**4 — no overreach.** Greps `brain/events.py`, `brain/timeout_policy.py`,
-and `timeouts.py` for batch-execution / client-action / checkpoint /
-inspector symbols. A hit means a later branch's ownership leaked into
-Branch C's files.
+**4 - no overreach.** Greps `brain/events.py`, `brain/timeout_policy.py`, and
+`timeouts.py` for batch-execution, client-action, checkpoint, and inspector
+symbols. A hit means a later branch's ownership leaked into Branch C's files.
 
-**5 — clamp + partial update, two sub-cases:**
-- *Not yet connected:* an out-of-range proposal (`connect_seconds=99999`,
-  `flash_seconds=1`) gets clamped to the configured min/max, the derived
-  server-sync update contains only the server-side fields tied to the
-  *changed* turnkey fields (proving "partial," not a full rewrite), and
-  `requested_max_iterations=999` against `operator_max_iters=12` still
-  yields `effective_max_iters=12` — the model proposes, the brain's
-  operator cap wins.
-- *Already connected:* the same proposal must come back with
-  `server_sync_apply_now=False` — the policy itself defers the sync rather
-  than promising to touch a live session.
+**5 - clamp + partial update.** Uses an out-of-range proposal
+(`connect_seconds=99999`, `flash_seconds=1`) and
+`requested_max_iterations=999` against `operator_max_iters=12`. The expected
+result is clamped timeout values, `effective_max_iters=12`, a partial server
+update tied only to changed turnkey fields, and deferred sync while connected.
 
-**7 — live non-mutation proof (the one claim that is meaningless without
-hardware).** Opens a real `LocalMCPClient` session against the attached
-board, reads a core register to prove the session is alive, calls
-`_brain_sync_timeouts` with a new value, reads the same register again to
-prove the *open* session kept working unaffected, then disconnects. This
-only proves the server didn't disrupt the live session — it does **not**
-prove the new value takes effect on the next connect's literal pyOCD
-timeout behavior, since forcing a real timeout would require deliberately
-hanging the board. That residual is explicitly accepted in the spec
-("bounded outer waits are still not true cancellation ... a killable
-worker/job layer remains out of scope for this branch").
+**7 - live non-mutation proof.** Opens a real `LocalMCPClient` session against
+the attached board, reads `pc`, calls `_brain_sync_timeouts`, reads `pc` again,
+then disconnects. This proves the open session was not disrupted. It does not
+prove literal timeout firing under a deliberately hung board; killable worker
+enforcement is outside Branch C.
 
-**8 — codex dry run of the real prompt.** Builds the literal prompt text
-`provider_codex_cli` would send (via the same internal
-`_build_instructions` / `_build_turn_prompt` / `_compose_prompt` functions
-the live loop uses — not a hand-written stand-in), pipes it to `codex exec`
-for the real board config (no hardware touched, since this only loads the
-board's YAML facts), and parses the response as a schema-valid
-`TurnDecision`. Confirms the rendered `effective_timeouts=...` line is
-present and matches `timeouts.py`'s real defaults.
+**8 - Codex dry run of the real prompt.** Builds the same prompt text the live
+Codex provider uses, sends it to `codex exec`, and parses the response as a
+schema-valid `TurnDecision`. This touches board config only, not hardware.
 
-**9 — full codex-driven live run.** Calls `run_freeform_task(...,
-provider="codex-cli", board_id=<board>, timeout_proposal=..., 
-iteration_estimate=...)` in-process (the same function the CLI's `run`
-subcommand calls) with an out-of-range invocation-level proposal, a task
-that tells the model to connect, read board info, and finalize
-`unresolved`. After the run: every row in
-`run_root/logs/brain_events.jsonl` has a valid `event_kind` from
-`EVENT_KINDS`; at least one `connect`/`tool_complete`-shaped event proves
-real hardware was touched; and `run-metadata/turnkey_state.json`'s
-`effective_timeout_config` reflects the *clamped* value, never the raw
-99999/1-second request.
+**9 - full Codex-driven live run.** Calls `run_freeform_task(...)` in-process
+with an out-of-range invocation-level timeout proposal and iteration estimate.
+The task asks Codex to connect, read board info, and finalize `unresolved` with
+a schema-valid `tooling_failure` classification. After the run, every
+`brain_events` row must use a valid `EVENT_KINDS` value, hardware must have
+been touched through `connect` / `get_board_info`, and the final state must
+contain clamped effective timeout values rather than raw out-of-range requests.
 
-## Known limitations (won't be fixed by this harness)
+## Known limitations
 
-- No check forces a literal hardware hang to prove a timeout actually
-  fires — accepted residual per the spec (killable-worker enforcement is
-  explicitly out of scope for Branch C).
-- Check 9 exercises the *invocation*-level proposal path
-  (`proposal_source="invocation"`) deterministically; it does not force
-  codex to emit its own mid-run `timeout_proposal` in a `TurnDecision`,
-  since that is optional model behavior and not reliably reproducible.
+- No check forces a literal hardware hang to prove a timeout actually fires.
+  That residual is accepted by the Branch C spec because true cancellation of
+  in-process pyOCD/vendor calls needs a future killable worker/job layer.
+- Check 9 exercises the invocation-level proposal path deterministically. It
+  does not force Codex to emit its own mid-run `timeout_proposal`, since that is
+  optional model behavior and not reliably reproducible.
+
+## Verified
+
+- Non-hardware harness mode was run with:
+  `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware --skip-codex`
+  and returned `4 passed, 0 failed, 0 skipped`.
+- Targeted unit tests for the Branch C harness and timeout policy were rerun
+  after restoration with:
+  `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+  and returned `9 passed`.
+- Full non-hardware unit/lint/type checks were rerun after restoration on
+  June 29, 2026:
+  `uv run pytest -q` returned `285 passed`, `uv run ruff check .` passed, and
+  `uv run mypy src` passed.
+- Both official-board Branch C skip-hardware/no-Codex harness commands were
+  rerun and returned `4 passed, 0 failed, 0 skipped`.
+- Codex dry-run prompt rendering was run without hardware for both official
+  board IDs:
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware`
+  - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware`
+  Both returned `5 passed, 0 failed, 1 skipped`; the skipped check was the live
+  Codex-plus-hardware run.
+
+## Pending verification
+
+- Full `--fail-on-skip` Branch C harness runs on `nrf52833dk` and
+  `nucleo_l476rg`.
+- Live Codex-plus-hardware check 9 on the official scoped pair.

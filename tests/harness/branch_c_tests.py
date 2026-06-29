@@ -33,10 +33,12 @@ from pyocd_debug_mcp.brain.provider_codex_cli import (
 from pyocd_debug_mcp.brain.provider_parsing import parse_turn_decision_json
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.timeout_policy import apply_policy_proposals
+from pyocd_debug_mcp.probe_inventory import list_connected_probes
 from pyocd_debug_mcp.timeouts import (
     ServerTimeoutUpdate,
     clamp_turnkey_timeout_value,
     default_turnkey_timeout_config,
+    subprocess_timeout_stream_text,
     server_timeout_update_to_record,
 )
 
@@ -64,22 +66,38 @@ def log(result: CheckResult) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _run_pyocd_inventory_command(cmd: list[str]) -> tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            ["uv", "run", *cmd],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except FileNotFoundError:
+        return 127, "", "uv command not found"
+    except subprocess.TimeoutExpired as exc:
+        return (
+            124,
+            subprocess_timeout_stream_text(exc.stdout),
+            f"command timed out after 30s: {' '.join(cmd)}",
+        )
+    return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+
 def check_probe_visible(args: argparse.Namespace) -> CheckResult:
-    proc = subprocess.run(
-        ["uv", "run", "pyocd", "list"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if "No available debug probes" in proc.stdout or proc.returncode != 0:
+    probes = list_connected_probes(_run_pyocd_inventory_command)
+    if not probes:
         return CheckResult(
             "probe_visible",
             SKIP,
-            "no debug probe detected; plug in the board and rerun "
-            f"(stdout: {proc.stdout.strip()!r})",
+            "no debug probe detected by shared probe inventory; plug in the board and rerun",
         )
-    return CheckResult("probe_visible", PASS, proc.stdout.strip().splitlines()[0])
+    probe_summary = ", ".join(f"{probe.uid or '(no uid)'}::{probe.description}" for probe in probes)
+    return CheckResult("probe_visible", PASS, f"detected {len(probes)} probe(s): {probe_summary}")
 
 
 def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
@@ -95,6 +113,8 @@ def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
     if bootstrap.returncode != 0:
@@ -108,6 +128,8 @@ def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=180,
     )
     if stage0.returncode != 0:
@@ -115,6 +137,15 @@ def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
             "stage0_bringup", FAIL, f"stage0_check.py failed: {stage0.stdout[-500:]}"
         )
     return CheckResult("stage0_bringup", PASS, f"host_bootstrap + stage0_check green for {args.board_id}")
+
+
+def _live_codex_task() -> str:
+    return (
+        "Connect to the board with connect(board_id=...), call get_board_info, "
+        "then finalize with final_status=unresolved, classification=tooling_failure, "
+        "root_cause='dry run', summary='Branch C validation run.' "
+        "Do not flash, edit files, or run a build."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -439,12 +470,7 @@ def check_codex_dry_run_prompt_render(args: argparse.Namespace) -> CheckResult:
 async def _live_codex_run_check(args: argparse.Namespace) -> CheckResult:
     execution = await run_freeform_task(
         board_id=args.board_id,
-        task=(
-            "Connect to the board with connect(board_id=...), call get_board_info, "
-            "then finalize with final_status=unresolved, classification=other, "
-            "root_cause='dry run', summary='Branch C validation run.' "
-            "Do not flash, edit files, or run a build."
-        ),
+        task=_live_codex_task(),
         provider="codex-cli",
         model=args.model,
         port=args.port,
@@ -551,6 +577,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-codex", action="store_true", help="Skip every check that shells out to the codex CLI."
     )
+    parser.add_argument(
+        "--fail-on-skip",
+        action="store_true",
+        help=(
+            "Treat any selected SKIP result as a failing acceptance condition. "
+            "Use for Branch C acceptance; omit during local development when hardware or codex is unavailable."
+        ),
+    )
     return parser
 
 
@@ -583,7 +617,11 @@ def main(argv: list[str] | None = None) -> int:
                 results.append(result)
         else:
             for fn in HARDWARE_ONLY_CHECKS:
-                result = CheckResult(fn.__name__, SKIP, "hardware preconditions did not pass")
+                result = CheckResult(
+                    "live_sync_does_not_mutate_open_session",
+                    SKIP,
+                    "hardware preconditions did not pass",
+                )
                 log(result)
                 results.append(result)
 
@@ -599,7 +637,11 @@ def main(argv: list[str] | None = None) -> int:
         header("codex + live hardware checks")
         if args.skip_hardware or not hardware_ok:
             for fn in CODEX_PLUS_HARDWARE_CHECKS:
-                result = CheckResult(fn.__name__, SKIP, "hardware preconditions did not pass or were skipped")
+                result = CheckResult(
+                    "codex_live_run_events_and_clamp",
+                    SKIP,
+                    "hardware preconditions did not pass or were skipped",
+                )
                 log(result)
                 results.append(result)
         else:
@@ -615,6 +657,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {passed} passed, {failed} failed, {skipped} skipped (of {len(results)})")
     for result in results:
         log(result)
+    if args.fail_on_skip and skipped:
+        print("  fail-on-skip enabled: skipped selected checks make this run incomplete")
+        return 1
 
     return 1 if failed else 0
 
