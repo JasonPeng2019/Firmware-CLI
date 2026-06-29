@@ -1,5 +1,6 @@
 # Things To Change
 This document is a copy of things-to-change. this is here to add context to the R-12_P_Split.
+This document may not have everything things-to-change may have / this is the older version. read the current things-to-change for an up to date clarification of this document and its proposed changes.
 
 ## Branch A Implementation Clarification
 

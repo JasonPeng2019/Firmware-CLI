@@ -2763,6 +2763,169 @@ Proposal only. Not yet specced, not yet implemented. Scoped companion to entries
 #7, #14, #19, and #20: bounded waits, visible stream progress, developer inspection,
 and model-requested early termination for stream-friendly operations only.
 
+---
+
+## 22. Proof escalation ladder for expensive live validation
+
+### Problem / current behavior
+
+The roadmap already has the right runtime efficiency shape: free host work
+(entries #11/#12), model-authored scripts (entry #9), compact result ledgers
+(entry #2), progress streams (entry #19), and stream checkpoints (entry #21). The
+remaining waste is mostly in **validation policy**: when a change needs proof, it is
+too easy to jump straight to full live-provider + hardware matrices, burning Claude
+usage and board time to rediscover implementation bugs that static/unit/replay
+checks would have caught.
+
+This is **not** a budget governor. Do not add arbitrary model-token or turn limits
+that make the product feel cramped. The issue is proof ordering: spend cheap,
+deterministic checks first, then escalate to live providers and real hardware when
+the evidence actually requires them.
+
+### What is already covered elsewhere
+
+- Free local work before a governed board decision: entries #9, #11, and #12.
+- Salient result compression and compaction-proof memory: entry #2 and the
+  canonical memory spec.
+- Provider-visible progress and separate authoritative decisions: entry #19.
+- Chunked waits/checkpoints for long streams: entry #21.
+- Branch-specific live proof ladders: the Branch A live-provider hardware suite
+  spec. This entry generalizes that discipline into the product/process backlog.
+
+### What the change is
+
+Add a reusable proof escalation policy for specs, reviews, and test-suite runs:
+
+1. **Static/local first:** formatting, typing, unit tests, schema validation, and
+   deterministic replay/probe-free checks.
+2. **Cheap behavioral canary:** one deterministic benchmark or mock-provider path
+   that exercises the changed surface.
+3. **One live-provider canary:** use the provider most likely to expose the changed
+   adapter/prompt behavior, not every provider by default.
+4. **One hardware canary:** use the board most likely to expose the changed
+   hardware/build path, not every board by default.
+5. **Full live matrix:** run only when the changed surface touches provider
+   continuity, board abstractions, final verification semantics, release closure,
+   or when a cheaper rung fails in a way that requires broader proof.
+
+Each rung produces artifacts that say whether the next rung is required, skipped as
+not relevant, or still pending. "Skipped as not relevant" is allowed only when the
+touched code/docs do not affect that surface; it is not a substitute for hardware
+proof when hardware behavior is the claim.
+
+### Where it belongs
+
+1. **Spec/review/test-suite skills** - include the ladder in Firmware-CLI process
+   instructions so agents choose the cheapest sufficient proof first.
+2. **Run metadata / reports** - record the proof rung reached, why escalation did
+   or did not continue, and which expensive proof remains pending.
+3. **README / R12 docs** - document that deployment closure still requires the full
+   relevant matrix, but ordinary iteration should use the ladder.
+
+### What it is supposed to do
+
+- Avoid spending Claude/hardware time on bugs that deterministic checks can catch.
+- Make "not run" honest: skipped because irrelevant, pending because unavailable,
+  or required because the claim touches that surface.
+- Keep the product non-frustrating: no arbitrary caps, just a cheaper path to the
+  same evidence.
+
+### Constraints / watch-outs
+
+- **No budget governor.** Do not block useful work because a token/turn counter
+  tripped. Escalation is evidence-driven, not quota-driven.
+- **No fake green.** Cached or skipped lower-rung proof cannot replace live hardware
+  proof when the acceptance claim is hardware behavior.
+- **Touched-surface mapping must be conservative.** If a change touches provider
+  adapters, hardware actions, workspace build behavior, final verification, or
+  recovery, escalate to the relevant live rung.
+- **Artifacts must explain the choice.** A future reviewer should know why a full
+  matrix was or was not run.
+
+### Status
+
+Proposal only. Not yet specced, not yet implemented. Complements the existing
+Branch A suite ladder; it is the reusable process rule for future changes.
+
+---
+
+## 23. Cache-assisted artifact/result reuse for setup and repeated non-final checks
+
+### Problem / current behavior
+
+The roadmap already stores rich artifacts and memory, but it does not yet define a
+small, content-addressed reuse layer. Repeated runs can rebuild identical firmware,
+re-render unchanged tool/skill prompt blocks, re-identify the same attached board,
+or rerun setup checks whose inputs have not changed. That wastes wall time and
+provider patience, even when the final acceptance proof still needs to be live.
+
+This is different from the canonical memory layer: memory tells the model what
+happened; cache-assisted reuse lets the runner avoid repeating deterministic setup
+work when inputs are identical.
+
+### What is already covered elsewhere
+
+- Artifact indexes and code/workspace maps: canonical memory layer.
+- Project-level reusable custom tools/skills: entry #10.
+- Build/test/live proof artifacts: R12 and Branch A suite specs.
+- Salient result excerpts: entry #2.
+
+### What the change is
+
+Add a bounded, auditable cache for deterministic or setup-oriented facts:
+
+- source/workspace hash + build command + toolchain fingerprint -> build result and
+  artifact paths;
+- firmware artifact hash + board id + probe/target identity -> prior flash/check
+  metadata, usable only as setup context unless a live final proof is not required;
+- MCP tool schema hash -> rendered prompt catalog;
+- selected skill ids + skill file hashes -> rendered skill index/safety block;
+- board discovery fingerprint -> recently observed board identity and serial/probe
+  mapping, revalidated cheaply before use;
+- benchmark case id + fixture hash -> prepared workspace path or seed metadata.
+
+The cache is advisory unless the cached artifact is itself the thing being reused
+(for example, an unchanged rendered prompt catalog). It may skip redundant setup or
+let the provider inspect prior facts, but it must not silently replace a required
+live final verifier.
+
+### Where it belongs
+
+1. **Run artifact layer** - write cache records with content hashes, environment
+   fingerprints, timestamps, and provenance links to the original run artifacts.
+2. **Workspace/build runner** - reuse build outputs only when source, command,
+   board target, toolchain fingerprint, and relevant environment keys match.
+3. **Prompt assembly** - reuse rendered tool/skill blocks by hash so static context
+   is stable and cache-friendly.
+4. **Hardware setup** - reuse board discovery only as a hint; still revalidate the
+   attached probe/serial before any hardware operation.
+5. **Reports** - state when a result was reused, what hash justified it, and whether
+   a live final proof was still run.
+
+### What it is supposed to do
+
+- Reduce repeated setup work and provider-visible noise.
+- Make reruns faster without weakening final acceptance proof.
+- Give the model useful prior artifacts by reference instead of reprinting or
+  recomputing them.
+
+### Constraints / watch-outs
+
+- **Never replace required final hardware proof.** If the claim is "this board
+  works now," run the live verifier now.
+- **Invalidate conservatively.** Source, command, board id, probe identity,
+  toolchain version, package lockfiles, environment-sensitive config, and runner
+  version must be part of cache keys where relevant.
+- **No stale board assumptions.** Board/probe/serial mappings are hints until
+  revalidated in the current run.
+- **Portable paths.** Cache records should prefer repo-relative artifact references
+  and tolerate workspace relocation.
+- **Transparent reuse.** Every reused result must be visible in events/artifacts.
+
+### Status
+
+Proposal only. Not yet specced, not yet implemented.
+
 ## 16. Scoped success gates (replace the whole-board green check)
 
 ### Problem / current behavior
