@@ -83,8 +83,15 @@ def check_probe_visible(args: argparse.Namespace) -> CheckResult:
 
 
 def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
+    port_arg = f"{args.board_id}={args.port}" if args.port else None
+    bootstrap_cmd = ["uv", "run", "python", "host_bootstrap.py", "--board-id", args.board_id]
+    stage0_cmd = ["uv", "run", "python", "stage0_check.py", "--board-id", args.board_id]
+    if port_arg:
+        bootstrap_cmd.extend(["--port", port_arg])
+        stage0_cmd.extend(["--port", port_arg])
+
     bootstrap = subprocess.run(
-        ["uv", "run", "python", "host_bootstrap.py", "--board-id", args.board_id],
+        bootstrap_cmd,
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -92,10 +99,12 @@ def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
     )
     if bootstrap.returncode != 0:
         return CheckResult(
-            "stage0_bringup", FAIL, f"host_bootstrap.py failed: {bootstrap.stdout[-500:]}"
+            "stage0_bringup",
+            FAIL,
+            f"host_bootstrap.py failed: {bootstrap.stdout[-500:]}",
         )
     stage0 = subprocess.run(
-        ["uv", "run", "python", "stage0_check.py", "--board-id", args.board_id],
+        stage0_cmd,
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -360,6 +369,7 @@ def check_codex_dry_run_prompt_render(args: argparse.Namespace) -> CheckResult:
         model=args.model,
         max_iters=2,
         serial_read_seconds=3.0,
+        port=args.port,
     )
     state = BrainState(
         run_mode=invocation.mode,
@@ -437,6 +447,7 @@ async def _live_codex_run_check(args: argparse.Namespace) -> CheckResult:
         ),
         provider="codex-cli",
         model=args.model,
+        port=args.port,
         max_iters=4,
         timeout_proposal=TimeoutProposal(connect_seconds=99999.0, flash_seconds=1.0),
         iteration_estimate=IterationEstimate(requested_max_iterations=999),
@@ -525,6 +536,14 @@ CODEX_PLUS_HARDWARE_CHECKS: tuple[CheckFn, ...] = (check_codex_live_run_events_a
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--board-id", default="nrf52840dk")
+    parser.add_argument(
+        "--port",
+        help=(
+            "Optional serial port override for the selected board, e.g. "
+            "/dev/cu.usbmodem0010502864801. Passed to host_bootstrap.py, "
+            "stage0_check.py, and the turnkey brain as BOARD_ID=PORT where needed."
+        ),
+    )
     parser.add_argument("--model", default=None, help="Optional codex model override.")
     parser.add_argument(
         "--skip-hardware", action="store_true", help="Skip every check that needs the attached board."

@@ -118,6 +118,19 @@ class BoardAttachmentStatus:
     ready: bool
 
 
+def parse_key_value(items: list[str], option_name: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit(f"{option_name} expects BOARD_ID=VALUE, got: {item}")
+        board_id, value = item.split("=", 1)
+        normalized_board_id = board_id.strip().lower()
+        if not normalized_board_id or not value.strip():
+            raise SystemExit(f"{option_name} expects BOARD_ID=VALUE, got: {item}")
+        parsed[normalized_board_id] = value.strip()
+    return parsed
+
+
 def run(
     cmd: list[str],
     capture: bool = True,
@@ -414,6 +427,7 @@ def assess_board_attachment_statuses(
     boards: list[BoardConfig],
     *,
     pyserial_ok: bool,
+    port_overrides: dict[str, str],
     run_cmd: Callable[[list[str]], tuple[int, str, str]],
 ) -> tuple[BoardAttachmentStatus, ...]:
     ports: list[SerialPortInfo] | None
@@ -459,7 +473,7 @@ def assess_board_attachment_statuses(
                 board,
                 ports,
                 probe_resolution.probe,
-                override=None,
+                override=port_overrides.get(board.board_id),
                 allow_single_fallback=False,
                 run_cmd=run_cmd,
                 interactive=False,
@@ -484,6 +498,7 @@ def board_attachment_summary(
     boards: list[BoardConfig],
     *,
     pyserial_ok: bool,
+    port_overrides: dict[str, str],
     run_cmd: Callable[[list[str]], tuple[int, str, str]],
 ) -> bool:
     header("Selected-board attachment readiness")
@@ -494,6 +509,7 @@ def board_attachment_summary(
     statuses = assess_board_attachment_statuses(
         boards,
         pyserial_ok=pyserial_ok,
+        port_overrides=port_overrides,
         run_cmd=run_cmd,
     )
     for status in statuses:
@@ -522,6 +538,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Board id to inspect. Repeat to select multiple boards. Defaults to all non-example board configs in the board-config-dir plus any extra board-config files.",
     )
     parser.add_argument(
+        "--port",
+        action="append",
+        default=[],
+        metavar="BOARD_ID=PORT",
+        help="Override the detected virtual COM port for a selected board.",
+    )
+    parser.add_argument(
         "--install-missing",
         action="store_true",
         help="Reconcile the canonical repo environment with 'uv sync --locked' if required Python packages are missing.",
@@ -537,6 +560,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    port_overrides = parse_key_value(args.port, "--port")
 
     board_config_dir = Path(args.board_config_dir).expanduser().resolve()
     extra_paths = [Path(raw_path).expanduser().resolve() for raw_path in args.board_config]
@@ -576,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
         board_attachment_ready = board_attachment_summary(
             boards,
             pyserial_ok=pyserial_ok,
+            port_overrides=port_overrides,
             run_cmd=run,
         )
     packs_ready = bool(boards) and all(pack_results.get(board.board_id, False) for board in boards)
