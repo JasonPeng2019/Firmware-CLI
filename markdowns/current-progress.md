@@ -1171,8 +1171,9 @@ attached pair `nucleo_l476rg + nrf52840dk`:
     `run_script:uart_write`, `read_serial` board batch
   - prompt 2 on each board: inspect/replace/build in an isolated temporary
     workspace, then the same ordered board batch
-  - evidence report:
-    `markdowns/curr/r12-branch-b-multi-loop-real-deployment_test_report.md`
+  - evidence is summarized in `markdowns/curr/r12-branch-b-status.md`; the
+    detailed test report is archived at
+    `markdowns/tmp/curr-archive-20260628/r12-branch-b-multi-loop-real-deployment_test_report.md`
   - run roots:
     - `20260628T212402Z-9b730979` (`nucleo_l476rg`, prompt 1)
     - `20260628T212523Z-fa129f2f` (`nucleo_l476rg`, prompt 2)

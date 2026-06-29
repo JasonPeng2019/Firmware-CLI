@@ -187,7 +187,7 @@ the brain and server.
 - If the proof passes without code changes, update:
   - `markdowns/current-progress.md` with the exact host/board/run-root matrix;
   - `markdowns/R12_P_SPLIT.md` only if the pending verification bullets change;
-  - the relevant review report in `markdowns/curr/` with the new proof roots.
+  - `markdowns/curr/r12-branch-b-status.md` with the new proof roots.
 - If a CLI usage or deployment instruction changes, update `README.md` in the
   operator command section.
 - If host bootstrap or setup sequence changes, update `stage0_setup.md` and the
