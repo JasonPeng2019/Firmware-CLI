@@ -16,6 +16,9 @@ active current-step truth, not historical process ledgers or branch proof notes.
   `load_tool_details`, invalid-call auto-details, strict loaded-detail
   guardrails before governed tool/script or brain-owned compound-action
   execution, prompt ordering/dedupe, and future bug-reporting docs.
+- `next-codex-handoff-20260630.md` - current final-audit handoff for a fresh
+  Codex session to independently review the pushed R12 scaffold hardening,
+  Wave 1 scope, important code/docs/tests, and live validation plan.
 
 Canonical current status now lives in:
 
@@ -67,8 +70,8 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ## Verified
 
 - `markdowns/curr/` now contains only this index, the active R12 contract, the
-  active R12 scaffold-hardening spec/verification record, and the active Wave 2
-  codebase-map spec.
+  active R12 scaffold-hardening spec/verification record, the active Wave 2
+  codebase-map spec, and the current final-audit handoff.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
