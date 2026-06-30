@@ -499,7 +499,7 @@ def check_provider_dry_run_prompt_render(
     )
     prompt_bundle = ProviderPromptBundle(
         system_instructions=instructions,
-        tool_schema_text="Curated MCP tool surface:\n(dry-run prompt render)",
+        tool_schema_text="Curated MCP tool index (compact):\n(dry-run prompt render)",
         provider_memory_text="",
         turn_context_text=turn_prompt,
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",

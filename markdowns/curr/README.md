@@ -1,28 +1,47 @@
 # Current Working Docs
 
-`markdowns/curr/` is for active or still-useful current-step docs only.
-Completed process ledgers, superseded specs, and review artifacts should move to
-`markdowns/tmp/`.
+`markdowns/curr/` is intentionally small. It is only for docs that are still
+active current-step truth, not historical process ledgers or branch proof notes.
 
 ## Active Docs
 
-- `things-to-change.md` - broad prototype backlog.
-- `r12_turnkey_spec.md` - current R12 turnkey contract.
-- `r12-branch-a-live-provider-status.md` - compact Branch A / merged A+B
-  live-provider handoff, replacing the completed spec/process/review cluster.
-- `r12-branch-b-status.md` - compact Branch B implementation and proof handoff.
-- `r12-branch-b-official-portability-closure_spec.md` - remaining stricter
-  Branch B closure proof for official board/fresh-machine claims.
-- `branch_c_test_plan.md` - current Branch C event/timeout harness and proof
-  boundary.
-- `p-wave-abc-merge-validation_spec.md` - executed Wave 1 A/B/C merge-back
-  validation ledger.
-- `p-wave-abc-merge-validation_review.md` - current independent review of the
-  merged A/B/C candidate.
+- `r12_turnkey_spec.md` - current R12 turnkey contract. It remains useful, but
+  it is subordinate to `markdowns/firmware_agent_build_plan_concrete (10).md`
+  and the hard prototype bar in `markdowns/things-to-change.md`.
+- `next-codex-handoff-20260630.md` - handoff for the next Codex/Claude session,
+  including validation status, Claude quota blockers, exact-board proof gaps,
+  and morning rerun commands.
+- `model-native-skill-loading-codex-smoke-task.txt` - no-hardware Codex/Claude
+  CLI smoke prompt used to verify `load_skills` without touching the board.
+- `compact-tool-schema-index-codex-smoke-task.txt` - no-hardware Codex/Claude
+  CLI smoke prompt used to verify compact tool-index injection without touching
+  the board.
+
+Canonical current status now lives in:
+
+- `markdowns/things-to-change.md` - hard prototype acceptance bar.
+- `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
+  free-host/governed-decision code boundary is implemented, but Claude
+  live-provider proof and exact official-board proof remain pending.
+- `markdowns/current-progress.md` - current implementation/proof status.
 
 ## Archive
 
-Completed and redundant docs from previous loops were moved to:
+Completed Wave 1 hard-bar specs, process ledgers, reviews, and ladder snippets
+from the final June 30 pass were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260630-wave1-final/
+```
+
+The previous Branch A/B/C status, merge-validation, audit, pyright, cleanup, and
+Branch C proof docs were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260630-hardbar-reset/
+```
+
+Older completed or superseded current-work docs remain in:
 
 ```text
 markdowns/tmp/curr-archive-20260628/
@@ -32,17 +51,17 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 
 ## Verified
 
-- The active list reflects the intended reduced `curr` set after the
-  2026-06-30 markdown audit cleanup.
-- Completed Branch A strict-recovery, P0 foundation, and A/B additive merge
-  artifacts were archived out of `curr`.
-- Completed Branch A live-provider and server-tool hardening artifacts were
-  replaced by compact status/current docs and archived out of `curr`.
-- Completed Branch C process/spec/review fragments and the A/B-only readiness
-  review were archived after the A/B/C merge ledger became the current source.
+- `markdowns/curr/` now contains only the active R12 contract, the current
+  handoff, and the two smoke prompts still used by the handoff runbook.
+- Completed process/review/spec ledgers are historical evidence only; they no
+  longer compete with `current-progress.md`, `things-to-change.md`, or this
+  index as current-step truth.
 
 ## Pending Verification
 
-- Official `nrf52833dk` second-provider closure still needs an actual
-  `nrf52833dk` attached; the current live suite is green for the attached
-  `nucleo_l476rg + nrf52840dk` pair.
+- Branch B's free-host-work / governed-decision boundary is implemented and
+  Codex-smoked, but Claude CLI code-writing proof is blocked by quota until the
+  2026-06-30 morning reset.
+- Exact official `nrf52833dk` proof remains pending.
+- Wave 2 progress/inspector, checkpoints, scoped green approval, static
+  context/cache reuse, and cleanup guard work remains hard prototype scope.

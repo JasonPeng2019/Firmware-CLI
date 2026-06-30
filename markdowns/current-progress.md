@@ -25,6 +25,41 @@ the current session.
 
 ## Current Position
 
+Current correction, 2026-06-30: do not treat the Wave 1 A/B/C prototype merge
+as fully product-suite complete. Branch A is acceptable for the
+provider-session/compact-tool-index bridge, Branch C is acceptable for the
+event/timeout-policy slice, and Branch B's free host-work phase followed by one
+final governed board/client/terminal decision is now implemented in code.
+Codex CLI has live proof for that Branch B boundary on the attached
+`nucleo_l476rg + nrf52840dk` pair; Claude CLI code-writing proof is blocked by
+provider quota until the morning reset, and exact official `nrf52833dk` proof
+remains pending.
+
+Follow-up correction, 2026-06-30: the turnkey MCP tool prompt injection no
+longer repeats full MCP JSON schema bodies. The brain now renders a compact
+curated tool index from live MCP metadata: tool name, short description,
+required/optional argument hints, and stable response/refusal semantics. The
+actual MCP descriptors still retain their full input schemas for validation and
+provenance.
+
+Adversarial audit correction, 2026-06-30: the Branch B model-native skill loader
+now preflights init scripts before subprocess execution. Init scripts that
+directly import known probe/serial stacks or invoke known board/probe commands
+are rejected before they can bypass governed server tools, and skill manifests
+must declare the same `skill_id` as the requested skill folder. The repeated
+Codex-verifiable audit found no remaining valid code/product criticisms beyond
+Claude quota and exact official-board proof. Fresh validation after this audit:
+Python-change gate green with Pyright `0` and full pytest `350 passed`; suite
+preset green; Codex host-native workspace smoke green at
+`runs/turnkey-20260630T090753Z-02dee333`; Codex `load_skills` smoke green at
+`runs/turnkey-20260630T090914Z-044ef516`; Codex compact tool-index smoke green
+at `runs/turnkey-20260630T090947Z-703de0e5`.
+
+The first capability prototype is complete only when every Prototype Priority
+item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
+and validated. Agents must not use passing subset tests or narrower branch
+definitions to call the product done.
+
 In roadmap terms, all scoped work through `R11` is implemented for the
 official board pair:
 
@@ -176,10 +211,12 @@ Latest Branch A/B live-provider refresh proof on 2026-06-29:
 Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
 
 - `P-Wave-C` event/timeout work has been selectively merged into the current
-  `P-Wave-A` spine that already carried Branch A and Branch B.
+  `P-Wave-A` spine that already carried Branch A and a Branch B subset.
 - The merge keeps Branch A provider/session/schema behavior, Branch B
-  action-boundary/batch/wait/client-action behavior, and Branch C
-  event-spine/timeout-policy/server-sync behavior in one loop.
+  additive action-boundary/batch/wait/client-action behavior, and Branch C
+  event-spine/timeout-policy/server-sync behavior in one loop. It does not close
+  the Branch B hard bar because free host work is still governed as actions
+  instead of being model-native until the final board/terminal decision.
 - Non-hardware validation passed after the final harness fix:
   - focused A/B/C suite: `121 passed`
   - Branch C no-hardware harness: `4 passed, 0 failed, 0 skipped`
@@ -292,6 +329,49 @@ Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
     smokes showed no new leftover spawned provider/MCP/pyOCD or validation
     children beyond the same pre-existing VS Code/Codex app-server-owned MCP
     process tree
+- The Branch B hardbar correction pass on June 30, 2026 then removed
+  model-native host work (`read_file`, `replace_file`, `run_build`) from the
+  model-facing governed decision schema, refused stale host-action decisions,
+  observed provider-native workspace changes at the next governed boundary, and
+  rebuilt the workspace before governed `run_green_check`.
+- Follow-up hard bar, also on June 30, 2026: the stale-action compatibility
+  layer above has now been removed. `ReadFileAction`, `ReplaceFileAction`,
+  `RunBuildAction`, their policy/refusal branches, governed executor branches,
+  and prompt-visible decision language were deleted. `load_skills` is now the
+  model-native context-expansion decision that loads workflow skills between
+  provider turns. Verification for this pass:
+  - focused model-native skill-loading tests: `9 passed`
+  - Python-change gate: Ruff check/fix passed, Ruff format passed, full
+    Pyright `0` diagnostics across `107` analyzed files, full pytest
+    `347 passed`
+  - Codex CLI no-hardware smoke passed with `load_skills:firmcli-fix-bug`,
+    `mcp_tools_used=[]`, `session_id=(none)`, run root
+    `runs/turnkey-20260630T084055Z-0a0377bc`
+  - Claude CLI proof remains pending provider quota reset
+  Verification after that correction:
+  - suite ladder passed: full pytest `342 passed`, ruff clean, mypy clean,
+    `34` R11 benchmark tests passed, and R11 benchmark help rendered
+  - Python-change gate passed: ruff check/fix, ruff format, full Pyright `0`
+    diagnostics across `105` analyzed files, and full pytest `342 passed`
+  - attached `nucleo_l476rg` passed host bootstrap, Stage 0 flash/UART, and
+    Stage 1 smoke
+  - attached `nrf52840dk` passed host bootstrap, Stage 0 flash/UART/recover,
+    and Stage 1 smoke
+  - Branch C live harness passed with Codex CLI on both attached boards:
+    `nucleo_l476rg` run root `20260630T080831Z-b996d530`; `nrf52840dk` run
+    root `20260630T081021Z-31f3aaae`
+  - Codex CLI code-writing `b001_wrong_boot_text` benchmark passed
+    `FULL_SUCCESS` on both attached boards:
+    `nucleo_l476rg` session `20260630T081152Z-0ed30757`; `nrf52840dk` session
+    `20260630T081747Z-32904e64`
+  - Claude CLI `nucleo_l476rg__b001_wrong_boot_text` remained blocked before
+    any MCP session was created because the provider returned
+    `You're out of extra usage - resets 7:30am (America/New_York)`; artifact:
+    `runs/turnkey-20260630T082157Z-25e30a91`
+  - post-run process audit found two new Codex-spawned `pyocd-debug-mcp`
+    process trees; they were stopped by exact PID. The remaining matching MCP
+    trees were the same pre-existing VS Code/Codex app-server-owned processes
+    present in the baseline snapshot.
 
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
@@ -319,7 +399,7 @@ for Wave 0 / `P0.0` unless the team explicitly restores them as hard gates.
 The active prototype direction has also moved beyond the original narrow R12
 acceptance layer. The current docs now track a capability prototype that adds
 persistent provider sessions, free host-side model work with a final governed
-board-decision boundary, real tool schemas, batched actions with `wait` and
+board-decision boundary, compact real tool metadata, batched actions with `wait` and
 UART write, live progress/inspector output, timeout hardening with
 model-refined budgets, session-scoped client actions, scoped green approval via
 model-made flipped tests, stream checkpoints for UART/build/client-action
@@ -1393,8 +1473,10 @@ New mainline-hardening proof now also exists on this Windows host:
 - Windows Codex CLI provider turns and local rebuild captures now tolerate
   non-ASCII subprocess output through UTF-8-with-replacement decoding
 
-Branch B deployment-completion proof now exists on this Windows host for the
-attached pair `nucleo_l476rg + nrf52840dk`:
+Branch B subset deployment proof exists on this Windows host for the attached
+pair `nucleo_l476rg + nrf52840dk`. This evidence is retained because it proves
+the additive batch/wait/UART/client-action surface, but it is not Branch B
+completion proof under the current prototype bar:
 
 - non-hardware ladder passed after adding the public client-action path:
   `uv run pytest -q`, `uv run ruff check .`,
@@ -1427,7 +1509,7 @@ attached pair `nucleo_l476rg + nrf52840dk`:
     `run_script:uart_write`, `read_serial` board batch
   - prompt 2 on each board: inspect/replace/build in an isolated temporary
     workspace, then the same ordered board batch
-  - evidence is summarized in `markdowns/curr/r12-branch-b-status.md`; the
+  - evidence was summarized in the archived Branch B status docs; the
     detailed test report is archived at
     `markdowns/tmp/curr-archive-20260628/r12-branch-b-multi-loop-real-deployment_test_report.md`
   - run roots:
@@ -1435,6 +1517,11 @@ attached pair `nucleo_l476rg + nrf52840dk`:
     - `20260628T212523Z-fa129f2f` (`nucleo_l476rg`, prompt 2)
     - `20260628T212604Z-e86cf36a` (`nrf52840dk`, prompt 1)
     - `20260628T212720Z-c8244c8c` (`nrf52840dk`, prompt 2)
+
+Remaining Branch B hard gap: host-only file/shell/script work must be
+model-native/free, and each provider turn must close with exactly one governed
+board or terminal decision. Until that exists and is tested, Wave 1 is not
+complete.
 - exact `nrf52833dk` Branch B deployment proof is still pending because the
   attached Nordic board in this session identified as `NRF52840_xxAA_REV2`
 

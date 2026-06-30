@@ -1,0 +1,9 @@
+skill_id: merge-conflicting-repos
+title: Merge Conflicting Repos
+description: Reconcile divergent refs or repos without losing useful work.
+depends_on:
+  - firmcli-workflow-core
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths: []

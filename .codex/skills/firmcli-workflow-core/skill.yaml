@@ -1,0 +1,9 @@
+skill_id: firmcli-workflow-core
+title: FirmCLI Workflow Core
+description: Load Firmware-CLI authority docs, safety rules, and helper scripts.
+depends_on: []
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths:
+  - scripts/

@@ -1,0 +1,9 @@
+skill_id: firmcli-markdown-audit
+title: FirmCLI Markdown Audit
+description: Audit Firmware-CLI markdowns against code and run evidence.
+depends_on:
+  - firmcli-workflow-core
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths: []

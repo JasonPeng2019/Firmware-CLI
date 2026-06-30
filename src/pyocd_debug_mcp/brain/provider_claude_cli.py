@@ -466,6 +466,8 @@ def _build_claude_command(
         "--print",
         "--output-format",
         "json",
+        "--permission-mode",
+        "bypassPermissions",
         "--append-system-prompt",
         instructions,
     ]

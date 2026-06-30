@@ -10,10 +10,10 @@ ONLY INCLUDE for the first capability prototype:
 
 1. Persistent session and model memory.
    - Current direction: use provider-native resume where available plus the
-     compact brain-owned provider-memory ledger. Remotehow-primary providers sync
+     compact brain-owned provider-memory ledger. Remote-primary providers sync
      that compact memory every 10 provider turns by default.
 2. Free host work with a final governed board-decision boundary.
-3. Real tool schemas in the prompt.
+3. Compact real tool-metadata index in the prompt.
 4. Basic timeout hardening and timeout audit fixes.
 5. Model-estimated iteration and timeout budgets inside brain caps.
 6. Batches, `wait`, and UART write.
@@ -24,8 +24,42 @@ ONLY INCLUDE for the first capability prototype:
 11. Prompt incentive for targeted debug prints.
 12. Proof escalation ladder for expensive live validation.
 13. Cache-assisted artifact/result reuse for setup and repeated non-final checks.
-14. Skill index/on-demand skill bodies for static-context efficiency.
+14. Skill index/on-demand skill bodies for static-context efficiency, including
+   the model-native `load_skills(skill_ids=[...])` turn-closing decision.
+   Skill loads resolve dependencies recursively, run init scripts
+   dependency-first post-order once per provider session/run, expose usable
+   scripts/assets under per-skill provider-runtime folders, and inject loaded
+   markdown/context into the next provider turn.
 15. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard.
+
+Prototype acceptance contract:
+
+- This list is the hard bar for the first capability prototype. No item may be
+  treated as optional, later polish, or "good enough" because a narrower subset
+  passed tests.
+- The product target is the user's final-product prototype described in this
+  file and in the Stage 5 build-plan target, not an agent's narrower
+  interpretation of what seems easiest or cleanest.
+- A branch, wave, or validation report may only be called complete if it maps
+  every relevant item in this list to code, tests, and run evidence. Missing
+  coverage is a blocking gap, not a caveat.
+- Proposal-only wording inside detailed historical entries does not demote an
+  item that appears in this Prototype Priority list. It only means the exact
+  implementation spec still has to be written.
+- Wave 2 visibility, proof, cache/static-context, checkpoint, and cleanup work
+  is prototype-required because it is listed here. Those items are not optional
+  UX polish.
+- Current status, 2026-06-30: the Branch B free-host-work / governed-decision
+  boundary now structurally removes the old governed host-action compatibility
+  layer. `read_file`, `replace_file`, and `run_build` are not valid
+  `TurnDecision` actions, executor branches, batch special-cases, or
+  model-visible decisions. `load_skills` is implemented as the required
+  model-native context-expansion decision for loading workflow skills between
+  provider turns, with focused tests, full Python-change gate, and a no-hardware
+  Codex CLI smoke green. Full product-suite closure is still pending because
+  Claude CLI code-writing proof is blocked by provider quota, exact official
+  `nrf52833dk` proof is not available in this session, and the Wave 2
+  prototype-priority modules remain required.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -86,7 +120,7 @@ north star.
 - [2. Separate deterministic safety-state from model reasoning-context (give the brain real memory)](#2-separate-deterministic-safety-state-from-model-reasoning-context-give-the-brain-real-memory)
 - [11. Two tool classes: model-native (free) vs server-native (governed)](#11-two-tool-classes-model-native-free-vs-server-native-governed)
 - [12. The model only outputs a decision when it needs the board](#12-the-model-only-outputs-a-decision-when-it-needs-the-board)
-- [1. Forward real MCP tool descriptions/schemas into the turnkey brain prompt](#1-forward-real-mcp-tool-descriptionsschemas-into-the-turnkey-brain-prompt)
+- [1. Forward real MCP tool metadata into the turnkey brain prompt as a compact index](#1-forward-real-mcp-tool-metadata-into-the-turnkey-brain-prompt-as-a-compact-index)
 - [18. Replace fixed max-iters defaults with model-estimated iteration budgets](#18-replace-fixed-max-iters-defaults-with-model-estimated-iteration-budgets)
 - [17. Prompt the model to instrument unexpected failures with targeted prints](#17-prompt-the-model-to-instrument-unexpected-failures-with-targeted-prints)
 - [8. Gated early-exit verdicts: infeasible, needs_intervention, ambiguous](#8-gated-early-exit-verdicts-infeasible-needs_intervention-ambiguous)
@@ -379,9 +413,10 @@ Whichever execution mode is active, maintain and inject a compact, deterministic
 supplies direction, not just thrash-detection.
 
 Crucially it must carry the **result value of each action, not a binary ok/fail**
-â€” the value is the signal (`read_core_register pc=0x08000af2`, `read_memory
-0x20000000 -> 0xDEADBEEF`, `read_serial SILENT excerpt="\x00"`, `run_build FAILED
-exit=1 "undefined reference to uart_init"`). A checkmark throws away exactly the
+  â€” the value is the signal (`read_core_register pc=0x08000af2`, `read_memory
+0x20000000 -> 0xDEADBEEF`, `read_serial SILENT excerpt="\x00"`,
+`host_build_observed FAILED exit=1 "undefined reference to uart_init"`). A
+checkmark throws away exactly the
 datum that points the model somewhere.
 
 Tier by recency, but **every tier keeps the actual result**, never collapsing to
@@ -454,11 +489,12 @@ resumable session handle.
 
 ### Wave placement
 
-Wave 2 is Branch D (progress/inspector), Branch E (stream checkpoints), Branch F
-(scoped green approval), Branch G (static context/cache reuse), and Branch H
-(process-tree / board-session cleanup guard). Provider memory semantics stay
-with the already-implemented Branch A provider/session layer plus the
-configurable native safety-sync cadence.
+Wave 2 is the hard-bar module set for progress/inspector, stream checkpoints,
+scoped green approval, static context/cache reuse, and process-tree /
+board-session cleanup guard. The old D/E/F/G/H git branches were deleted on
+2026-06-30; that deletion does not remove these prototype requirements.
+Provider memory semantics stay with the already-implemented Branch A
+provider/session layer plus the configurable native safety-sync cadence.
 
 ### What it is supposed to do
 
@@ -552,9 +588,8 @@ Define two classes of capability in the client:
   computation over already-gathered data. The model runs these **freely in its
   sandbox**, in its native flow, **not** as decisions â€” the brain does not gate them.
 - **Server-native tools** â€” reach hardware or governed effects: `flash`,
-  `read_memory`/`read_serial`, `write_memory`, `recover`, UART write; running a
-  hardware-touching script; and brain-tracked ops (`run_build`, firmware-*source*
-  edits) that feed convergence or are the repair deliverable. Invoked **only via a
+  `read_memory`/`read_serial`, `write_memory`, `recover`, UART write; and running
+  a hardware-touching script through the gated client API. Invoked **only via a
   governed decision** the brain dispatches, gates, and bounds.
 
 ### The dividing line â€” governance, not destructiveness
@@ -566,10 +601,11 @@ The brain governs an op iff **any** of these holds:
 3. it needs hang / timeout bounding.
 
 Otherwise it is model-native. This is why a *harmless* hardware read
-(`read_memory`) is **server-native** (it needs timeouts + convergence), and a
-`run_build` that touches no hardware is still **governed** (it feeds the
-repeated-build-failure block and is the deliverable). The axis is "must the brain
-govern it," not "is it dangerous."
+(`read_memory`) is **server-native** (it needs timeouts + convergence), while
+file reads, source edits, and local builds are **provider-native host work** under
+the corrected Branch B hard bar. The brain observes their workspace effects at
+the next governed boundary, but does not expose them as `TurnDecision` actions.
+The axis is "must the brain govern it," not "is it dangerous."
 
 ### Transitive script classification + how it is enforced
 
@@ -604,15 +640,17 @@ free phase is auditable. The distinction is **gate vs. observe**, not see vs. no
 
 ### Reclassifies the current action set
 
-- `read_file` -> **model-native** (was a brain action).
-- `server_tool`, `run_script`, `run_build`, firmware-source `replace_file` ->
-  **server-native / governed.**
+- `read_file`, `replace_file`, and `run_build` -> **model-native** and not valid
+  `TurnDecision` actions.
+- `server_tool` and `run_script` -> **server-native / governed** when they reach
+  the gated server API.
+- `load_skills` -> **context expansion**, brain-mediated between turns.
 
 ### Where it belongs
 
-1. **`actions.py`** â€” the action union is the set of **server-native** actions only
-   (`server_tool`, `run_script`, `run_build`, firmware-edit, plus the terminal /
-   communication decisions of entry #12). Model-native ops are not actions.
+1. **`actions.py`** â€” the action union is the set of governed board/client
+   actions, context-expansion decisions, verification, and terminal decisions.
+   `read_file`, `replace_file`, and `run_build` are not action variants.
 2. **brain runner** â€” provide the gated client API only inside `run_script`; run
    free scripts in the sandbox without it.
 3. **audit** â€” snapshot the tool store / diff the workspace at the decision boundary.
@@ -625,13 +663,18 @@ free phase is auditable. The distinction is **gate vs. observe**, not see vs. no
   brain's.
 - **Observe, don't gate** model-native ops, for audit.
 - **Doc-sync + verify.** This reclassifies the action set; update the README / R12
-  spec and verify a model-native script runs free while a hardware-touching one is
-  forced through `run_script`.
+  spec and verify model-native host work runs free, `load_skills` injects
+  workflow context, and hardware-touching sanctioned scripts are forced through
+  `run_script`.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Unifies the principle behind
-Design 2 (entry #9), batches (entry #5), and the turn structure (entry #12).
+Implemented in the 2026-06-30 Branch B hard-bar correction for the current
+turnkey prototype: `read_file`, `replace_file`, and `run_build` are structurally
+removed from governed decisions, host work is provider-native, `load_skills` is
+the model-native context-expansion decision, and the brain observes workspace
+changes at governed boundaries. Remaining proof gap: Claude quota reset and
+exact official-board live reruns still need the morning handoff.
 
 ---
 
@@ -704,12 +747,15 @@ Local model-native work is **not** in this union â€” it is not a decision a
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. The output-contract companion
-to entry #11's tool-class split.
+Partially implemented in the 2026-06-30 Branch B hard-bar correction: local host
+work is provider-native, and the brain now accepts only governed board/client
+actions, `load_skills`, verification, waits, and finalization. The older
+`respond_to_user` / `needs_clarification` / `done` expansion remains a later
+UX/API contract item unless deliberately pulled into the current prototype.
 
 ---
 
-## 1. Forward real MCP tool descriptions/schemas into the turnkey brain prompt
+## 1. Forward real MCP tool metadata into the turnkey brain prompt as a compact index
 
 ### Problem / current behavior
 
@@ -742,15 +788,17 @@ exists and is free to forward; we just don't.
 ### What the change is
 
 Surface the server-provided tool metadata (description + input schema) that we
-already receive over MCP, and inject a rendered version of it into the turn
-prompt so the decision model sees, per allowed tool:
+already receive over MCP, and inject a compact rendered version of it into the
+turn prompt so the decision model sees, per allowed tool:
 
-- the human-readable description (the existing docstring),
-- the argument names, types, and which are required.
+- the human-readable description (the existing docstring), trimmed to one line,
+- the argument names, basic type/enum hints, and which are required.
 
 This keeps the docstring as the single source of truth (no sidecar tool docs â€”
-consistent with the `superpowers-tool-docs` rule) and simply stops dropping it
-on the floor in the turnkey path.
+consistent with the `superpowers-tool-docs` rule) and simply stops dropping the
+metadata on the floor in the turnkey path. It must not reprint full MCP JSON
+schema bodies into provider prompts; the server and client descriptors retain
+the real schemas for validation/provenance.
 
 ### Where it belongs
 
@@ -770,7 +818,7 @@ on the floor in the turnkey path.
      [actions.py:10](../../src/pyocd_debug_mcp/brain/actions.py#L10)) â€” do not leak
      the tools the brain deliberately does not expose (step, write_memory,
      breakpoints, etc.).
-   - Splice that catalog into `_build_turn_prompt`
+   - Splice that compact catalog into the prompt bundle
      ([loop.py:196](../../src/pyocd_debug_mcp/brain/loop.py#L196)), replacing or
      augmenting the bare-name "Available action kinds" list. The client is
      created inside `run_turnkey` ([loop.py:998](../../src/pyocd_debug_mcp/brain/loop.py#L998)),
@@ -798,8 +846,8 @@ on the floor in the turnkey path.
 
 - **Prompt size.** In the current bridge / deterministic mode, full docstrings +
   schemas for 12 tools add tokens to every rebuilt turn prompt. In the persistent
-  session path they should live in the cached prefix. Render compactly either way;
-  consider one-line descriptions + a terse arg list rather than full schema JSON.
+  session path they should live in the cached prefix. Render one-line
+  descriptions + a terse arg list and do not inject full schema JSON.
 - **Whitelist coupling.** The catalog must be filtered by `AllowedServerToolName`,
   not by the server's full tool set, or it will advertise tools the loop will
   reject. This is the same *curated-allowlist* discipline as entry #3's
@@ -809,7 +857,7 @@ on the floor in the turnkey path.
 - **Doc-sync.** This changes how the turnkey brain is documented to the model.
   Per `superpowers-doc-sync`, the canonical doc (README turnkey section and/or
   the R12 turnkey spec) must note that the turnkey brain now forwards server
-  tool descriptions, in the same unit of work.
+  tool metadata as a compact index, in the same unit of work.
 - **Verification.** Re-run the frozen 12-case turnkey suite after the change to
   confirm no regression in the `codex-cli` green path before claiming it works;
   this is a code change, so the "verify, don't claim" rule applies.
@@ -817,7 +865,7 @@ on the floor in the turnkey path.
 ### Native-session (API) note
 
 In the default persistent session (entry #2, `TurnDecision` JSON return), deliver
-this metadata as a **cached text block in the session prefix** â€” rendered once
+this metadata as a **cached compact text block in the session prefix** â€” rendered once
 from each whitelisted tool's MCP `description` + `inputSchema` and never rebuilt,
 so it stays in the cached prefix for the whole run at zero per-turn cost. The
 re-serialization / CLI one-shot mode includes the same rendered catalog in its
@@ -1617,7 +1665,7 @@ result, and give the model an explicit, bounded delay primitive.
   to `ActionUnion` ([actions.py:74](../../src/pyocd_debug_mcp/brain/actions.py#L74)),
   executed by the brain as a bounded sleep. Most useful as a batch step
   (write -> wait -> read), but valid standalone. It is brain-local (not an MCP
-  tool), like `run_build`; it is not a reason to re-gate inert host reads.
+  tool), and it is not a reason to re-gate inert host reads.
 
 ### Making timeouts *enforceable* â€” the layer model (corrected priority)
 
@@ -1875,10 +1923,9 @@ Lower-risk schema: add a `BatchAction` to `ActionUnion`
 { "kind": "batch", "steps": [ <action>, <action>, ... ] }
 ```
 
-where each step is an existing governed single action (`server_tool`, `run_script`,
-`run_build`, firmware-deliverable edits, terminal/finalize actions, ...). The
-current bridge may still carry legacy local actions for compatibility, but the
-north star is that model-native host work is not batched through the brain.
+where each step is an existing governed single action (`server_tool`,
+`run_script`, `load_skills`, verification, terminal/finalize actions, ...).
+Model-native host work is not batched through the brain.
 Single-action turns keep working unchanged; batching is opt-in. (Alternative: make
 the top-level `action` a list and rename to `actions` â€” cleaner semantically but a
 breaking change to every existing decision.)
@@ -2915,7 +2962,7 @@ Add a bounded, auditable cache for deterministic or setup-oriented facts:
   artifact paths;
 - firmware artifact hash + board id + probe/target identity -> prior flash/check
   metadata, usable only as setup context unless a live final proof is not required;
-- MCP tool schema hash -> rendered prompt catalog;
+- MCP tool metadata hash -> rendered compact prompt catalog;
 - selected skill ids + skill file hashes -> rendered skill index/safety block;
 - board discovery fingerprint -> recently observed board identity and serial/probe
   mapping, revalidated cheaply before use;
@@ -3045,7 +3092,8 @@ MCP-backed, pyOCD-backed, serial, hardware, and long-running validation command:
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Wave 2 Branch H.
+Proposal only. Not yet specced, not yet implemented. Wave 2 cleanup module; hard
+required before the first capability prototype is complete.
 
 ## 16. Scoped success gates (replace the whole-board green check)
 
@@ -3665,11 +3713,11 @@ the brain intercepts each call, runs it through the same `_execute_server_tool`
 gate, and appends a native `tool_result`.
 
 The logical governed action set is unchanged â€” `connect`, `flash_firmware`,
-`run_script`, `run_build`, firmware-deliverable edits, `run_green_check`,
-`finalize`, terminal decisions, etc. become provider-native calls. Model-native
-host work stays outside this tool surface. The brain's guardrails, ledger, and
-`BrainState` are untouched in spirit; only the wire format of "what the model said
-to do at the governed boundary" changes.
+`run_script`, `load_skills`, `run_green_check`, `finalize`, terminal decisions,
+etc. become provider-native calls. Model-native host work stays outside this
+tool surface. The brain's guardrails, ledger, and `BrainState` are untouched in
+spirit; only the wire format of "what the model said to do at the governed
+boundary" changes.
 
 ### Why it is optional (and the trade-off)
 

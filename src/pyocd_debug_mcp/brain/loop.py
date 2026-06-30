@@ -24,10 +24,8 @@ from pyocd_debug_mcp.brain.actions import (
     AllowedServerToolName,
     Classification,
     decision_schema_text,
-    ReadFileAction,
     FinalizeAction,
-    ReplaceFileAction,
-    RunBuildAction,
+    LoadSkillsAction,
     RunGreenCheckAction,
     RunScriptAction,
     ServerToolAction,
@@ -50,6 +48,11 @@ from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, 
 from pyocd_debug_mcp.brain.events import BrainEvent, EventSink, emit_event, event_timestamp
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient, MCPClientError, ToolTextResult
+from pyocd_debug_mcp.brain.model_native_skills import (
+    ModelNativeSkillError,
+    ModelNativeSkillRegistry,
+    render_model_native_skill_context,
+)
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
 from pyocd_debug_mcp.brain.provider_types import (
     advance_memory_sync_state,
@@ -96,6 +99,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
+MODEL_NATIVE_SKILL_ROOT = REPO_ROOT / ".codex" / "skills"
 
 
 class TurnkeyLoopError(RuntimeError):
@@ -252,7 +256,9 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- When you have a concrete suspected root cause, fill in `hypothesis`.\n"
         "- Use `strategy_evaluation` to explain why the chosen next action is the best current move.\n"
         "- Use unlock_recover only when the symptoms justify it and the task policy allows it.\n"
-        "- When code edits are allowed, replace whole files only; do not describe patches in prose.\n"
+        "- When code edits are allowed, use your provider-native host tools to inspect, edit, and build the workspace directly before returning a governed or terminal decision.\n"
+        "- Use load_skills when you need additional model-native workflow skill context on the next provider turn.\n"
+        "- Keep host edits inside allowed edit roots and prefer whole-file replacements when changing source files.\n"
         "- Use run_green_check when you believe the target is healthy again.\n"
         "- Do not return final_status=healthy_confirmed or final_status=fixed until run_green_check has succeeded in this client.\n"
         f"- {benchmark_note}\n"
@@ -305,12 +311,13 @@ def _build_turn_prompt(
         f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
         "Selected skills:\n"
         f"{skills_text}\n\n"
+        "Model-native workflow skill context:\n"
+        f"{render_model_native_skill_context(state.model_native_skills)}\n\n"
         f"{render_client_action_prompt_section(client_actions or InMemoryClientActionStore())}\n\n"
         "Available action kinds:\n"
         f"- server_tool: {', '.join(sorted(SERVER_NATIVE_ACTIONS))}\n"
-        "- read_file(path)\n"
-        "- replace_file(path, content)\n"
-        "- run_build(build_command?)\n"
+        "- model-native host work: inspect/edit/build the workspace directly with your provider host tools before returning a governed/terminal decision\n"
+        "- load_skills(skill_ids): load model-native workflow skill context for the next provider turn\n"
         "- run_green_check\n"
         "- wait(seconds)\n"
         "- run_script(name, inputs)\n"
@@ -436,14 +443,10 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
         return WaitAction.model_validate({"kind": "wait", **args})
     if action_type == "run_script":
         return RunScriptAction.model_validate({"kind": "run_script", **args})
-    if action_type == "read_file":
-        return ReadFileAction.model_validate({"kind": "read_file", **args})
-    if action_type == "replace_file":
-        return ReplaceFileAction.model_validate({"kind": "replace_file", **args})
-    if action_type == "run_build":
-        return RunBuildAction.model_validate({"kind": "run_build", **args})
     if action_type == "run_green_check":
         return RunGreenCheckAction.model_validate({"kind": "run_green_check", **args})
+    if action_type == "load_skills":
+        return LoadSkillsAction.model_validate({"kind": "load_skills", **args})
     raise TurnkeyRefusal(
         "brain/unsupported-batch-action", f"Unsupported batched action: {action_type}"
     )
@@ -937,6 +940,30 @@ async def _commit_provider_memory(
     return compaction_record
 
 
+async def _record_model_native_host_boundary(
+    *,
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    workspace: WorkspaceSession | None,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+) -> None:
+    if workspace is None:
+        return
+    changed_files = workspace.changed_files()
+    if not changed_files:
+        return
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind="model_native_host_work_observed",
+        message="Observed provider-native host work at a governed decision boundary.",
+        details={"changed_files": list(changed_files)},
+    )
+
+
 def _update_build_failure_state(
     state: BrainState,
     build_result_text: str,
@@ -998,17 +1025,20 @@ def _prepare_provider_runtime_context(
     provider: str,
     continuation_mode: ProviderContinuationMode,
     resume_requires_stable_workdir: bool,
+    host_working_directory: Path | None = None,
 ) -> ProviderRuntimeContext:
     runtime_root = RUNS_ROOT / "_provider-runtime" / run_id / provider
     runtime_root.mkdir(parents=True, exist_ok=True)
+    working_directory = host_working_directory or runtime_root
     return ProviderRuntimeContext(
         runtime_root=str(runtime_root),
-        working_directory=str(runtime_root),
+        working_directory=str(working_directory),
         transport_metadata={
             "run_id": run_id,
             "provider": provider,
             "continuation_mode": continuation_mode,
             "resume_requires_stable_workdir": resume_requires_stable_workdir,
+            "provider_runtime_root": str(runtime_root),
         },
     )
 
@@ -1266,16 +1296,29 @@ async def _execute_server_tool(
     return result
 
 
-def _execute_read_file(workspace: WorkspaceSession | None, path: str, state: BrainState) -> str:
-    if workspace is None:
-        raise TurnkeyRefusal(
-            "brain/no-workspace",
-            "This run has no workspace attached, so local file reads are unavailable.",
+def _execute_load_skills(action: LoadSkillsAction, state: BrainState) -> str:
+    provider_state = state.provider_session_state
+    runtime_context = provider_state.runtime_context if provider_state is not None else None
+    if runtime_context is None:
+        raise TurnkeyLoopError(
+            "Provider runtime context is unavailable, so model-native skills cannot be loaded."
         )
-    text = workspace.read_file(path)
-    state.actions_taken.append(f"read_file:{path}")
-    state.last_action_summary = f"read_file({path})"
-    state.last_result_text = f"Contents of {path}:\n{text}"
+    registry = ModelNativeSkillRegistry(MODEL_NATIVE_SKILL_ROOT)
+    try:
+        result = registry.load_skills(
+            skill_ids=action.skill_ids,
+            session_state=state.model_native_skills,
+            runtime_root=Path(runtime_context.runtime_root),
+            repo_root=REPO_ROOT,
+            timeout_seconds=state.effective_timeout_config.external_command_seconds,
+        )
+    except ModelNativeSkillError as exc:
+        state.model_native_skills = state.model_native_skills.with_failure(str(exc))
+        raise
+    state.model_native_skills = result.state
+    state.actions_taken.append("load_skills:" + ",".join(action.skill_ids))
+    state.last_action_summary = "load_skills(" + ",".join(action.skill_ids) + ")"
+    state.last_result_text = result.render_result_text()
     return state.last_result_text
 
 
@@ -1456,19 +1499,15 @@ async def _execute_batched_actions(
                 invocation, board, client_actions, client, action, state
             )
             event_details = {"batch_index": index, "result_text": result_text}
-        elif isinstance(action, ReplaceFileAction):
-            result_text = _execute_replace_file(workspace, action, state)
-            event_details = {"batch_index": index, "path": action.path, "result_text": result_text}
-        elif isinstance(action, RunBuildAction):
-            result_text = _execute_build(workspace, action, state, invocation)
+        elif isinstance(action, LoadSkillsAction):
+            result_text = _execute_load_skills(action, state)
             event_details = {
                 "batch_index": index,
-                "build_command": action.build_command
-                or (workspace.build_command if workspace else None),
                 "result_text": result_text,
+                "model_native_skills": state.model_native_skills.to_record(),
             }
         elif isinstance(action, RunGreenCheckAction):
-            result_text = await _execute_green_check(invocation, board, state, client)
+            result_text = await _execute_green_check(invocation, board, state, client, workspace)
             await _record_verification_event(
                 sink=event_sink,
                 records=brain_events,
@@ -1480,13 +1519,6 @@ async def _execute_batched_actions(
                 "batch_index": index,
                 "result_text": result_text,
                 "verification": state.verification.model_dump(mode="json"),
-            }
-        elif isinstance(action, ReadFileAction):
-            result_text = _execute_read_file(workspace, action.path, state)
-            event_details = {
-                "batch_index": index,
-                "path": action.path,
-                "result_length": len(result_text),
             }
         else:
             raise TurnkeyLoopError(f"Unhandled action kind: {action.kind}")
@@ -1548,84 +1580,42 @@ async def _execute_batched_actions(
     return ("\n".join(result_parts) if is_batch else raw_result_text), run_root, result
 
 
-def _execute_replace_file(
-    workspace: WorkspaceSession | None,
-    action: ReplaceFileAction,
-    state: BrainState,
-) -> str:
-    if workspace is None:
-        raise TurnkeyRefusal(
-            "brain/no-workspace",
-            "This run has no editable workspace attached.",
-        )
-    workspace.replace_file(action.path, action.content)
-    state.pending_fix_evaluation = True
-    state.actions_taken.append(f"replace_file:{action.path}")
-    state.last_action_summary = f"replace_file({action.path})"
-    state.last_result_text = f"Replaced {action.path}."
-    _append_experiment(
-        state,
-        purpose="apply a candidate source edit",
-        action_summary=state.last_action_summary or f"replace_file({action.path})",
-        result=state.last_result_text,
-    )
-    return f"Replaced {action.path}."
-
-
-def _execute_build(
-    workspace: WorkspaceSession | None,
-    action: RunBuildAction,
-    state: BrainState,
-    invocation: TurnkeyInvocation,
-) -> str:
-    if workspace is None:
-        raise TurnkeyRefusal(
-            "brain/no-workspace",
-            "This run has no workspace/build context.",
-        )
-    state.register_build()
-    state.pending_fix_evaluation = True
-    build = workspace.run_build(
-        action.build_command,
-        timeout_seconds=state.effective_timeout_config.build_seconds,
-    )
-    state.actions_taken.append("run_build")
-    state.last_action_summary = f"run_build({action.build_command or workspace.build_command})"
-    if build.exit_code == 0:
-        state.last_result_text = "Build succeeded."
-        state.repeated_build_failure_count = 0
-        state.last_build_failure_signature = None
-        _append_experiment(
-            state,
-            purpose="rebuild the local workspace",
-            action_summary=state.last_action_summary or "run_build",
-            result=f"Build succeeded in {build.duration_seconds:.2f}s.",
-        )
-        return "Build succeeded."
-    changed_files = workspace.changed_files()
-    failure_text = (
-        f"Build failed with exit_code={build.exit_code}.\n"
-        f"stdout:\n{build.stdout}\n"
-        f"stderr:\n{build.stderr}"
-    )
-    _update_build_failure_state(state, failure_text, changed_files)
-    state.last_result_text = failure_text
-    _append_experiment(
-        state,
-        purpose="rebuild the local workspace",
-        action_summary=state.last_action_summary or "run_build",
-        result=f"Build failed in {build.duration_seconds:.2f}s.",
-    )
-    return failure_text
-
-
 async def _execute_green_check(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
     state: BrainState,
     client: LocalMCPClient,
+    workspace: WorkspaceSession | None,
 ) -> str:
     flash_artifact, symbol_artifact = _green_check_artifacts(invocation, board)
+    build_text: str | None = None
+    if workspace is not None and workspace.build_command:
+        try:
+            build = workspace.run_build(
+                timeout_seconds=state.effective_timeout_config.build_seconds
+            )
+        except WorkspaceError as exc:
+            changed_files = workspace.changed_files()
+            _update_build_failure_state(state, str(exc), changed_files)
+            state.last_action_summary = "run_green_check(build)"
+            state.last_result_text = f"WorkspaceError: {exc}"
+            raise
+        state.build_count += 1
+        build_text = (
+            f"green-check build exit_code={build.exit_code} duration={build.duration_seconds:.2f}s"
+        )
+        if build.exit_code != 0:
+            failure_text = (
+                f"Build failed with exit code {build.exit_code}.\n"
+                f"stdout:\n{build.stdout}\n"
+                f"stderr:\n{build.stderr}"
+            )
+            changed_files = workspace.changed_files()
+            _update_build_failure_state(state, failure_text, changed_files)
+            state.last_action_summary = "run_green_check(build)"
+            state.last_result_text = failure_text
+            raise RuntimeError(failure_text)
+
     flash_result = await _call_tool_with_timeout(
         client,
         "flash_firmware",
@@ -1741,6 +1731,8 @@ async def _execute_green_check(
         f"Green check passed on {board.board_id}: pc=0x{pc:08X}, "
         f"{symbol_fragment}uart_excerpt={_extract_uart_excerpt(serial_result.text)}"
     )
+    if build_text is not None:
+        state.last_result_text = f"{build_text}; {state.last_result_text}"
     _append_experiment(
         state,
         purpose="runner-owned final verification",
@@ -1920,6 +1912,9 @@ async def _tooling_failure_execution(
         provider=invocation.provider,
         continuation_mode=_continuation_mode_for_provider(invocation.provider),
         resume_requires_stable_workdir=invocation.provider == "claude-cli",
+        host_working_directory=workspace.root
+        if invocation.provider == "claude-cli" and workspace is not None
+        else None,
     )
     state = BrainState(
         run_mode=invocation.mode,
@@ -1941,7 +1936,7 @@ async def _tooling_failure_execution(
     )
     prompt_bundle = ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
-        tool_schema_text="Curated MCP tool surface:\n(tool metadata unavailable because the run failed before MCP startup)",
+        tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because the run failed before MCP startup)",
         provider_memory_text="",
         turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
@@ -2036,6 +2031,9 @@ async def run_turnkey(
         provider=invocation.provider,
         continuation_mode=provider.capabilities.continuation_mode,
         resume_requires_stable_workdir=provider.capabilities.resume_requires_stable_workdir,
+        host_working_directory=workspace.root
+        if provider.capabilities.resume_requires_stable_workdir and workspace is not None
+        else None,
     )
     state = BrainState(
         run_mode=invocation.mode,
@@ -2265,6 +2263,13 @@ async def run_turnkey(
                         "decision": provider_turn.decision.model_dump(mode="json"),
                     },
                 )
+                await _record_model_native_host_boundary(
+                    invocation=invocation,
+                    state=state,
+                    workspace=workspace,
+                    sink=event_sink,
+                    records=brain_events,
+                )
                 if decision.timeout_proposal is not None or decision.iteration_estimate is not None:
                     await apply_turn_timeout_policy(
                         sink=event_sink,
@@ -2482,7 +2487,7 @@ async def run_turnkey(
     if not initial_prompt_text:
         initial_prompt_text = ProviderPromptBundle(
             system_instructions=_build_instructions(invocation),
-            tool_schema_text="Curated MCP tool surface:\n(tool metadata unavailable because MCP startup did not complete)",
+            tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because MCP startup did not complete)",
             provider_memory_text="",
             turn_context_text=_build_turn_prompt(
                 invocation,

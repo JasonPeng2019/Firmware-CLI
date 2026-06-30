@@ -1,10 +1,22 @@
 # R12 P-Split Parallel Work Plan
 
-Read things-to-change for scope of the modules.
+Read `markdowns/things-to-change.md` for scope of the modules. Its Prototype
+Priority list is the hard acceptance bar; this file only schedules that work.
 
 ## Purpose
 
 This file defines the parallel branch schedule for the `R12` prototype.
+
+Status correction, 2026-06-30: the old D/E/F/G/H git branches have been deleted
+locally and remotely. Their requirement content remains prototype-required, but
+the branch objects are gone and must not be referenced as active work. Branch B's
+strict free-host-work phase and final governed board/terminal decision boundary
+has a new hard-bar correction: the old governed host-action compatibility layer
+must be removed, not merely schema-hidden or refused. `read_file`,
+`replace_file`, and `run_build` are no longer valid `TurnDecision` actions in
+any branch/module. The model-native `load_skills` context-expansion decision is
+now part of the current prototype scope. Full closure still requires Claude CLI
+code-writing proof after quota resets and exact official `nrf52833dk` proof.
 
 The goal is not to make the code unusual. Each branch should use normal,
 concrete Python modules, dataclasses/Pydantic models only where they fit, and
@@ -21,6 +33,9 @@ Rule of thumb:
 - the next wave starts only after the prior wave's required dependencies land
 - broad edits to `brain/loop.py`, `brain/actions.py`, `brain/cli.py`, and
   `server.py` are serialized integration work
+- no branch, wave, or validation report is complete unless every relevant
+  `things-to-change.md` prototype-priority item is mapped to code, tests, and
+  run evidence
 
 ## Simple Schedule
 
@@ -35,34 +50,32 @@ SERIAL:
   P0 foundation
 
 PARALLEL WAVE 1:
-  Branch A: provider session + tool schema prompt
+  Branch A: provider session + compact tool-index prompt
   Branch B: action boundary + batches + client actions
   Branch C: event spine + timeout policy
 
 SERIAL:
   merge A + B + C back into Wave 0
 
-PARALLEL WAVE 2:
-  Branch D: progress UI + inspector
-  Branch E: stream checkpoints
-  Branch F: scoped green approval
-  Branch G: static context efficiency + cache-assisted reuse
-  Branch H: process-tree + board-session cleanup guard
+WAVE 2 HARD-BAR WORK, NOT CURRENT GIT BRANCHES:
+  Module D: progress UI + inspector
+  Module E: stream checkpoints
+  Module F: scoped green approval
+  Module G: static context efficiency + cache-assisted reuse
+  Module H: process-tree + board-session cleanup guard
 
 SERIAL:
-  merge D + E + F + G + H back into Wave 0
+  merge the rebuilt Wave 2 hard-bar work back into Wave 0
 
 SERIAL:
   Final integration + acceptance cleanup
 ```
 
-Current integration note, 2026-06-30: the active `P-Wave-A` worktree now
-contains the Wave 1 A/B/C merge-back candidate. Branch C's event spine,
-timeout policy, effective-timeout state, and hidden server-timeout sync have
-been integrated onto the Branch A/B spine. The current attached-board proof is
-`nucleo_l476rg + nrf52840dk` with both `codex-cli` and `claude-cli`; exact
-official `nrf52833dk`, API-provider parity, and fresh-machine proof remain
-deferred prototype risks.
+Current integration note, 2026-06-30: Wave 1 A and C are acceptable for their
+prototype slices, and Branch B's free-host/final-governed-decision code boundary
+has now been corrected. Codex CLI proof on `nucleo_l476rg + nrf52840dk` is real
+attached-board evidence, but it does not replace the blocked Claude CLI rerun,
+exact official `nrf52833dk`, API-provider parity, or fresh-machine proof.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -177,10 +190,10 @@ Archived implementation docs for this step:
 After `P0` lands back into Wave 0, Branch A, Branch B, and Branch C branch from
 Wave 0 and run in parallel.
 
-### Branch A - Provider Session + Tool Schema Prompt
+### Branch A - Provider Session + Compact Tool-Index Prompt
 
 Branch A owns provider session continuity where the provider surface makes that
-possible, plus the model-facing tool schema prompt. It should not overclaim
+possible, plus the model-facing compact tool-index prompt. It should not overclaim
 "one native provider session" for every provider:
 
 - API-backed providers should use native/session-capable continuation where
@@ -194,11 +207,13 @@ possible, plus the model-facing tool schema prompt. It should not overclaim
 - do not call a CLI transcript/local-memory fallback a true native persistent
   provider session unless the provider CLI actually resumes the same session.
 
-Tool schema forwarding in this branch means a curated model-facing schema bundle
-for the allowed server-native tools. It does not expose raw MCP handles, internal
-brain/admin tools, or every MCP server function. Branch A keeps the current
-`TurnDecision` JSON contract; provider-native tool calls remain a later optional
-change, not part of this branch.
+Tool schema forwarding in this branch means a curated compact model-facing tool
+index for the allowed server-native tools, sourced from live MCP descriptions and
+input schemas but rendered as short descriptions plus required/optional argument
+hints. It does not expose raw MCP handles, full repeated JSON schema bodies,
+internal brain/admin tools, or every MCP server function. Branch A keeps the
+current `TurnDecision` JSON contract; provider-native tool calls remain a later
+optional change, not part of this branch.
 
 Serial order inside Branch A:
 
@@ -212,7 +227,7 @@ Serial order inside Branch A:
    - `provider_factory.py`
 3. `tool_schemas.py`
    - read real MCP tool descriptions/schemas
-   - render the model-facing prompt bundle
+   - render the compact model-facing prompt index
 4. Small integration hook:
    - `loop.py` consumes provider session state and schema bundle through the
      `P0` hook
@@ -281,7 +296,12 @@ Cross-branch dependency:
 
 - Branch B module 3 may consume Branch A's schema shape only after `P0`; it
   should not wait for Branch A's full implementation.
-- Branch B module 5 is needed by Wave 2 Branch E and Branch F.
+- Branch B module 5 and the corrected free-host/final-decision boundary are
+  needed by Wave 2 Module E and Module F.
+- The 2026-06-30 model-native skill-loading correction extends Branch B's
+  boundary: host file/edit/build actions must be structurally absent, and
+  `load_skills(skill_ids=[...])` is the only brain-mediated model-native
+  context expansion action in this pass.
 
 Should not own:
 
@@ -299,7 +319,7 @@ timeout state session/client scoped now, not process-global prototype state:
 - timeout proposals, clamps, effective budgets, and pending server-sync values
   live with the current turnkey brain/client session;
 - server timeout sync is brain-only/internal and must not appear in the
-  model-facing tool schema bundle;
+  model-facing compact tool index;
 - server timeout updates are partial updates for subsequent operations, not
   mutation of config files and not a promise to interrupt already-running
   pyOCD/vendor calls;
@@ -307,14 +327,14 @@ timeout state session/client scoped now, not process-global prototype state:
   calls. A killable worker/job layer remains out of scope for this branch.
 
 Branch C defines event kinds, sinks, timeout clamps, and timeout propagation
-hooks. Branch D renders those events, Branch E owns checkpoint continue/cancel
+hooks. Module D renders those events, Module E owns checkpoint continue/cancel
 decisions, and Branch B applies batch timeout behavior during batch execution.
 
 Current implementation status, 2026-06-30: Branch C is implemented in the
 current Wave 1 merge-back candidate and has been live-validated with the
 Branch C harness on `nucleo_l476rg` and `nrf52840dk` using both local CLI
 providers. The branch still intentionally does not implement killable
-pyOCD/vendor worker cancellation; that remains Wave 2 Branch H / future product
+pyOCD/vendor worker cancellation; that remains Wave 2 Module H prototype
 hardening.
 
 Serial order inside Branch C:
@@ -345,7 +365,7 @@ Cross-branch dependency:
 - Branch C module 4 may touch provider adapters after Branch A's provider
   session fields are stable. If that would conflict, split it into a tiny
   integration patch after Branch A lands.
-- Branch C module 1 and module 2 are required by Wave 2 Branch D and Branch E.
+- Branch C module 1 and module 2 are required by Wave 2 Module D and Module E.
 
 Should not own:
 
@@ -356,25 +376,30 @@ Should not own:
 - provider adapter rewrites beyond the stable timeout-consumption hook
 - model-facing timeout admin tools
 
-## Wave 2 - Parallel Branches
+## Wave 2 - Prototype Hard-Bar Work
 
 Wave 2 starts only after Branch A, Branch B, and Branch C have each merged back
-into Wave 0 and the merged Wave 0 branch has passed the agreed checks.
+into Wave 0 and the merged Wave 0 branch has passed the agreed checks. Because
+Branch B's code boundary is only Codex-validated so far, Wave 2 must not start
+as if the full provider/hardware proof were complete.
 
-Branch D, Branch E, Branch F, Branch G, and Branch H then branch from the
-updated Wave 0 branch and run in parallel.
+The old D/E/F/G/H git branches have been deleted. The sections below are now
+requirement modules, not active branch names. They may be rebuilt as new
+branches after Branch B is corrected, but the requirements themselves remain
+mandatory for the first prototype.
 
-- Branch D needs Branch C module 1.
-- Branch E needs Branch B module 5 and Branch C module 1/module 2.
-- Branch F needs Branch B module 5 if green tests use client actions.
-- Branch G needs Branch A prompt/session metadata and Branch C event shapes if
+- Module D needs Branch C module 1.
+- Module E needs Branch B module 5 and the corrected free-host/decision
+  boundary, plus Branch C module 1/module 2.
+- Module F needs Branch B module 5 if green tests use client actions.
+- Module G needs Branch A prompt/session metadata and Branch C event shapes if
   cache-reuse events are emitted.
-- Branch H needs Branch A provider subprocess/session behavior, Branch C event
+- Module H needs Branch A provider subprocess/session behavior, Branch C event
   shapes, and the current MCP/pyOCD/serial lifecycle paths.
 
-### Branch D - Progress UI + Inspector
+### Module D - Progress UI + Inspector
 
-Serial order inside Branch D:
+Serial order inside Module D:
 
 1. `cli_progress.py`
    - render live progress from `BrainEvent`
@@ -384,13 +409,6 @@ Serial order inside Branch D:
 3. CLI hook:
    - `cli.py` exposes progress/inspector flags through a small integration edit
 
-Parallel with:
-
-- Branch E module 1 through module 4
-- Branch F module 1 through module 3
-- Branch G module 1 through module 5
-- Branch H module 1 through module 5
-
 Should not own:
 
 - event shape redesign
@@ -399,9 +417,9 @@ Should not own:
 - proof escalation policy
 - static-context rendering, skill body loading, or cache key/reuse semantics
 
-### Branch E - Stream Checkpoints
+### Module E - Stream Checkpoints
 
-Serial order inside Branch E:
+Serial order inside Module E:
 
 1. `stream_checkpoints.py`
    - checkpoint records
@@ -414,17 +432,11 @@ Serial order inside Branch E:
 4. Client-action chunking:
    - `client_actions.py` emits chunks and observes cancellation
 
-Parallel with:
-
-- Branch D module 1 through module 3
-- Branch F module 1 through module 3
-- Branch G module 1 through module 5
-- Branch H module 1 through module 5
-
 Cross-branch dependency:
 
-- Branch E module 4 depends on Branch B module 5.
-- Branch E uses Branch C timeout/event shapes, but does not own them.
+- Module E module 4 depends on Branch B module 5 and the corrected free-host /
+  final-governed-decision boundary.
+- Module E uses Branch C timeout/event shapes, but does not own them.
 
 Should not own:
 
@@ -434,9 +446,9 @@ Should not own:
   reuse
 - proof escalation policy
 
-### Branch F - Scoped Green Approval
+### Module F - Scoped Green Approval
 
-Serial order inside Branch F:
+Serial order inside Module F:
 
 1. `green_approval.py`
    - manual/human-confirmed model-made test flow
@@ -451,16 +463,9 @@ Serial order inside Branch F:
      and which expensive live proof remains
    - integrates with spec/review/test-suite reports, not provider/session runtime
 
-Parallel with:
-
-- Branch D module 1 through module 3
-- Branch E module 1 through module 4
-- Branch G module 1 through module 5
-- Branch H module 1 through module 5
-
 Cross-branch dependency:
 
-- If green tests run as client actions, Branch F module 1 waits for Branch B
+- If green tests run as client actions, Module F module 1 waits for Branch B
   module 5.
 
 Should not own:
@@ -471,21 +476,25 @@ Should not own:
 - static-context rendering, skill body loading, cache keys, or cache-assisted
   reuse
 
-### Branch G - Static Context Efficiency + Cache-Assisted Reuse
+### Module G - Static Context Efficiency + Cache-Assisted Reuse
 
-Branch G exists only to keep static-context efficiency and cache/reuse additive
-and parallelizable. It owns skill-index rendering, on-demand skill bodies, and
-cache-assisted setup reuse because those all touch prompt/static-context assembly.
-It must not spread cache or skill-rendering policy into D/E/F-owned modules
-during the parallel wave.
+Module G owns skill-index rendering, on-demand skill bodies, model-native skill
+loading, and cache-assisted setup reuse because those all touch prompt/static-
+context assembly. It must not spread cache or skill-rendering policy into
+D/E/F-owned modules during Wave 2.
 
-Serial order inside Branch G:
+Serial order inside Module G:
 
 1. `skills.py` static-context split
    - render selected-skill index and always-on safety lines
    - render one selected skill body on demand
    - keep safety lines always present; only diagnostic bodies are pullable
    - validate requested skill IDs against the already-selected set
+   - implement `load_skills(skill_ids=[...])` as a turn-closing context
+     expansion decision, with recursive dependency closure, dependency-first
+     post-order init scripts, de-duping, clear cycle errors, session-state
+     tracking, prompt injection on the next provider turn, and per-skill
+     provider-runtime folders for usable scripts/assets
 2. `artifact_cache.py`
    - content-addressed cache record schema
    - source/workspace hash, build-command fingerprint, toolchain fingerprint
@@ -504,26 +513,19 @@ Serial order inside Branch G:
      the turn-closing decision/native-tool path selected by the branch spec
    - keep hooks minimal; broad prompt assembly rewrites move to final wiring
 
-Parallel with:
-
-- Branch D module 1 through module 3
-- Branch E module 1 through module 4
-- Branch F module 1 through module 4
-- Branch H module 1 through module 5
-
 Cross-branch dependency:
 
-- Branch G may consume Branch C event shapes, but it must not redesign them.
-- Branch G may read Branch A prompt/session metadata, but it must not change
+- Module G may consume Branch C event shapes, but it must not redesign them.
+- Module G may read Branch A prompt/session metadata, but it must not change
   provider session semantics.
-- Branch G must not change provider-memory semantics; the prototype relies on
+- Module G must not change provider-memory semantics; the prototype relies on
   the existing compact memory ledger plus configurable native sync.
 
 Should not own:
 
-- workspace build chunking or cancellation, owned by Branch E
-- progress/inspector UI rendering, owned by Branch D
-- scoped green approval semantics, owned by Branch F
+- workspace build chunking or cancellation, owned by Module E
+- progress/inspector UI rendering, owned by Module D
+- scoped green approval semantics, owned by Module F
 - final hardware proof replacement; cache reuse can skip setup/non-final repeats
   but cannot replace required live final verification
 - broad edits to `loop.py`, `workspace.py`, `cli.py`, or `actions.py`; only small
@@ -532,14 +534,14 @@ Should not own:
 - skill-guided host-work A/B/C experiments, owned by later MVP entry #13
 - provider-memory semantics, owned by Branch A and final integration if needed
 
-### Branch H - Process-Tree + Board-Session Cleanup Guard
+### Module H - Process-Tree + Board-Session Cleanup Guard
 
-Branch H owns deployment hygiene for subprocess-backed and hardware-backed runs.
+Module H owns deployment hygiene for subprocess-backed and hardware-backed runs.
 It ensures provider CLIs, local MCP server children, pyOCD sessions, serial ports,
 validation commands, and board-debug sessions do not leak across failures,
 timeouts, interrupts, or malformed command invocations.
 
-Serial order inside Branch H:
+Serial order inside Module H:
 
 1. `process_hygiene.py`
    - baseline process snapshots
@@ -567,37 +569,30 @@ Serial order inside Branch H:
    - tests that simulate hung child providers, failed MCP startup, timeout during
      pyOCD/serial work, and interrupted validation
 
-Parallel with:
-
-- Branch D module 1 through module 3
-- Branch E module 1 through module 4
-- Branch F module 1 through module 4
-- Branch G module 1 through module 5
-
 Cross-branch dependency:
 
-- Branch H may consume Branch C event shapes for cleanup events, but must not
+- Module H may consume Branch C event shapes for cleanup events, but must not
   redesign the event spine.
-- Branch H may wrap Branch A provider subprocesses, but must not change provider
+- Module H may wrap Branch A provider subprocesses, but must not change provider
   memory/session semantics except to make cleanup explicit on failure.
-- Branch H may touch MCP/pyOCD/serial close paths, but it must not implement
-  stream checkpoint continue/cancel policy; that remains Branch E.
+- Module H may touch MCP/pyOCD/serial close paths, but it must not implement
+  stream checkpoint continue/cancel policy; that remains Module E.
 
 Should not own:
 
-- progress/inspector UI rendering, owned by Branch D
-- stream checkpoint policy, owned by Branch E
-- scoped green approval semantics, owned by Branch F
-- static-context rendering or cache reuse, owned by Branch G
-- broad provider SDK rewrites; this branch hardens lifecycle cleanup around the
+- progress/inspector UI rendering, owned by Module D
+- stream checkpoint policy, owned by Module E
+- scoped green approval semantics, owned by Module F
+- static-context rendering or cache reuse, owned by Module G
+- broad provider SDK rewrites; this module hardens lifecycle cleanup around the
   current adapters and leaves final provider API replacement to later
 - direct-hardware sandboxing; accepted soft hardware stance remains unchanged
 
 ## Final Integration - Serial Last
 
-After Branch D, Branch E, Branch F, Branch G, and Branch H have each merged back
-into Wave 0 and the merged Wave 0 branch has passed the agreed checks, do one
-short serial integration branch.
+After Branch B is corrected and the Wave 2 Module D/E/F/G/H hard-bar work is
+rebuilt, merged back into Wave 0, and checked, do one short serial integration
+branch.
 
 Owns:
 
@@ -624,9 +619,9 @@ These files are shared integration points:
 - `src/pyocd_debug_mcp/brain/cli.py`
 - `src/pyocd_debug_mcp/server.py`
 
-During Wave 1 and Wave 2, a branch may touch those files only for a small hook
-to its owned module. Broad edits to these files happen in `P0` or `G`, not in
-parallel branches.
+During Wave 1 and Wave 2, a branch or module branch may touch those files only
+for a small hook to its owned module. Broad edits to these files happen in `P0`
+or final integration, not in parallel branches.
 
 ## Merge-Back Rule
 
@@ -653,14 +648,15 @@ Merge sequence:
 4. Branch A, B, and C from Wave 0.
 5. Merge A, B, and C back into Wave 0 one at a time, running checks after each
    merge.
-6. Branch D, E, F, G, and H from the updated Wave 0.
-7. Merge D, E, F, G, and H back into Wave 0 one at a time, running checks after
-   each merge.
-8. Branch `Final` from Wave 0.
-9. Merge `Final` back into Wave 0 after final acceptance cleanup.
+6. Correct Branch B before any Wave 2 hard-bar work starts.
+7. Create new Wave 2 module branches, if desired, from the corrected Wave 0.
+8. Merge the rebuilt Module D, E, F, G, and H work back into Wave 0 one at a
+   time, running checks after each merge.
+9. Branch `Final` from Wave 0.
+10. Merge `Final` back into Wave 0 after final acceptance cleanup.
 
-This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G/H
-without carrying stale branch state forward.
+The old D/E/F/G/H branch objects were deleted on 2026-06-30; do not carry stale
+branch state forward.
 
 ## Conflict Escalation Rule
 
@@ -697,7 +693,7 @@ into the other branch, or into final integration.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.
-- Branch A is now implemented on `P-Wave-A` through provider session state,
+- Branch A is acceptable for the current prototype bridge through provider session state,
   CLI resume handles, OpenAI Responses continuation, tool-schema forwarding,
   and provider progress events. Remaining Branch A hardening is final-provider
   integration quality: Codex SDK/app-server thread APIs, Claude Agent SDK
@@ -705,19 +701,19 @@ into the other branch, or into final integration.
   continuous provider session. Strict policy means resume failure stops headless
   runs by default, while the interactive shell must ask before retrying or
   starting a new provider session from saved local memory.
-- Branch B behavior has now been merged onto `P-Wave-A` as additive action
-  surface: action-boundary behavior, ordered batches, bounded `wait`, UART
-  write, and session-scoped client actions. It does not own provider-session
-  continuity, timeout policy ownership, inspector/progress rendering, stream
-  checkpoints, scoped green approval, or provider-native tool-call conversion.
-- Branch B attached-board deployment proof exists on the Branch B side for
-  `nucleo_l476rg + nrf52840dk`, including real Codex, the real MCP subprocess,
-  public `--client-action` registration, workspace edit/build runs, and
-  repeated user-prompt / multi-loop runs. Exact official `nrf52833dk` Branch B
-  deployment proof remains pending because the Nordic board attached during the
-  Branch B completion pass identified as `nrf52840dk` / `NRF52840_xxAA_REV2`,
-  a retained alternate profile rather than the official scoped Nordic board.
-- Branch C behavior is implemented in the current Wave 1 A/B/C merge-back
+- Branch B's strict prototype boundary has been tightened and is now summarized
+  in `markdowns/current-progress.md` and `markdowns/things-to-change.md`:
+  host-only file/shell/script work stays model-native/free, `read_file`,
+  `replace_file`, and `run_build` are structurally impossible as governed
+  decisions, and each provider turn still closes with one governed
+  board/client/terminal or `load_skills` context-expansion decision. Codex CLI
+  `b001_wrong_boot_text` proof is green on `nucleo_l476rg + nrf52840dk`, and a
+  Codex CLI no-hardware `load_skills` smoke is green at
+  `runs/turnkey-20260630T084055Z-0a0377bc`. Claude CLI is blocked by quota
+  until the morning reset, and exact official `nrf52833dk` proof remains
+  pending.
+- Branch C behavior is acceptable for the Wave 1 C slice in the current
+  merge-back
   candidate through session/client-scoped timeout state, brain-only server
   timeout sync, and event-spine hooks. The current proof is live on the attached
   `nucleo_l476rg + nrf52840dk` pair with both local CLI providers; exact

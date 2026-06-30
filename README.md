@@ -35,7 +35,7 @@ brain/runtime:
 - operator-facing `pyocd-debug` CLI
 - board-aware skills tree
 - sibling turnkey benchmark runner
-- live MCP tool-schema prompting sourced from the local server metadata plus a curated response-semantics overlay
+- compact MCP tool-index prompting sourced from the local server metadata plus a curated response-semantics overlay
 
 The current live status is:
 

@@ -8,18 +8,22 @@
 > BYO-agent benchmark milestone. Read those sections as history, not as pending work. For
 > live status see `current-progress.md`; for the file map see `repo_file_index.md`.
 >
-> **Current proof boundary:** the Codex-backed `R12` turnkey path is now
-> live-proven on the scoped pair through the full frozen 12-case corpus. The
-> remaining proof gaps are narrower and live in `current-progress.md`: the
-> required second-provider closure bar, plus true fresh-machine Windows/macOS
-> managed-Zephyr/no-NCS deployment validation.
+> **Current proof boundary:** the earlier Codex-backed `R12` turnkey path has
+> historical scoped-pair corpus proof, but the active capability prototype is
+> not complete. Branch A is acceptable for provider-session/schema work,
+> Branch C is acceptable for event/timeout policy, and Branch B's free
+> host-side model work plus final governed board/terminal decision boundary has
+> been tightened: old governed host actions are deleted structurally and
+> `load_skills` provides model-native skill/context loading. Full closure still
+> requires Claude CLI code-writing proof after quota resets,
+> exact official `nrf52833dk` proof, and the remaining Wave 2
+> prototype-required modules. See
+> `current-progress.md` and `things-to-change.md`.
 >
-> **Prototype execution note:** the current prototype branch plan still uses a
-> narrower Wave 0 gate than full `R12` closure. Wave 0 must re-prove the
-> current Codex-backed turnkey baseline on the currently validated host and
-> scoped pair. Full second-provider reproof and true fresh-machine portability
-> proof are deferred, unverified prototype risk unless later restored as hard
-> gates.
+> **Prototype execution note:** the Prototype Priority list in
+> `things-to-change.md` is the hard bar. No subset implementation or green test
+> run can close the prototype unless every listed item is mapped to code,
+> tests, and run evidence.
 
 This document rewrites the project roadmap in simpler, more execution-focused language.
 
@@ -1154,7 +1158,8 @@ This item builds the premium product tier on top of the proven substrate.
 - keep the turnkey brain as a native MCP client of the server
 - make provider sessions persistent where the provider supports it
 - define the free-host-work / final-board-decision boundary
-- forward real MCP tool descriptions and schemas into the model prompt
+- forward real MCP tool metadata into the model prompt as a compact curated
+  tool index, not full repeated JSON schema bodies
 - support model-composed batches of governed actions
 - add `wait` and UART write as basic model-facing capabilities
 - implement skills loading and selection
@@ -1183,7 +1188,7 @@ This item builds the premium product tier on top of the proven substrate.
 - skills data shape and initial skill sets
 - CLI frontend
 - event/progress stream and inspector artifacts
-- model-facing tool schema bundle
+- compact model-facing tool index
 - batch action executor with `wait` and UART write
 - bounded timeout policy with dynamic refinement
 - client-action store and governed execution path
@@ -1213,7 +1218,7 @@ This item builds the premium product tier on top of the proven substrate.
 
 ### Definition of done
 
-`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work, request governed board actions only when needed, avoid unbounded waits, stream progress, and validate fixes with scoped evidence.
+`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work freely on the host, request governed board actions only when needed, avoid unbounded waits, stream progress, validate fixes with scoped evidence, use cache/static-context efficiency, checkpoint long UART/build/client-action streams, and clean up provider/MCP/pyOCD/serial/board sessions. A narrower subset is not done.
 
 ### What it does not include
 
@@ -1428,17 +1433,16 @@ This gives the team continuous motion without encouraging random speculative wor
 
 ### Current `R12` Prototype Parallel Frontier
 
-The current `R12` prototype should be split into parallel packets instead of
-treated as one serial feature. These packets share the same governing contract:
-the model may work freely on host-only tasks, but server-native board actions
-remain gated by the brain.
+The current `R12` prototype was split into parallel packets, but the active
+status has been corrected. Branch B is incomplete against the governing
+contract: the model must work freely on host-only tasks and emit a governed
+decision only for server-native board actions or terminal communication.
 
 The conflict-safe module split is defined in
-`markdowns/R12_P_SPLIT.md`. That file is the working agreement for branch
-ownership during the prototype. It deliberately uses normal concrete modules
-and data shapes, not unusual abstraction layers.
+`markdowns/R12_P_SPLIT.md`. That file is a schedule, not the scope authority.
+`markdowns/things-to-change.md` is the hard prototype bar.
 
-Simple branch schedule:
+Corrected schedule:
 
 - serial first: Wave 0 clean slate / `P0.0` validation
   - fix current dirty repo issues
@@ -1458,18 +1462,24 @@ Simple branch schedule:
     - minimal `brain/client_actions.py`
     - compatibility-preserving hook points in `brain/actions.py`,
       `brain/loop.py`, and `brain/cli.py`
-- parallel Wave 1:
-  - this is now the next implementation frontier
-  - Branch A: provider session + tool schema prompt
-  - Branch B: action boundary + batches + client actions
-  - Branch C: event spine + timeout policy
-- serial merge-back: A, B, and C merge into Wave 0 one at a time
-- parallel Wave 2:
-  - Branch D: progress UI + inspector
-  - Branch E: stream checkpoints
-  - Branch F: scoped green approval
-  - Branch G: static context efficiency and cache-assisted reuse
-- serial merge-back: D, E, F, and G merge into Wave 0 one at a time
+- Wave 1:
+  - Branch A: provider session + compact tool-index prompt; acceptable prototype bridge
+  - Branch B: action boundary + batches + client actions; free-host/final-
+    governed-decision behavior is Codex-tested on the attached pair, the old
+    `read_file`/`replace_file`/`run_build` action models are removed, and
+    `load_skills` now provides model-native workflow context, with
+    Claude/exact-board proof still pending
+  - Branch C: event spine + timeout policy; acceptable Wave 1 slice, with
+    enforceable cleanup still owned by the prototype cleanup module
+- serial merge-back: A, corrected B, and C merge into Wave 0 one at a time
+- Wave 2 hard-bar modules, not current git branches:
+  - Module D: progress UI + inspector
+  - Module E: stream checkpoints
+  - Module F: scoped green approval
+  - Module G: static context efficiency and cache-assisted reuse
+  - Module H: process-tree + board-session cleanup guard
+- serial merge-back: rebuilt Wave 2 hard-bar work merges into Wave 0 one module
+  at a time
 - serial last: final integration + acceptance cleanup
 
 Parallelization rule:
@@ -1482,14 +1492,15 @@ Parallelization rule:
 - second-provider full reproof and fresh-machine portability proof are deferred
   prototype risk for this phase unless the team explicitly promotes them back to
   hard blockers
-- work inside a branch is serial
-- branches inside the same wave are parallel
+- work inside a branch/module is serial
+- branches/modules inside the same wave may be parallel only after dependencies
+  are complete
 - cross-branch dependencies are called out in `markdowns/R12_P_SPLIT.md`
 - `P0` branches from Wave 0 and merges back before Wave 1 starts
-- Branches A/B/C branch from Wave 0 and merge back into Wave 0 before D/E/F/G
-  start
-- Branches D/E/F/G branch from the updated Wave 0 and merge back into Wave 0
-  before final integration starts
+- Branches A/B/C branch from Wave 0 and merge back into Wave 0 before Wave 2
+  starts; B must be corrected first
+- the old D/E/F/G/H git branches were deleted on 2026-06-30; create fresh Wave
+  2 branches only after B is corrected
 - final integration branches from Wave 0 after Wave 2 and contains only final
   wiring / acceptance cleanup
 - when Wave 0 changes during an active parallel wave, merge `P-Wave-0` into each

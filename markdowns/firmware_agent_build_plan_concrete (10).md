@@ -14,6 +14,20 @@
 > API-provider parity, and the broader fresh-machine portability proof. Live status: `current-progress.md`; file map:
 > `repo_file_index.md`.
 
+> **R12 prototype hard-bar amendment (2026-06-30):** host-local work is
+> provider-native, not a governed brain action. The old `read_file`,
+> `replace_file`, and `run_build` `TurnDecision` action types have been removed
+> structurally, including models, schema variants, executor branches, batch
+> special-cases, and stale-action refusal code. Model-native workflow context is
+> loaded through the new `load_skills(skill_ids=[...])` context-expansion
+> decision, with recursive dependencies, dependency-first init scripts,
+> per-skill provider-runtime folders, and prompt injection on the next provider
+> turn. The MCP tool prompt injection is now compact: the brain renders a
+> curated tool index with short descriptions and required/optional argument
+> hints, not repeated full MCP JSON schema bodies. Current proof is focused
+> tests, full Python-change gate, and a no-hardware Codex CLI smoke;
+> Claude/live-board reproof remains a handoff item.
+
 > **Scope of this document.** This is the *design + implementation plan* — what to build, in what
 > order, and the design decision behind each step. It deliberately stops short of writing the code
 > itself: where a design choice is straightforward, the "how" is stated plainly; where it isn't, the
@@ -755,12 +769,16 @@ Frozen implementation choices for the first pass:
    - `skills/mcu_families/nrf52833/`
    - `skills/mcu_families/stm32l476/`
 5. **Keep the model-facing action surface smaller than the server surface.** The first turnkey acceptance
-   path used:
+   path used a temporary bridge:
    - MCP-backed actions: `connect`, `disconnect`, `get_board_info`, `get_state`, `halt`, `resume`,
      `reset`, `read_core_register`, `read_memory`, `flash_firmware`, `read_serial`, `unlock_recover`
    - local actions: read one file, replace one file, run the case build command, diff the workspace,
      run final green verification
-   Do **not** expose write-memory/register or breakpoint tools to the model in v1.
+   That bridge is not the final Stage 5 prototype bar. The hard prototype target
+   below requires host-only file/shell/script work to be model-native/free, with
+   only board/server-native or terminal decisions returned to the brain as the
+   governed turn boundary. Do **not** expose write-memory/register or breakpoint
+   tools to the model in v1.
 6. **Build a dual-mode CLI frontend**:
    - `pyocd-debug-brain run --board-id ... --task ...`
    - `pyocd-debug-brain benchmark --case-id ...`
@@ -771,6 +789,11 @@ Frozen implementation choices for the first pass:
    parity on that corpus plus lower operator burden, not a harder corpus or a new benchmark taxonomy.
 
 Current prototype capability target on top of that first pass:
+
+This list is mandatory for the first capability prototype. Agents must not
+declare a branch, wave, or product pass complete by implementing only a subset
+that happens to test green. The bar is the product prototype described here and
+in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
 
 1. **Use persistent provider sessions where available.** API providers should continue the same model
    conversation through native session/conversation handles. The current
@@ -787,8 +810,10 @@ Current prototype capability target on top of that first pass:
 2. **Split host freedom from board governance.** The model can do host-only code/file/process work as
    model-native actions. It emits a final governed decision only when it needs server-native board tools
    or needs to return a final answer.
-3. **Forward real tool schemas.** The turnkey prompt includes actual MCP tool descriptions and JSON
-   schemas so the model is not reasoning from stale hand-written summaries.
+3. **Forward real tool metadata compactly.** The turnkey prompt includes a curated compact index
+   sourced from live MCP tool descriptions and input schemas: one-line descriptions,
+   required/optional argument hints, and stable response/refusal semantics. Do not
+   reprint full MCP JSON schema bodies into provider prompts.
 4. **Support batched board decisions.** A decision may contain an ordered batch of actions. Add `wait`
    and UART write to the basic action surface. Keep write-memory/register and breakpoint mutation out of
    this prototype unless a later spec explicitly adds them.
@@ -818,11 +843,12 @@ Current prototype capability target on top of that first pass:
     on a configurable cadence. The prototype default is every 10 provider turns,
     configurable with `--native-sync-every` or
     `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`; `0` disables periodic sync injection.
-11. **Keep static context cheap and cache-friendly.** Skill bodies and other
-    large static prompt blocks should not be reprinted every turn. Render a
-    selected-skill index plus safety lines in the cached prefix, let the model
-    pull full skill bodies on demand, and use content hashes for rendered
-    tool/skill/schema blocks and deterministic setup artifacts.
+11. **Keep static context cheap and cache-friendly.** Skill bodies, MCP schema
+    bodies, and other large static prompt blocks should not be reprinted every
+    turn. Render a compact governed-tool index plus selected-skill index and
+    safety lines in the cached prefix, let the model pull large bodies on
+    demand where applicable, and use content hashes for rendered tool/skill
+    blocks and deterministic setup artifacts.
 12. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
     UART reads, builds/external commands, and long client actions. Do not broaden this prototype into the
     pyOCD worker/job layer.
@@ -833,6 +859,16 @@ show a substantially more agentic loop: persistent work context, periodic compac
 static context with on-demand detail, free host-side code work, governed board decisions, visible progress,
 bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
 Shipped-product polish and broad UI completeness are explicitly later work.
+
+Current status correction, 2026-06-30: the Wave 1 Branch B subset has now been
+corrected in code for the Stage 5 prototype bar: host-side file/shell/build work
+stays model-native/free, stale host-action decisions are refused, and every
+provider turn still closes with exactly one governed board/client/terminal
+decision. Codex CLI proof is green on the attached
+`nucleo_l476rg + nrf52840dk` pair, but Claude CLI code-writing proof is blocked
+by provider quota until the morning reset and exact official `nrf52833dk` proof
+remains pending. Wave 2 visibility/proof/static-context/checkpoint/cleanup
+items remain prototype requirements, not optional polish.
 
 ---
 

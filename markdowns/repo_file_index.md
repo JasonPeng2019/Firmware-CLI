@@ -59,7 +59,7 @@ a glance before relying on detail.
 
 | Path | What it is / does |
 |---|---|
-| `brain/actions.py` | Structured brain action/result schema (curated server-tool actions, local workspace actions, finalize result). |
+| `brain/actions.py` | Structured brain action/result schema: curated server-tool actions, `load_skills` context expansion, green check, bounded wait, governed client-action execution, and finalize result. |
 | `brain/decision_types.py` | Shared future-facing prototype decision/planning shapes: timeout proposals, iteration estimates, early-exit verdicts, and batch/action-call containers. |
 | `brain/app.py` | Shared run/benchmark invocation helpers reused by both the headless brain CLI and the operator-facing UX CLI. |
 | `brain/benchmark.py` | Core R12 benchmark runner over the native turnkey brain; reuses the frozen R11 case corpus and scoring contract. |
@@ -68,8 +68,9 @@ a glance before relying on detail.
 | `brain/config.py` | Turnkey provider config loading (`openai-api`, `anthropic-api`, `codex-cli`, `claude-cli`) plus the `TurnkeyInvocation` model. |
 | `brain/evidence.py` | Typed observation/hypothesis/experiment/strategy-evaluation records persisted into turnkey state artifacts. |
 | `brain/events.py` | Structured event model + sink contract for live UX rendering and persisted `brain_events.jsonl` artifacts. |
-| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt-bundle assembly, provider-session threading, action execution, convergence, and run-artifact capture. |
+| `brain/loop.py` | Deterministic outer loop for the turnkey brain: prompt-bundle assembly, provider-session threading, governed action/context-expansion execution, convergence, and run-artifact capture. |
 | `brain/mcp_client.py` | Local stdio MCP client wrapper that launches `uv run pyocd-debug-mcp` and exposes typed tool descriptors plus parsed tool-call helpers. |
+| `brain/model_native_skills.py` | Folder-based model-native workflow skill loader: manifest parsing, recursive dependency closure, dependency-first init scripts, provider-runtime exposure, session-state records, and prompt context rendering. |
 | `brain/playbooks.py` | Loader for the internal deterministic turnkey helper playbooks stored under `playbooks/turnkey/`, resolved from repo roots in checkout mode or from bundled package data in wheel installs. |
 | `brain/cli_parsing.py` | Shared turnkey CLI parsing helpers for JSON planning-hook flags such as timeout overrides, timeout proposals, and iteration estimates. |
 | `brain/provider_anthropic.py` | Anthropic Messages API wrapper for per-turn structured next-action generation using the canonical local-memory session model plus optional summarizer calls for `model-summary` compaction; it stays `local-primary` because the Messages API is stateless. |
@@ -80,8 +81,8 @@ a glance before relying on detail.
 | `brain/provider_parsing.py` | Shared parsing helpers for extracting `TurnDecision` JSON from provider output text. |
 | `brain/provider_types.py` | Shared hybrid provider/session contracts: provider capabilities, native-handle metadata, compact memory entries, compaction helpers, explicit prompt render modes, `ProviderTurn`, coarse provider progress updates, and `DecisionProvider`. |
 | `brain/skills.py` | YAML skill-manifest loader, applicability matching, and deterministic prompt rendering; resolves skills from the live repo when present or from bundled package data when installed. |
-| `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, observations). |
-| `brain/tool_schemas.py` | Loads live MCP tool metadata, filters it to the curated allowed tool surface, and renders the stable tool-schema prompt bundle plus curated response/refusal semantics used by the brain. |
+| `brain/state.py` | In-memory brain run state (session ids, counters, verification state, blocked/refused families, model-native skill state, observations). |
+| `brain/tool_schemas.py` | Loads live MCP tool metadata, filters it to the curated allowed tool surface, keeps schema records for provenance, and renders the compact tool-index prompt plus curated response/refusal semantics used by the brain. |
 | `brain/workspace.py` | Safe local workspace read/replace/build helpers plus diff capture. |
 
 ### `ux/` — operator-facing turnkey shell
@@ -187,8 +188,8 @@ a glance before relying on detail.
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
-| `R12_P_SPLIT.md` | Conflict-safe R12 prototype wave/branch split: Wave 0/P0.0 clean-slate validation, serial P0, parallel Branches A/B/C, parallel Branches D/E/F/G, merge-back rules, and serial final integration. |
-| `curr/things-to-change.md` | Active product/design backlog for the R12 capability prototype; ordered from earliest prototype work to later MVP/nice-to-have items. |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype scheduling note. It now records that Branch B is incomplete and that the old D/E/F/G/H git branches were deleted; Wave 2 remains hard-bar module work. |
+| `things-to-change.md` | Active product/design backlog for the R12 capability prototype. Its Prototype Priority list is the hard acceptance bar. |
 | `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
@@ -201,10 +202,6 @@ a glance before relying on detail.
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
-| `r12-branch-a-live-provider-status.md` | Compact Branch A / merged A+B live-provider proof handoff, replacing the completed Branch A spec/process/review cluster now archived. |
-| `r12-branch-b-status.md` | Compact Branch B implementation/proof handoff, replacing the overlapping Branch B spec/process/review/test-report files now archived. |
-| `r12-branch-b-official-portability-closure_spec.md` | Remaining stricter proof spec for exact official `nrf52833dk` and fresh-machine Branch B closure claims. |
-| `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
@@ -222,6 +219,7 @@ a glance before relying on detail.
 | `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
 | `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
 | `curr-archive-20260628/` | Archived docs moved out of `markdowns/curr/` after Branch B deployment cleanup: completed P0, portability, Branch B, and CLI robustness specs/process/reviews/reports. |
+| `curr-archive-20260630-hardbar-reset/` | Archived current-work docs moved out when the hard prototype bar was corrected: Branch A/B/C status, merge-validation, audit/process, Branch C proof, pyright, and cleanup ledgers. |
 | `markdown-audit-20260630/` | Archived docs moved out of active scope by the final markdown audit: duplicate R12 explanation copy, completed Branch A live-provider cluster, completed server-tool hardening cluster, and superseded Claude-refresh plan. |
 
 ## `superpowers/` — internal authoring playbooks
@@ -246,8 +244,8 @@ a glance before relying on detail.
 
 - This index now reflects the reduced `markdowns/curr/` folder after the
   final markdown audit cleanup.
-- Completed P0, portability, Branch B, and CLI robustness artifacts are listed
-  as archived under `markdowns/tmp/curr-archive-20260628/`.
+- Completed P0, portability, Branch B subset, and CLI robustness artifacts are
+  listed as archived under `markdowns/tmp/curr-archive-20260628/`.
 - Completed Branch A live-provider, server-tool hardening, and duplicate R12
   explanation artifacts are listed as archived under
   `markdowns/tmp/markdown-audit-20260630/`.

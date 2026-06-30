@@ -394,32 +394,10 @@ def test_brain_state_to_record_includes_typed_evidence() -> None:
     assert strategy_evaluations[0]["next_action"] == "finalize"
 
 
-def test_execute_read_file_returns_file_contents(tmp_path: Path) -> None:
-    workspace_root = tmp_path / "workspace"
-    (workspace_root / "src").mkdir(parents=True)
-    (workspace_root / "src" / "main.c").write_text(
-        "int main(void) { return 0; }\n", encoding="utf-8"
-    )
-    session = workspace_mod.prepare_workspace_session(
-        workspace_root=workspace_root,
-        allowed_edit_roots=("src",),
-        build_command=None,
-        code_edits_allowed=False,
-        label="read-file",
-    )
-    state = BrainState(
-        run_mode="freeform",
-        board_id="nrf52840dk",
-        task="inspect",
-        case_id=None,
-        case_kind=None,
-        selected_skill_ids=(),
-    )
-
-    result = loop_mod._execute_read_file(session, "src/main.c", state)
-
-    assert "Contents of src/main.c:" in result
-    assert "int main(void) { return 0; }" in result
+def test_removed_host_action_executors_are_absent() -> None:
+    assert not hasattr(loop_mod, "_execute_read_file")
+    assert not hasattr(loop_mod, "_execute_replace_file")
+    assert not hasattr(loop_mod, "_execute_build")
 
 
 def test_run_turnkey_records_decision_evidence_and_timeout_fallback(

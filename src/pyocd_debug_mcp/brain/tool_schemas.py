@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from typing import cast, get_args
 
@@ -31,6 +30,9 @@ _TOOL_RESPONSE_SEMANTICS: dict[str, tuple[str, ...]] = {
     ),
     "unlock_recover": ("Successful supported recover starts with `Recover completed via ...`.",),
 }
+_DESCRIPTION_CHAR_LIMIT = 220
+_ARG_HINT_CHAR_LIMIT = 96
+_MAX_RENDERED_ARGS = 10
 
 
 @dataclass(frozen=True)
@@ -100,18 +102,94 @@ def _normalize_input_schema(input_schema: dict[str, object]) -> dict[str, object
 
 def _render_bundle(entries: tuple[ToolSchemaEntry, ...]) -> str:
     if not entries:
-        return "Curated MCP tool surface:\n(no matching MCP tools were available)"
-    lines = ["Curated MCP tool surface:", "Common response semantics:"]
+        return "Curated MCP tool index (compact):\n(no matching MCP tools were available)"
+    lines = [
+        "Curated MCP tool index (compact; server enforces the actual MCP schemas):",
+        "Argument marker: `!` means required, `?` means optional.",
+        "Common response semantics:",
+    ]
     lines.extend(f"- {line}" for line in _COMMON_RESPONSE_SEMANTICS)
     for entry in entries:
-        lines.append(f"- {entry.name}")
-        lines.append(f"  description: {entry.description}")
-        lines.append("  input_schema:")
-        lines.extend(
-            f"    {line}"
-            for line in json.dumps(entry.input_schema, indent=2, sort_keys=True).splitlines()
+        lines.append(
+            f"- {entry.name}: {_trim_single_line(entry.description, _DESCRIPTION_CHAR_LIMIT)}"
         )
+        lines.append(f"  args: {_render_argument_index(entry.input_schema)}")
         if entry.response_semantics:
             lines.append("  response_semantics:")
             lines.extend(f"    - {line}" for line in entry.response_semantics)
     return "\n".join(lines)
+
+
+def _render_argument_index(input_schema: dict[str, object]) -> str:
+    properties = _mapping_value(input_schema.get("properties"))
+    if not properties:
+        return "none"
+    required = set(_string_list_value(input_schema.get("required")))
+    parts: list[str] = []
+    for index, (name, schema_value) in enumerate(properties.items()):
+        if index >= _MAX_RENDERED_ARGS:
+            parts.append(f"...(+{len(properties) - _MAX_RENDERED_ARGS} more)")
+            break
+        marker = "!" if name in required else "?"
+        hint = _schema_hint(schema_value)
+        if hint:
+            parts.append(f"{name}{marker}:{hint}")
+        else:
+            parts.append(f"{name}{marker}")
+    return "; ".join(parts)
+
+
+def _schema_hint(schema_value: object) -> str:
+    schema = _mapping_value(schema_value)
+    if not schema:
+        return ""
+    enum_values = _string_list_value(schema.get("enum"))
+    if enum_values:
+        rendered = "|".join(enum_values[:6])
+        if len(enum_values) > 6:
+            rendered += "|..."
+        return _trim_single_line(f"enum[{rendered}]", _ARG_HINT_CHAR_LIMIT)
+    const_value = schema.get("const")
+    if isinstance(const_value, str):
+        return _trim_single_line(f"const[{const_value}]", _ARG_HINT_CHAR_LIMIT)
+    type_value = schema.get("type")
+    if isinstance(type_value, str):
+        if type_value == "array":
+            item_hint = _schema_hint(schema.get("items"))
+            return _trim_single_line(f"array[{item_hint or 'items'}]", _ARG_HINT_CHAR_LIMIT)
+        if type_value == "object":
+            nested = _mapping_value(schema.get("properties"))
+            if nested:
+                nested_names = ", ".join(list(nested)[:4])
+                if len(nested) > 4:
+                    nested_names += ", ..."
+                return _trim_single_line(f"object[{nested_names}]", _ARG_HINT_CHAR_LIMIT)
+        return _trim_single_line(type_value, _ARG_HINT_CHAR_LIMIT)
+    if isinstance(type_value, list):
+        text_values = [value for value in type_value if isinstance(value, str)]
+        if text_values:
+            return _trim_single_line("|".join(text_values), _ARG_HINT_CHAR_LIMIT)
+    if "anyOf" in schema or "oneOf" in schema:
+        return "union"
+    return ""
+
+
+def _mapping_value(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): nested for key, nested in value.items()}
+
+
+def _string_list_value(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _trim_single_line(text: str, limit: int) -> str:
+    value = " ".join(text.strip().split())
+    if len(value) <= limit:
+        return value
+    if limit <= 3:
+        return value[:limit]
+    return value[: limit - 3].rstrip() + "..."

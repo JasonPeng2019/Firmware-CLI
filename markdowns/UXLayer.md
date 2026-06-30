@@ -6,6 +6,12 @@
 > `markdowns/firmware_agent_build_plan_concrete (10).md` or
 > `markdowns/curr/r12_turnkey_spec.md`; it is the concrete UX-layer design note
 > for the current implementation and the follow-up token-streaming pass.
+>
+> **Prototype correction, 2026-06-30:** live progress, developer inspector, and
+> chunked checkpoints are hard requirements for the first capability prototype
+> because they appear in `markdowns/things-to-change.md`. They are not optional
+> UX polish. The broader prototype also remains blocked by the incomplete Branch
+> B free-host/final-governed-decision boundary.
 
 Current prototype focus:
 

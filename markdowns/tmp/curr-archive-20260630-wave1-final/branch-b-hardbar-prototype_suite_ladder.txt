@@ -1,0 +1,40 @@
+Summary:
+- PASS | 11.92s | uv run pytest -q
+- PASS | 0.83s | uv run ruff check .
+- PASS | 4.55s | uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py
+- PASS | 2.38s | uv run pytest -q tests/test_r11_benchmark.py
+- PASS | 1.40s | uv run python -m tests.harness.r11_benchmark --help
+
+== PASS :: uv run pytest -q ==
+........................................................................ [ 21%]
+........................................................................ [ 42%]
+........................................................................ [ 63%]
+........................................................................ [ 84%]
+......................................................                   [100%]
+342 passed in 9.81s
+
+== PASS :: uv run ruff check . ==
+All checks passed!
+
+== PASS :: uv run mypy src tests/harness/stage1_smoke.py tests/harness/r11_benchmark.py ==
+Success: no issues found in 68 source files
+
+== PASS :: uv run pytest -q tests/test_r11_benchmark.py ==
+..................................                                       [100%]
+34 passed in 1.47s
+
+== PASS :: uv run python -m tests.harness.r11_benchmark --help ==
+usage: r11_benchmark.py [-h] (--case-id CASE_ID | --suite SUITE)
+                        [--codex-timeout-seconds CODEX_TIMEOUT_SECONDS]
+
+Shared benchmark contracts and helpers for the R11/R12 benchmark surfaces.
+
+options:
+  -h, --help            show this help message and exit
+  --case-id CASE_ID     Run exactly one benchmark case.
+  --suite SUITE         Run a named benchmark suite.
+  --codex-timeout-seconds CODEX_TIMEOUT_SECONDS
+                        Maximum timeout for the embedded `codex exec` step.
+                        Defaults to 180s so diagnose -> patch/build ->
+                        flash/verify bug cases have enough time to finish
+                        without a blanket 60s cap.

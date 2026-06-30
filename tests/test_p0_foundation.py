@@ -7,7 +7,12 @@ import pytest
 
 from pyocd_debug_mcp.brain import cli as brain_cli
 from pyocd_debug_mcp.brain.action_policy import classify_action, namespaced_server_tool_name
-from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision, WaitAction
+from pyocd_debug_mcp.brain.actions import (
+    FinalizeAction,
+    TurnDecision,
+    WaitAction,
+    turn_decision_output_schema,
+)
 from pyocd_debug_mcp.brain.client_actions import (
     ClientActionLoadError,
     ClientActionRecord,
@@ -185,10 +190,55 @@ def test_client_action_loader_rejects_duplicate_missing_or_invalid_scripts(tmp_p
 
 
 def test_action_policy_classifies_branch_b_boundaries() -> None:
-    assert classify_action("read_file") == "model_native_host"
+    with pytest.raises(ValueError, match="Unsupported action type: read_file"):
+        classify_action("read_file")
+    with pytest.raises(ValueError, match="Unsupported action type: run_build"):
+        classify_action("run_build")
+    assert classify_action("load_skills") == "context_expansion"
     assert classify_action("wait") == "brain_local"
     assert classify_action("run_script") == "client_action"
+    assert classify_action("run_green_check") == "server_native"
     assert classify_action("write_serial") == "server_native"
+
+
+def test_turn_decision_schema_excludes_model_native_host_actions() -> None:
+    schema = turn_decision_output_schema()
+    rendered = repr(schema)
+
+    assert "'const': 'read_file'" not in rendered
+    assert "'const': 'replace_file'" not in rendered
+    assert "'const': 'run_build'" not in rendered
+    assert "'const': 'load_skills'" in rendered
+    assert "'const': 'run_green_check'" in rendered
+
+
+def test_turn_decision_rejects_removed_host_action_variants() -> None:
+    for action in (
+        {"kind": "read_file", "path": "src/main.c"},
+        {"kind": "replace_file", "path": "src/main.c", "content": "x"},
+        {"kind": "run_build"},
+    ):
+        with pytest.raises(ValueError):
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Try a removed host action.",
+                    "classification": "code_bug",
+                    "action": action,
+                }
+            )
+
+
+def test_turn_decision_accepts_load_skills_action() -> None:
+    decision = TurnDecision.model_validate(
+        {
+            "observation_summary": "Need workflow context before continuing.",
+            "classification": None,
+            "action": {"kind": "load_skills", "skill_ids": ["firmcli-fix-bug"]},
+        }
+    )
+
+    assert decision.action is not None
+    assert decision.action.kind == "load_skills"
 
 
 def test_turn_decision_accepts_action_batch_and_wait_action() -> None:

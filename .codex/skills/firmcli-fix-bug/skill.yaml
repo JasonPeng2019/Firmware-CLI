@@ -1,0 +1,11 @@
+skill_id: firmcli-fix-bug
+title: FirmCLI Fix Bug
+description: Fix a Firmware-CLI bug end to end.
+depends_on:
+  - firmcli-workflow-core
+  - python-change
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths:
+  - agents/

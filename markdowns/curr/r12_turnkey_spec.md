@@ -24,6 +24,18 @@ Current prototype amendment:
   path. It should show that the model can work freely on host-side code,
   request governed board interactions only when needed, use live progress to
   avoid waiting blindly, and validate fixes with scoped evidence.
+- This stronger target is mandatory for the first capability prototype. The
+  Prototype Priority list in `markdowns/things-to-change.md` is the hard bar;
+  no implementation may be called done by passing a narrower subset. Current
+  status, 2026-06-30: Branch B's strict free-host phase followed by exactly one
+  governed board/client/terminal or context-expansion decision has been
+  tightened and is summarized in `markdowns/current-progress.md`. The old
+  `read_file`/`replace_file`/`run_build` governed action compatibility layer is
+  deleted, and `load_skills` loads model-native workflow context between
+  provider turns. A no-hardware Codex CLI `load_skills` smoke is green at
+  `runs/turnkey-20260630T084055Z-0a0377bc`. Claude CLI code-writing proof,
+  exact official `nrf52833dk` proof, and Wave 2 prototype modules remain
+  pending.
 - Product polish, remote hosting, broad backend expansion, and shipped UI
   completeness remain later work. The prototype should prioritize capability,
   bounded execution, and debuggability.
@@ -84,14 +96,20 @@ The current implemented prototype increment adds or tightens:
   Messages API surface is stateless
 - deterministic compaction by default, with optional `model-summary`
   compaction and deterministic fallback on summarizer failure
-- real MCP tool descriptions and JSON schemas in the turnkey prompt, plus a
-  brain-owned overlay for stable public response/refusal semantics
+- real MCP tool metadata in the turnkey prompt as a compact curated index:
+  short descriptions, required/optional argument hints, and a brain-owned
+  overlay for stable public response/refusal semantics, without repeated full
+  MCP JSON schema bodies
 - a dedicated `tool_schemas.py` module so the loop no longer owns
   hand-maintained server-tool prompt text
 - persisted provider/session metadata in turnkey state, events, and model-turn
   artifacts, including coarse provider progress checkpoints
 - Branch B's governed action boundary:
   - model-native host work remains outside the MCP server
+  - `read_file`, `replace_file`, and `run_build` are not valid
+    `TurnDecision` actions and are not known governed refusals
+  - `load_skills(skill_ids=[...])` is the brain-mediated context-expansion
+    action for model-native workflow skills
   - board/server-native work routes through the brain gate
   - ordered `action_batch` decisions execute in order and stop on the first
     failure/refusal
@@ -101,10 +119,12 @@ The current implemented prototype increment adds or tightens:
     NAME=PATH`, snapshotted by hash, audited in `client_actions.json`, and run
     through `run_script(name, inputs)` with a gated server API
 
-Later prototype waves remain open for:
+Later prototype work remains open for:
 
-- Wave 2 Branch G: selected-skill index plus on-demand skill body loading
-- Wave 2 Branch G: cache-assisted reuse for deterministic setup/static
+- Branch B correction proof with Claude CLI after quota reset, plus exact
+  official `nrf52833dk` proof
+- Wave 2 Module G: selected-skill index plus on-demand skill body loading
+- Wave 2 Module G: cache-assisted reuse for deterministic setup/static
   artifacts
 - dynamic model-authored client-action registration during an already-running
   provider turn
@@ -112,6 +132,7 @@ Later prototype waves remain open for:
 - progress UI and developer inspector completion
 - scoped green approval
 - chunked long-running progress checkpoints beyond the current event stream
+- process-tree/provider/MCP/pyOCD/serial/board-session cleanup guard
 
 ## Architecture
 
@@ -131,7 +152,7 @@ The brain package lives under `src/pyocd_debug_mcp/brain/` and owns:
 - provider-session state, compact local memory, and memory compaction
 - periodic native-session memory safety sync
 - model-facing prompt-bundle assembly
-- live tool-schema prompt rendering from MCP metadata
+- compact live tool-index prompt rendering from MCP metadata
 - live event emission for the operator CLI and persisted run artifacts
 
 ### Provider
@@ -401,7 +422,7 @@ The model-facing action surface is smaller than the full server surface.
 - `write_serial`
 - `unlock_recover`
 
-### Model-native host actions
+### Model-native host work
 
 Host-only file/process work may be performed without a board decision when it
 does not call server-native tools and does not cross the normal host safety
@@ -409,13 +430,26 @@ policy. This is where the prototype should let the model write code, inspect
 files, run local commands, and create host-only helper scripts with much less
 friction than board operations.
 
-### Local workspace actions exposed to the brain
+These operations are not `TurnDecision` actions. In particular, the following
+old governed action kinds must not exist in action models, schema variants,
+batch conversion, executor branches, prompts, or exports:
 
-- read one file
-- replace one file
-- run the case/build command
-- diff against the original workspace snapshot
-- run final green verification
+- `read_file`
+- `replace_file`
+- `run_build`
+
+Internal workspace helpers may still support brain-owned verification such as a
+rebuild before `run_green_check`, but the model cannot request those helpers as
+governed decisions.
+
+### Model-native context expansion
+
+`load_skills(skill_ids=[...])` is a valid turn-closing `TurnDecision` action. It
+does not touch the board and does not run generic host work for the model. It
+asks the brain to load model-native workflow skills, resolve dependencies, run
+controlled init scripts dependency-first once per provider session/run, expose
+usable scripts/assets under per-skill provider-runtime folders, and inject the
+loaded markdown/context into the next provider turn.
 
 ### Branch B action-boundary surface
 

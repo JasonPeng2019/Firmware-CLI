@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from collections import deque
 from dataclasses import replace
 from pathlib import Path
@@ -18,6 +19,7 @@ from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain.actions import (
     FinalizeAction,
+    LoadSkillsAction,
     ServerToolAction,
     TurnDecision,
     TurnkeyRunResult,
@@ -76,8 +78,13 @@ from pyocd_debug_mcp.timeouts import (
 
 
 class FakeProvider:
-    def __init__(self, decisions: list[TurnDecision]) -> None:
+    def __init__(
+        self,
+        decisions: list[TurnDecision],
+        before_decision: list[Callable[[], None] | None] | None = None,
+    ) -> None:
         self._decisions = deque(decisions)
+        self._before_decision = deque(before_decision or [])
         self.turn_prompts: list[str] = []
 
     @property
@@ -97,6 +104,10 @@ class FakeProvider:
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
         self.turn_prompts.append(prompt_bundle.turn_context_text)
+        if self._before_decision:
+            hook = self._before_decision.popleft()
+            if hook is not None:
+                hook()
         decision = self._decisions.popleft()
         return ProviderTurn(
             decision=decision,
@@ -124,6 +135,37 @@ class FakeProvider:
         return ProviderMemorySummaryResult(
             summary_text=f"{prior_summary_text}\n- summarized turns: {turns}".strip(),
             provider_metadata={"provider": "fake-provider"},
+        )
+
+
+class StableWorkdirFakeProvider(FakeProvider):
+    def __init__(self, decisions: list[TurnDecision]) -> None:
+        super().__init__(decisions)
+        self.working_directories: list[str] = []
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            supports_native_session=True,
+            supports_transcript_continuation=True,
+            supports_response_id_continuation=False,
+            supports_tool_schema_prompt=True,
+            continuation_mode="remote-primary",
+            remote_strategy="claude-session-resume",
+            resume_requires_stable_workdir=True,
+        )
+
+    async def next_decision(
+        self,
+        *,
+        prompt_bundle: ProviderPromptBundle,
+        session_state: ProviderSessionState,
+    ) -> ProviderTurn:
+        assert session_state.runtime_context is not None
+        self.working_directories.append(session_state.runtime_context.working_directory)
+        return await super().next_decision(
+            prompt_bundle=prompt_bundle,
+            session_state=session_state,
         )
 
 
@@ -895,7 +937,14 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
             ToolDescriptor(
                 name="connect",
                 description="Connect to a board.",
-                input_schema={"type": "object", "properties": {"board_id": {"type": "string"}}},
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "board_id": {"type": "string"},
+                        "route": {"enum": ["native", "cmsis-dap"]},
+                    },
+                    "required": ["board_id"],
+                },
             ),
             ToolDescriptor(
                 name="debug_internal_only",
@@ -907,9 +956,16 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
 
     assert [entry.name for entry in bundle.entries] == ["connect", "read_serial"]
     assert "debug_internal_only" not in bundle.rendered_text
+    assert "Curated MCP tool index (compact" in bundle.rendered_text
+    assert "input_schema:" not in bundle.rendered_text
+    assert '"properties"' not in bundle.rendered_text
+    assert "board_id!:string" in bundle.rendered_text
+    assert "route?:enum[native|cmsis-dap]" in bundle.rendered_text
+    assert "expected_text?:string" in bundle.rendered_text
     assert "Refused [<code>]: <message> session_id=<id>" in bundle.rendered_text
     assert "Blocked [<code>]: <message> session_id=<id>" in bundle.rendered_text
     assert "Success text includes `session_id=...`" in bundle.rendered_text
+    assert bundle.entries[0].to_record()["input_schema"]
     assert bundle.schema_hash
 
 
@@ -1890,7 +1946,7 @@ def test_run_turnkey_with_provider_normalizes_provider_setup_failures(
     assert "provider-setup-failed" in execution.result.summary
 
 
-def test_run_turnkey_treats_binary_read_as_workspace_error(
+def test_run_turnkey_treats_removed_host_action_batch_as_unsupported(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1924,18 +1980,25 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
                 {
                     "observation_summary": "Inspect the workspace file first.",
                     "classification": "code_bug",
-                    "strategy_evaluation": "Read the file before editing so the next action is grounded in workspace evidence.",
-                    "action": {"kind": "read_file", "path": "src/firmware.bin"},
+                    "strategy_evaluation": "This stale batch action should not be special-cased.",
+                    "action_batch": {
+                        "calls": [
+                            {
+                                "action_type": "read_file",
+                                "arguments": {"path": "src/firmware.bin"},
+                            }
+                        ]
+                    },
                 }
             ),
             TurnDecision(
-                observation_summary="The binary read was refused cleanly, so summarize that limitation.",
+                observation_summary="The stale host action was unsupported cleanly, so summarize that limitation.",
                 classification="code_bug",
                 action=FinalizeAction(
                     final_status="diagnosed_only",
                     classification="code_bug",
-                    root_cause="The requested workspace path is a binary artifact, not a UTF-8 source file.",
-                    summary="Binary workspace reads are rejected cleanly.",
+                    root_cause="The provider returned a model-native host action instead of using provider host tools.",
+                    summary="Removed host actions are not valid governed decisions.",
                 ),
             ),
         ]
@@ -1953,19 +2016,171 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
     assert execution.result.final_status == "diagnosed_only"
     last_result_text = execution.state.last_result_text
     assert last_result_text is not None
-    assert "WorkspaceError" in last_result_text
-    assert "not UTF-8 text" in last_result_text
+    assert "brain/unsupported-batch-action" in last_result_text
+    assert "Unsupported batched action: read_file" in last_result_text
     assert execution.state.provider_session_state is not None
     memory_entry = execution.state.provider_session_state.recent_memory_entries[0]
     record = memory_entry.to_record()
-    assert require_str(record["decision_rationale"]).startswith("Read the file before editing")
-    assert require_mapping(record["action_payload"])["path"] == "src/firmware.bin"
-    assert record["result_status"] == "failure"
+    assert require_str(record["decision_rationale"]).startswith("This stale batch action")
+    payload = require_mapping(record["action_payload"])
+    calls = cast(list[dict[str, object]], payload["calls"])
+    assert calls[0]["action_type"] == "read_file"
+    assert record["result_status"] == "refusal"
     assert require_str(record["codebase_summary"]).startswith("workspace_root=")
     acceptance_constraints = cast(list[str], record["acceptance_constraints"])
     assert (
         "do not finalize healthy/fixed without successful run_green_check" in acceptance_constraints
     )
+
+
+def test_run_turnkey_load_skills_injects_context_on_next_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    skill_root = tmp_path / "skills"
+    core = skill_root / "core"
+    wrapper = skill_root / "wrapper"
+    (core / "scripts").mkdir(parents=True)
+    wrapper.mkdir(parents=True)
+    (core / "skill.yaml").write_text(
+        "\n".join(
+            [
+                "skill_id: core",
+                "title: Core",
+                "description: Core context.",
+                "depends_on: []",
+                "init_scripts: []",
+                "context_files: [SKILL.md]",
+                "usable_paths: [scripts/]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (core / "SKILL.md").write_text("Core skill body.\n", encoding="utf-8")
+    (core / "scripts" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (wrapper / "skill.yaml").write_text(
+        "\n".join(
+            [
+                "skill_id: wrapper",
+                "title: Wrapper",
+                "description: Wrapper context.",
+                "depends_on: [core]",
+                "init_scripts: []",
+                "context_files: [SKILL.md]",
+                "usable_paths: []",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (wrapper / "SKILL.md").write_text("Wrapper skill body.\n", encoding="utf-8")
+    monkeypatch.setattr(loop_mod, "MODEL_NATIVE_SKILL_ROOT", skill_root)
+
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Load workflow context, then summarize.",
+        model="gpt-test",
+        max_iters=3,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need extra workflow context.",
+                classification=None,
+                action=LoadSkillsAction(skill_ids=("wrapper",)),
+            ),
+            TurnDecision(
+                observation_summary="Loaded context is visible.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Context loaded.",
+                    summary="Loaded model-native skill context.",
+                ),
+            ),
+        ]
+    )
+    client_factory = lambda: FakeClient({})  # noqa: E731
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, client_factory),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert len(provider.turn_prompts) == 2
+    assert "No model-native workflow skills loaded." in provider.turn_prompts[0]
+    assert "Core skill body." in provider.turn_prompts[1]
+    assert "Wrapper skill body." in provider.turn_prompts[1]
+    state = execution.state.model_native_skills
+    assert state.resolved_skill_ids == ("core", "wrapper")
+    assert state.init_order == ("core", "wrapper")
+    runtime_path = Path(state.exposed_runtime_paths["core"])
+    assert runtime_path.name == "core"
+    assert runtime_path.parent.name == "skills"
+    assert (runtime_path / "scripts" / "helper.py").exists()
+    assert any(
+        event["event_kind"] == "batch_action_complete"
+        and "model_native_skills" in require_mapping(event["details"])
+        for event in execution.brain_events
+    )
+
+
+def test_stable_workdir_provider_runs_inside_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "src").mkdir(parents=True)
+    (workspace_root / "src" / "main.c").write_text("boot nope\n", encoding="utf-8")
+    provider = StableWorkdirFakeProvider(
+        [
+            TurnDecision(
+                observation_summary="No board action needed for this runtime-context check.",
+                classification="code_bug",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="code_bug",
+                    root_cause="runtime context checked",
+                    summary="runtime context checked",
+                ),
+            )
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="claude-cli",
+        board_id="nucleo_l476rg",
+        task="Check provider runtime context.",
+        model=None,
+        max_iters=1,
+        serial_read_seconds=1.0,
+        workspace_root=workspace_root,
+        build_command='python -c "pass"',
+        code_edits_allowed=True,
+        allowed_edit_roots=("src",),
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert provider.working_directories == [str(workspace_root.resolve())]
 
 
 def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
@@ -1978,6 +2193,9 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("boot nope\n", encoding="utf-8")
 
+    def provider_native_patch() -> None:
+        source.write_text("boot ok\n", encoding="utf-8")
+
     invocation = build_turnkey_invocation(
         mode="benchmark",
         provider="openai-api",
@@ -1987,7 +2205,7 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
         max_iters=8,
         serial_read_seconds=1.0,
         workspace_root=workspace_root,
-        build_command="true",
+        build_command='python -c "pass"',
         case_id="nucleo_l476rg__b001_wrong_boot_text",
         case_kind="injected_bug",
         expected_uart_substring="boot ok",
@@ -2016,29 +2234,8 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
                 classification=None,
                 action=ServerToolAction(tool_name="read_serial", arguments={}),
             ),
-            TurnDecision.model_validate(
-                {
-                    "observation_summary": "The board prints the wrong boot text, so patch the workspace source.",
-                    "classification": "code_bug",
-                    "action": {
-                        "kind": "replace_file",
-                        "path": "src/src/main.c",
-                        "content": "boot ok\n",
-                    },
-                }
-            ),
-            TurnDecision.model_validate(
-                {
-                    "observation_summary": "The source fix is applied; rebuild the workspace.",
-                    "classification": "code_bug",
-                    "action": {
-                        "kind": "run_build",
-                        "build_command": "true",
-                    },
-                }
-            ),
             TurnDecision(
-                observation_summary="Reflash the rebuilt image before the final verifier.",
+                observation_summary="Provider-native host tools patched and rebuilt the source; reflash before the final verifier.",
                 classification="code_bug",
                 action=ServerToolAction(tool_name="flash_firmware", arguments={}),
             ),
@@ -2059,7 +2256,15 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
                     summary="Repaired the UART boot text and verified the board is healthy again.",
                 ),
             ),
-        ]
+        ],
+        before_decision=[
+            None,
+            None,
+            None,
+            provider_native_patch,
+            None,
+            None,
+        ],
     )
     client_factory = lambda: FakeClient(  # noqa: E731
         {
@@ -2117,9 +2322,14 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
 
     assert execution.result.final_status == "fixed"
     assert execution.result.verification.green_check_ok is True
+    assert execution.state.build_count == 1
     assert execution.state.stagnant_fix_cycle_count == 0
     assert execution.state.pending_fix_evaluation is False
     assert "run_green_check" in execution.result.actions_taken
+    assert source.read_text(encoding="utf-8") == "boot ok\n"
+    assert any(
+        event["event_kind"] == "model_native_host_work_observed" for event in execution.brain_events
+    )
 
 
 def test_run_turnkey_refuses_healthy_finalize_before_green_check(
@@ -2454,7 +2664,7 @@ def test_run_turnkey_normalizes_relative_flash_path_against_workspace_root(
         max_iters=3,
         serial_read_seconds=1.0,
         workspace_root=workspace_root,
-        build_command="true",
+        build_command='python -c "pass"',
         case_id="nrf52833dk__k001_reference_green",
         case_kind="known_good",
     )
@@ -2895,7 +3105,7 @@ def test_prepare_workspace_session_allows_absolute_edit_path_within_allowed_root
     session = prepare_workspace_session(
         workspace_root=workspace_root,
         allowed_edit_roots=("src",),
-        build_command="true",
+        build_command='python -c "pass"',
         code_edits_allowed=True,
         label="absolute-edit",
         copy_workspace=False,
@@ -3012,6 +3222,8 @@ def test_claude_cli_command_supports_optional_model() -> None:
         instructions="system",
     )
     assert command[:4] == ["claude", "--print", "--output-format", "json"]
+    assert "--permission-mode" in command
+    assert "bypassPermissions" in command
     assert "--append-system-prompt" in command
     assert "--model" in command
     assert "claude-sonnet-4-20250514" in command

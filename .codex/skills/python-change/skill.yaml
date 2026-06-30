@@ -1,0 +1,10 @@
+skill_id: python-change
+title: Python Change
+description: Apply Firmware-CLI Python changes with Ruff, Pyright, and pytest gates.
+depends_on:
+  - firmcli-workflow-core
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths:
+  - scripts/

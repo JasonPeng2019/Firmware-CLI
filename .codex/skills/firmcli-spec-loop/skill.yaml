@@ -1,0 +1,11 @@
+skill_id: firmcli-spec-loop
+title: FirmCLI Spec Loop
+description: Run Firmware-CLI spec-build-review loops to a clean outcome.
+depends_on:
+  - firmcli-workflow-core
+  - firmcli-specs
+  - firmcli-fix-bug
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths: []

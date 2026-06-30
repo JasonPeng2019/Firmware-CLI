@@ -1,0 +1,14 @@
+No hardware smoke.
+
+Do not connect to the board and do not call server tools.
+
+On your first turn, return one TurnDecision whose action is:
+
+{"kind": "load_skills", "skill_ids": ["firmcli-fix-bug"]}
+
+On the next turn after the skill context is visible, finalize with:
+
+- final_status: diagnosed_only
+- classification: healthy
+- root_cause: load_skills smoke only
+- summary: Loaded model-native skill context without touching hardware.

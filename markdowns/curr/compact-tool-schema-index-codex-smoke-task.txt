@@ -1,0 +1,7 @@
+This is a no-hardware prompt-contract smoke for the turnkey brain.
+
+Do not connect to a board, flash, read memory, read serial, or call any server
+tool. Inspect the available governed tool information in your prompt. If it is
+present as a compact index of tool names, short descriptions, and argument
+hints rather than full JSON schema bodies, return a final diagnosed_only
+TurnDecision. Mention that no hardware action was needed.

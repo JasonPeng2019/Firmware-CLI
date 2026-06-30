@@ -4,16 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-ActionClass = Literal["model_native_host", "brain_local", "client_action", "server_native"]
+ActionClass = Literal["context_expansion", "brain_local", "client_action", "server_native"]
 
-MODEL_NATIVE_HOST_ACTIONS = frozenset(
-    {
-        "read_file",
-        "replace_file",
-        "run_build",
-        "run_green_check",
-    }
-)
+CONTEXT_EXPANSION_ACTIONS = frozenset({"load_skills"})
 BRAIN_LOCAL_ACTIONS = frozenset({"wait"})
 CLIENT_ACTIONS = frozenset({"run_script"})
 SERVER_NATIVE_ACTIONS = frozenset(
@@ -50,12 +43,16 @@ def namespaced_server_tool_name(action_type: str) -> str | None:
 def classify_action(action_type: str) -> ActionClass:
     if namespaced_server_tool_name(action_type) is not None:
         return "server_native"
-    if action_type in MODEL_NATIVE_HOST_ACTIONS:
-        return "model_native_host"
+    if action_type in CONTEXT_EXPANSION_ACTIONS:
+        return "context_expansion"
     if action_type in BRAIN_LOCAL_ACTIONS:
         return "brain_local"
     if action_type in CLIENT_ACTIONS:
         return "client_action"
-    if action_type == "server_tool" or action_type in SERVER_NATIVE_ACTIONS:
+    if (
+        action_type == "run_green_check"
+        or action_type == "server_tool"
+        or action_type in SERVER_NATIVE_ACTIONS
+    ):
         return "server_native"
     raise ValueError(f"Unsupported action type: {action_type}")

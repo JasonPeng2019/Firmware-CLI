@@ -1,0 +1,10 @@
+skill_id: firmcli-build
+title: FirmCLI Build
+description: Implement reconciled Firmware-CLI specs while keeping code and docs in sync.
+depends_on:
+  - firmcli-workflow-core
+  - python-change
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths: []

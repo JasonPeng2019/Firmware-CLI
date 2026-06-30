@@ -55,24 +55,21 @@ class ServerToolAction(_StrictModel):
     arguments: dict[str, object] = Field(default_factory=dict)
 
 
-class ReadFileAction(_StrictModel):
-    kind: Literal["read_file"] = "read_file"
-    path: str
-
-
-class ReplaceFileAction(_StrictModel):
-    kind: Literal["replace_file"] = "replace_file"
-    path: str
-    content: str
-
-
-class RunBuildAction(_StrictModel):
-    kind: Literal["run_build"] = "run_build"
-    build_command: str | None = None
-
-
 class RunGreenCheckAction(_StrictModel):
     kind: Literal["run_green_check"] = "run_green_check"
+
+
+class LoadSkillsAction(_StrictModel):
+    kind: Literal["load_skills"] = "load_skills"
+    skill_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_skill_ids(self) -> LoadSkillsAction:
+        normalized = tuple(skill_id.strip() for skill_id in self.skill_ids)
+        if any(not skill_id for skill_id in normalized):
+            raise ValueError("skill_ids must contain non-empty skill IDs.")
+        self.skill_ids = normalized
+        return self
 
 
 class WaitAction(_StrictModel):
@@ -96,9 +93,7 @@ class FinalizeAction(_StrictModel):
 
 ActionUnion = Annotated[
     ServerToolAction
-    | ReadFileAction
-    | ReplaceFileAction
-    | RunBuildAction
+    | LoadSkillsAction
     | RunGreenCheckAction
     | WaitAction
     | RunScriptAction
@@ -181,6 +176,19 @@ def turn_decision_output_schema() -> dict[str, object]:
         {
             "type": "object",
             "additionalProperties": False,
+            "required": ["kind", "skill_ids"],
+            "properties": {
+                "kind": {"type": "string", "const": "load_skills"},
+                "skill_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
             "required": ["kind", "seconds"],
             "properties": {
                 "kind": {"type": "string", "const": "wait"},
@@ -195,34 +203,6 @@ def turn_decision_output_schema() -> dict[str, object]:
                 "kind": {"type": "string", "const": "run_script"},
                 "name": {"type": "string", "minLength": 1},
                 "inputs": {"type": "object", "additionalProperties": True},
-            },
-        },
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["kind", "path"],
-            "properties": {
-                "kind": {"type": "string", "const": "read_file"},
-                "path": {"type": "string", "minLength": 1},
-            },
-        },
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["kind", "path", "content"],
-            "properties": {
-                "kind": {"type": "string", "const": "replace_file"},
-                "path": {"type": "string", "minLength": 1},
-                "content": {"type": "string"},
-            },
-        },
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["kind", "build_command"],
-            "properties": {
-                "kind": {"type": "string", "const": "run_build"},
-                "build_command": {"type": ["string", "null"]},
             },
         },
         {
@@ -348,9 +328,7 @@ __all__ = [
     "EarlyExitVerdict",
     "FinalizeAction",
     "IterationEstimate",
-    "ReadFileAction",
-    "ReplaceFileAction",
-    "RunBuildAction",
+    "LoadSkillsAction",
     "RunGreenCheckAction",
     "RunScriptAction",
     "ServerToolAction",

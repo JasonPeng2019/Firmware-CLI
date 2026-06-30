@@ -11,6 +11,7 @@ from pyocd_debug_mcp.brain.evidence import (
     Observation,
     StrategyEvaluation,
 )
+from pyocd_debug_mcp.brain.model_native_skills import ModelNativeSkillSessionState
 from pyocd_debug_mcp.brain.provider_types import (
     ProviderCapabilities,
     ProviderSessionState,
@@ -31,6 +32,9 @@ class BrainState:
     case_id: str | None
     case_kind: str | None
     selected_skill_ids: tuple[str, ...]
+    model_native_skills: ModelNativeSkillSessionState = field(
+        default_factory=ModelNativeSkillSessionState
+    )
     iteration: int = 0
     session_id: str | None = None
     session_ids_seen: list[str] = field(default_factory=list)
@@ -116,6 +120,7 @@ class BrainState:
             "case_id": self.case_id,
             "case_kind": self.case_kind,
             "selected_skill_ids": list(self.selected_skill_ids),
+            "model_native_skills": self.model_native_skills.to_record(),
             "iteration": self.iteration,
             "session_id": self.session_id,
             "session_ids_seen": list(self.session_ids_seen),
