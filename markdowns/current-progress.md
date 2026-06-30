@@ -1557,3 +1557,54 @@ Current Branch C hardware status on this host after the live-sync halt fix:
 - Still pending: official `nrf52833dk` Branch C hardware proof, Claude/provider
   neutral Branch C harness implementation, Claude Branch C provider proof, and
   separate fresh-host/macOS portability proof.
+
+Current Branch C provider-neutral status on this host:
+
+- The Branch C harness is now provider-neutral for the CLI providers. It accepts
+  repeatable `--provider` values and records provider-specific rows:
+  `provider_dry_run_prompt_render[provider]` and
+  `provider_live_run_events_and_clamp[provider]`.
+- The deprecated `--skip-codex` flag is retained only as a compatibility alias;
+  current non-hardware acceptance uses `--skip-hardware` plus selected
+  providers.
+- A non-hardware acceptance bug was fixed: `--skip-hardware` no longer selects
+  live provider/hardware rows, so `--fail-on-skip` can be used for true
+  non-hardware provider proof.
+- Targeted validation after the provider-neutral harness change:
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    returned `13 passed`
+  - `uv run ruff check tests/harness/branch_c_tests.py tests/test_branch_c_harness.py`
+    passed
+- Full non-hardware validation after the provider-neutral harness change:
+  - `uv run pytest -q` returned `289 passed`
+  - `uv run ruff check .` passed
+  - `uv run mypy src` passed
+- Non-hardware provider matrix passed with both `codex-cli` and `claude-cli`:
+  - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --provider codex-cli --provider claude-cli --fail-on-skip`
+    returned `6 passed, 0 failed, 0 skipped`
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --skip-hardware --provider codex-cli --provider claude-cli --fail-on-skip`
+    returned `6 passed, 0 failed, 0 skipped`
+- Full hardware/provider Branch C matrix passed on the attached STM32 board:
+  - `uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --provider codex-cli --provider claude-cli --fail-on-skip`
+    returned `11 passed, 0 failed, 0 skipped`
+  - Codex run root: `runs/20260629T214134Z-58c1405a`
+  - Claude run root: `runs/20260629T214212Z-19199e0e`
+- Full hardware/provider Branch C matrix passed on the attached retained Nordic
+  board:
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --provider codex-cli --provider claude-cli --fail-on-skip`
+    returned `11 passed, 0 failed, 0 skipped`
+  - Codex run root: `runs/20260630T012135Z-8a5780dc`
+  - Claude run root: `runs/20260630T012206Z-292bb340`
+- Public deployed `pyocd-debug-brain run` smoke passed for both CLI providers
+  on both attached boards:
+  - `codex-cli` + `nucleo_l476rg`: `runs/20260630T011733Z-ae2eb3ee`
+  - `claude-cli` + `nucleo_l476rg`: `runs/20260630T011814Z-4c33bc87`
+  - `codex-cli` + `nrf52840dk`: `runs/20260630T011858Z-f269f813`
+  - `claude-cli` + `nrf52840dk`: `runs/20260630T011944Z-7b9c4186`
+- The public smokes exercised real multi-turn provider prompting through the
+  deployed CLI path: connect by `board_id`, read board info, then finalize.
+- Remaining proof limits:
+  - official `nrf52833dk` Branch C proof is still pending because the attached
+    Nordic board reports nRF52840 silicon
+  - macOS/fresh-host provider matrix is still pending because this pass was run
+    only on the current Windows host

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
+from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
 from pyocd_debug_mcp.brain.mcp_client import ToolTextResult
+from pyocd_debug_mcp.brain.provider_types import ProviderTurn
 from pyocd_debug_mcp.probe_inventory import ProbeInfo
 from tests.harness import branch_c_tests
 
@@ -36,6 +38,20 @@ def test_live_codex_task_uses_schema_valid_classification() -> None:
     assert "classification=other" not in task
 
 
+def test_selected_providers_default_to_codex_cli() -> None:
+    args = branch_c_tests.build_parser().parse_args([])
+
+    assert branch_c_tests._selected_providers(args) == ("codex-cli",)
+
+
+def test_selected_providers_support_cli_matrix_and_skip_codex() -> None:
+    args = branch_c_tests.build_parser().parse_args(
+        ["--provider", "codex-cli", "--provider", "claude-cli", "--skip-codex"]
+    )
+
+    assert branch_c_tests._selected_providers(args) == ("claude-cli",)
+
+
 def test_fail_on_skip_turns_skipped_selected_checks_into_failure() -> None:
     assert (
         branch_c_tests.main(
@@ -43,7 +59,7 @@ def test_fail_on_skip_turns_skipped_selected_checks_into_failure() -> None:
                 "--board-id",
                 "nrf52833dk",
                 "--skip-hardware",
-                "--skip-codex",
+                "--skip-providers",
                 "--fail-on-skip",
             ]
         )
@@ -103,3 +119,64 @@ def test_live_sync_check_halts_before_reading_core_register(monkeypatch) -> None
         "read:pc",
         "disconnect",
     ]
+
+
+def test_provider_dry_run_uses_selected_provider_factory(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeProvider:
+        async def next_decision(
+            self,
+            *,
+            instructions: str,
+            turn_prompt: str,
+            timeout_seconds: float | None = None,
+        ) -> ProviderTurn:
+            captured["instructions"] = instructions
+            captured["turn_prompt"] = turn_prompt
+            captured["timeout_seconds"] = timeout_seconds
+            return ProviderTurn(
+                decision=TurnDecision(
+                    observation_summary="dry run",
+                    classification="healthy",
+                    action=FinalizeAction(
+                        final_status="healthy_confirmed",
+                        classification="healthy",
+                        root_cause="dry run",
+                        summary="dry run",
+                    ),
+                ),
+                output_text="{}",
+                response_id=None,
+            )
+
+    def fake_create_decision_provider(config):
+        captured["provider"] = config.provider
+        captured["model"] = config.model
+        captured["config_timeout"] = config.timeout_seconds
+        return FakeProvider()
+
+    monkeypatch.setattr(branch_c_tests.shutil, "which", lambda name: f"C:/fake/{name}.exe")
+    monkeypatch.setattr(branch_c_tests, "create_decision_provider", fake_create_decision_provider)
+    args = branch_c_tests.build_parser().parse_args(
+        [
+            "--board-id",
+            "nucleo_l476rg",
+            "--provider",
+            "claude-cli",
+            "--provider-model",
+            "claude-cli=sonnet",
+            "--provider-timeout-seconds",
+            "7",
+        ]
+    )
+
+    result = branch_c_tests.check_provider_dry_run_prompt_render(args, "claude-cli")
+
+    assert result.status == branch_c_tests.PASS
+    assert result.name == "provider_dry_run_prompt_render[claude-cli]"
+    assert captured["provider"] == "claude-cli"
+    assert captured["model"] == "sonnet"
+    assert captured["config_timeout"] == 7
+    assert captured["timeout_seconds"] == 7
+    assert "effective_timeouts=" in str(captured["turn_prompt"])

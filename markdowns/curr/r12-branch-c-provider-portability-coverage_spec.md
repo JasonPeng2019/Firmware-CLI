@@ -225,11 +225,38 @@ record that provider as pending rather than green.
 ## Verified
 
 - This proposal was restored after the accidental cleanup in this checkout.
-- Current code and docs show the gap: Branch C harness is still Codex-specific.
+- Implemented provider-neutral Branch C harness selection:
+  `--provider`, `--provider-model`, `--provider-timeout-seconds`, and
+  `--skip-providers`.
+- Retained `--skip-codex` only as a deprecated compatibility alias.
+- Replaced Codex-specific acceptance rows with
+  `provider_dry_run_prompt_render[provider]` and
+  `provider_live_run_events_and_clamp[provider]`.
+- Fixed non-hardware acceptance semantics so `--skip-hardware` does not select
+  live hardware provider rows and therefore does not create artificial SKIPs.
+- Targeted validation after implementation passed:
+  `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+  returned `13 passed`, and targeted ruff passed.
+- Full non-hardware ladder passed on June 29, 2026:
+  `uv run pytest -q` returned `289 passed`, `uv run ruff check .` passed, and
+  `uv run mypy src` passed.
+- Non-hardware provider matrix passed for both attached board configs with
+  `codex-cli` and `claude-cli` selected:
+  - `nucleo_l476rg`: `6 passed, 0 failed, 0 skipped`
+  - `nrf52840dk`: `6 passed, 0 failed, 0 skipped`
+- Full hardware/provider Branch C matrix passed:
+  - `nucleo_l476rg`: `11 passed, 0 failed, 0 skipped`
+  - retained `nrf52840dk`: `11 passed, 0 failed, 0 skipped`
+- Public deployed CLI smoke passed for both providers on both attached boards:
+  - `codex-cli` + `nucleo_l476rg`: `runs/20260630T011733Z-ae2eb3ee`
+  - `claude-cli` + `nucleo_l476rg`: `runs/20260630T011814Z-4c33bc87`
+  - `codex-cli` + `nrf52840dk`: `runs/20260630T011858Z-f269f813`
+  - `claude-cli` + `nrf52840dk`: `runs/20260630T011944Z-7b9c4186`
 
 ## Pending verification
 
-- Implementation.
-- Non-hardware CLI provider matrix for Codex and Claude.
-- Hardware provider matrix on `nrf52833dk` and `nucleo_l476rg`.
-- macOS/fresh-host proof.
+- Official `nrf52833dk` hardware proof remains pending because the attached
+  Nordic board reports nRF52840 silicon; this pass proves retained
+  `nrf52840dk`.
+- macOS/fresh-host proof remains pending; this pass proves the current Windows
+  host only.

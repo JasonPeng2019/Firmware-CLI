@@ -224,6 +224,16 @@ uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on
 - Full Branch C hardware acceptance passed on retained `nrf52840dk` with
   `9 passed, 0 failed, 0 skipped`; run root
   `runs/20260629T203830Z-1b95fee0`.
+- Provider-neutral Branch C acceptance later passed on this Windows host:
+  - non-hardware provider matrix for `codex-cli` and `claude-cli` returned
+    `6 passed, 0 failed, 0 skipped` on both `nucleo_l476rg` and retained
+    `nrf52840dk`
+  - hardware/provider matrix returned `11 passed, 0 failed, 0 skipped` on
+    `nucleo_l476rg`
+  - hardware/provider matrix returned `11 passed, 0 failed, 0 skipped` on
+    retained `nrf52840dk`
+  - public deployed `pyocd-debug-brain run` smokes passed for Codex and Claude
+    on both attached boards
 - Official `nrf52833dk` hardware acceptance was attempted, but Stage 0 reported
   `FICR.INFO.PART actual=0x52840, expected=0x52833`, so the attached Nordic
   board is not valid official `nrf52833dk` proof.
@@ -233,5 +243,5 @@ uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --fail-on
 - Full `--fail-on-skip` Branch C harness remains pending on official
   `nrf52833dk` until an actual nRF52833 DK is attached or the proof boundary is
   explicitly changed to retained `nrf52840dk`.
-- Claude CLI Branch C coverage remains pending and is covered by the separate
-  provider/portability coverage spec.
+- macOS/fresh-host provider matrix remains pending; this pass proves the
+  current Windows host only.
