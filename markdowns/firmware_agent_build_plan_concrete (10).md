@@ -849,14 +849,22 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
     safety lines in the cached prefix, let the model pull large bodies on
     demand where applicable, and use content hashes for rendered tool/skill
     blocks and deterministic setup artifacts.
-12. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
+12. **Add the client-side codebase map for Wave 2 model-native code work.** On
+    first workspace boot, create `codebase_map.md` from deterministic inventory
+    plus provider-authored descriptions. Prompt every provider turn with the
+    skill index, governed-tool index, codebase-map rule/path/hash/summary, and
+    compact-memory cadence. Inject the full map once for workflow skill turns,
+    prompt the model to consult it before new files or significant code edits,
+    and run a bounded map-maintenance turn after provider-native file changes
+    before trusting the next governed action.
+13. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
     UART reads, builds/external commands, and long client actions. Do not broaden this prototype into the
     pyOCD worker/job layer.
 
 **Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +
 `nucleo_l476rg`) and reuses the 12-case benchmark corpus, but the prototype is now judged by whether it can
 show a substantially more agentic loop: persistent work context, periodic compact-memory safety sync, cheap
-static context with on-demand detail, free host-side code work, governed board decisions, visible progress,
+static context with on-demand detail and codebase-map scaffolding, free host-side code work, governed board decisions, visible progress,
 bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
 Shipped-product polish and broad UI completeness are explicitly later work.
 

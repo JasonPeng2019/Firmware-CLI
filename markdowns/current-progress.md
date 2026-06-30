@@ -55,6 +55,13 @@ preset green; Codex host-native workspace smoke green at
 `runs/turnkey-20260630T090914Z-044ef516`; Codex compact tool-index smoke green
 at `runs/turnkey-20260630T090947Z-703de0e5`.
 
+Wave 2 planning update, 2026-06-30: client-side codebase-map scaffolding is now
+specified in `markdowns/curr/wave2-codebase-map_spec.md` and assigned to Module
+G static-context work. It is not implemented. The spec requires first-boot
+`codebase_map.md` creation, per-turn map rule/path/hash/summary, full map
+injection once for workflow skill turns, and a bounded map-maintenance subturn
+after provider-native file changes before the next governed action is trusted.
+
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
 and validated. Agents must not use passing subset tests or narrower branch
@@ -403,9 +410,10 @@ board-decision boundary, compact real tool metadata, batched actions with `wait`
 UART write, live progress/inspector output, timeout hardening with
 model-refined budgets, session-scoped client actions, scoped green approval via
 model-made flipped tests, stream checkpoints for UART/build/client-action
-flows, static-context/cache efficiency, and the existing compact memory ledger
-with configurable periodic native memory sync. Those items are planned prototype
-work unless a later status entry says they have been implemented and verified.
+flows, static-context/cache efficiency including client-side codebase-map
+scaffolding, and the existing compact memory ledger with configurable periodic
+native memory sync. Those items are planned prototype work unless a later status
+entry says they have been implemented and verified.
 
 The remaining proof work before making the broader "fresh customer machine"
 portability claim is now narrower and currently deferred for the prototype:

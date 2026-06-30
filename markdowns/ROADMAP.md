@@ -1179,6 +1179,10 @@ This item builds the premium product tier on top of the proven substrate.
 - add static-context efficiency: selected-skill index, always-on safety lines,
   on-demand skill bodies, and cache-assisted reuse of deterministic setup/static
   artifacts
+- add client-side codebase-map scaffolding for Wave 2: first-boot
+  `codebase_map.md`, per-turn map rule/path/hash/summary, full map injection
+  once for workflow skill turns, and bounded map-maintenance turns after
+  provider-native file changes
 - define the acceptance benchmark for product #2 without expanding the frozen
   `R11` corpus
 
@@ -1197,6 +1201,8 @@ This item builds the premium product tier on top of the proven substrate.
   policy
 - skill-index/on-demand body renderer and cache-assisted setup/static artifact
   reuse records
+- `codebase_map.md` creation, injection, freshness, and maintenance-turn
+  records
 - product #2 benchmark results
 
 ### Questions this item must answer
@@ -1218,7 +1224,7 @@ This item builds the premium product tier on top of the proven substrate.
 
 ### Definition of done
 
-`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work freely on the host, request governed board actions only when needed, avoid unbounded waits, stream progress, validate fixes with scoped evidence, use cache/static-context efficiency, checkpoint long UART/build/client-action streams, and clean up provider/MCP/pyOCD/serial/board sessions. A narrower subset is not done.
+`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work freely on the host, request governed board actions only when needed, avoid unbounded waits, stream progress, validate fixes with scoped evidence, use cache/static-context efficiency including codebase-map scaffolding for workflow skill turns and significant code edits, checkpoint long UART/build/client-action streams, and clean up provider/MCP/pyOCD/serial/board sessions. A narrower subset is not done.
 
 ### What it does not include
 
@@ -1476,7 +1482,8 @@ Corrected schedule:
   - Module D: progress UI + inspector
   - Module E: stream checkpoints
   - Module F: scoped green approval
-  - Module G: static context efficiency and cache-assisted reuse
+  - Module G: static context efficiency, codebase-map scaffolding, and
+    cache-assisted reuse
   - Module H: process-tree + board-session cleanup guard
 - serial merge-back: rebuilt Wave 2 hard-bar work merges into Wave 0 one module
   at a time

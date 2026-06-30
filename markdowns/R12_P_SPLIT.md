@@ -61,7 +61,7 @@ WAVE 2 HARD-BAR WORK, NOT CURRENT GIT BRANCHES:
   Module D: progress UI + inspector
   Module E: stream checkpoints
   Module F: scoped green approval
-  Module G: static context efficiency + cache-assisted reuse
+  Module G: static context efficiency + cache-assisted reuse + codebase map
   Module H: process-tree + board-session cleanup guard
 
 SERIAL:
@@ -76,6 +76,9 @@ prototype slices, and Branch B's free-host/final-governed-decision code boundary
 has now been corrected. Codex CLI proof on `nucleo_l476rg + nrf52840dk` is real
 attached-board evidence, but it does not replace the blocked Claude CLI rerun,
 exact official `nrf52833dk`, API-provider parity, or fresh-machine proof.
+Wave 2 Module G now also includes the codebase-map specification in
+`markdowns/curr/wave2-codebase-map_spec.md`; that feature is planning-only until
+implemented and validated on a rebuilt Wave 2 branch/module pass.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -479,9 +482,9 @@ Should not own:
 ### Module G - Static Context Efficiency + Cache-Assisted Reuse
 
 Module G owns skill-index rendering, on-demand skill bodies, model-native skill
-loading, and cache-assisted setup reuse because those all touch prompt/static-
-context assembly. It must not spread cache or skill-rendering policy into
-D/E/F-owned modules during Wave 2.
+loading, client-side codebase-map context, and cache-assisted setup reuse because
+those all touch prompt/static-context assembly. It must not spread cache,
+skill-rendering, or codebase-map policy into D/E/F-owned modules during Wave 2.
 
 Serial order inside Module G:
 
@@ -495,20 +498,37 @@ Serial order inside Module G:
      post-order init scripts, de-duping, clear cycle errors, session-state
      tracking, prompt injection on the next provider turn, and per-skill
      provider-runtime folders for usable scripts/assets
-2. `artifact_cache.py`
+2. `codebase_map.py` client-side map scaffolding
+   - create `codebase_map.md` on first workspace boot from a deterministic
+     inventory skeleton plus provider-authored descriptions
+   - each file entry lists purpose, definitions/functions/classes, code
+     dependencies, logical/process dependencies, tags, hashes, and provenance
+   - inject the skill index, available governed-tool index, codebase-map rule,
+     map path/hash/summary, and memory-cadence status into provider turns
+   - inject the full current `codebase_map.md` exactly once for any provider
+     turn that receives model-native workflow skill context; multiple skill
+     loads in the same turn do not duplicate the map body
+   - prompt the model to read the map before new code files or significant code
+     changes greater than about 100 lines
+   - after provider-native file changes, run one bounded maintenance subturn that
+     updates/skips the map and replays or validly changes the pending
+     `TurnDecision` before any governed action is trusted
+   - record events/artifacts for map creation, injection, skipped/applied
+     updates, changed files, hashes, and decision replay/change status
+3. `artifact_cache.py`
    - content-addressed cache record schema
    - source/workspace hash, build-command fingerprint, toolchain fingerprint
    - firmware artifact hash, board/probe identity fields
    - prompt/tool/skill render hash fields
    - provenance links back to original run artifacts
-3. Cache artifact writer/reader tests:
+4. Cache artifact writer/reader tests:
    - deterministic JSON ordering
    - conservative invalidation keys
    - portable repo-relative artifact references where possible
-4. Reuse event/report records:
+5. Reuse event/report records:
    - cache hit/miss/skipped reason events
    - report fields stating whether final live proof still ran
-5. Small prompt/CLI hooks:
+6. Small prompt/CLI hooks:
    - expose `load_skill(skill_id)` or equivalent on-demand body retrieval through
      the turn-closing decision/native-tool path selected by the branch spec
    - keep hooks minimal; broad prompt assembly rewrites move to final wiring
@@ -520,6 +540,9 @@ Cross-branch dependency:
   provider session semantics.
 - Module G must not change provider-memory semantics; the prototype relies on
   the existing compact memory ledger plus configurable native sync.
+- Module G's codebase-map maintenance may perform provider-native host reads and
+  edits only; it must not create generic host execution in the brain or bypass
+  governed board/server actions.
 
 Should not own:
 

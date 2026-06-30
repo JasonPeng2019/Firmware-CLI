@@ -35,7 +35,8 @@ Current prototype amendment:
   provider turns. A no-hardware Codex CLI `load_skills` smoke is green at
   `runs/turnkey-20260630T084055Z-0a0377bc`. Claude CLI code-writing proof,
   exact official `nrf52833dk` proof, and Wave 2 prototype modules remain
-  pending.
+  pending. Wave 2 codebase-map scaffolding is now specified in
+  `markdowns/curr/wave2-codebase-map_spec.md`, but not implemented.
 - Product polish, remote hosting, broad backend expansion, and shipped UI
   completeness remain later work. The prototype should prioritize capability,
   bounded execution, and debuggability.
@@ -124,6 +125,9 @@ Later prototype work remains open for:
 - Branch B correction proof with Claude CLI after quota reset, plus exact
   official `nrf52833dk` proof
 - Wave 2 Module G: selected-skill index plus on-demand skill body loading
+- Wave 2 Module G: first-boot `codebase_map.md`, per-turn map
+  rule/path/hash/summary, full map injection once for workflow skill turns, and
+  bounded map-maintenance turns after provider-native file changes
 - Wave 2 Module G: cache-assisted reuse for deterministic setup/static
   artifacts
 - dynamic model-authored client-action registration during an already-running

@@ -16,6 +16,8 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `compact-tool-schema-index-codex-smoke-task.txt` - no-hardware Codex/Claude
   CLI smoke prompt used to verify compact tool-index injection without touching
   the board.
+- `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
+  `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
 
 Canonical current status now lives in:
 
@@ -64,4 +66,5 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   2026-06-30 morning reset.
 - Exact official `nrf52833dk` proof remains pending.
 - Wave 2 progress/inspector, checkpoints, scoped green approval, static
-  context/cache reuse, and cleanup guard work remains hard prototype scope.
+  context/cache reuse, codebase-map scaffolding, and cleanup guard work remains
+  hard prototype scope.

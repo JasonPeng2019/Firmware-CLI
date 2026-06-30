@@ -30,7 +30,13 @@ ONLY INCLUDE for the first capability prototype:
    dependency-first post-order once per provider session/run, expose usable
    scripts/assets under per-skill provider-runtime folders, and inject loaded
    markdown/context into the next provider turn.
-15. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard.
+15. Client-side `codebase_map.md` for Wave 2 model-native code work. On first
+   workspace boot the provider authors a codebase map from a deterministic
+   inventory skeleton; every provider turn gets the skill index, available-tool
+   index, compact-memory cadence, and codebase-map rule; workflow skill turns
+   inject the full map once; and provider-native file changes trigger a bounded
+   map-maintenance turn before the next governed action is trusted.
+16. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard.
 
 Prototype acceptance contract:
 
@@ -59,7 +65,8 @@ Prototype acceptance contract:
   Codex CLI smoke green. Full product-suite closure is still pending because
   Claude CLI code-writing proof is blocked by provider quota, exact official
   `nrf52833dk` proof is not available in this session, and the Wave 2
-  prototype-priority modules remain required.
+  prototype-priority modules remain required. Wave 2 codebase-map scaffolding is
+  now specified in `markdowns/curr/wave2-codebase-map_spec.md`, not implemented.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -143,6 +150,7 @@ north star.
 - [22. Proof escalation ladder for expensive live validation](#22-proof-escalation-ladder-for-expensive-live-validation)
 - [23. Cache-assisted artifact/result reuse for setup and repeated non-final checks](#23-cache-assisted-artifactresult-reuse-for-setup-and-repeated-non-final-checks)
 - [3. Inject skills as a cached index + on-demand bodies, not a full per-turn block](#3-inject-skills-as-a-cached-index--on-demand-bodies-not-a-full-per-turn-block)
+- [25. Client codebase map and maintenance turns](#25-client-codebase-map-and-maintenance-turns)
 - [24. Process-tree and board-session cleanup guard](#24-process-tree-and-board-session-cleanup-guard)
 
 ### Later MVP / nice-to-have backlog
@@ -169,8 +177,9 @@ laid out in the same sequence.
 4. **Visibility / Wave 2 branch work** - add live provider/brain progress,
    developer inspector logs, stream checkpoints for UART/build/client-action
    flows, skill index/on-demand skill bodies, cache-assisted setup/result
-   reuse, process-tree / board-session cleanup guard, and the existing
-   configurable provider-memory safety sync.
+   reuse, client-side codebase-map prompt scaffolding and maintenance turns,
+   process-tree / board-session cleanup guard, and the existing configurable
+   provider-memory safety sync.
 5. **Prototype proof gate** - add scoped green approval with manual or narrow
    flipped-value tests and the proof escalation ladder.
 6. **Later MVP polish** - projects, broad skill-guided host experiments,
@@ -2960,6 +2969,9 @@ Add a bounded, auditable cache for deterministic or setup-oriented facts:
 
 - source/workspace hash + build command + toolchain fingerprint -> build result and
   artifact paths;
+- codebase-map file hashes + map renderer version -> `codebase_map.md`
+  freshness, compact map summary, and rendered full-map body for workflow skill
+  turns;
 - firmware artifact hash + board id + probe/target identity -> prior flash/check
   metadata, usable only as setup context unless a live final proof is not required;
 - MCP tool metadata hash -> rendered compact prompt catalog;
@@ -3008,7 +3020,86 @@ live final verifier.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented.
+Proposal only. Codebase-map scaffolding is now separately specced in
+`markdowns/curr/wave2-codebase-map_spec.md`; the cache layer itself is not yet
+implemented.
+
+---
+
+## 25. Client codebase map and maintenance turns
+
+### Problem / current behavior
+
+Branch B now correctly leaves host-side reading, editing, and building to the
+provider-native host tools. That makes the provider more autonomous, but it also
+means the brain no longer has a governed host-action transcript that naturally
+reminds the model which files, tests, docs, and workflow rules are related. For
+large edits and new files, the model needs a durable map of the workspace that is
+more than an import graph: it needs code dependencies and logical/process
+dependencies.
+
+The existing prompt scaffolding has the right pieces for Wave 2 Module G:
+compact governed-tool index, provider-memory cadence, model-native
+`load_skills`, and per-skill runtime exposure. It does not yet have a
+workspace-authored `codebase_map.md`, full-map injection for workflow skill
+turns, or a maintenance turn that keeps the map current after provider-native
+file changes.
+
+### What the change is
+
+Add a workspace-local `codebase_map.md` managed by the client/provider loop:
+
+- on first workspace boot, create a deterministic inventory skeleton and prompt
+  the provider to author the initial map;
+- every file entry records purpose, defined functions/classes/symbols, code
+  dependencies, logical/process dependencies, layer tags, hashes, and
+  provenance;
+- every provider turn gets the skill index, compact governed-tool index,
+  codebase-map rule/path/hash/summary, and compact provider memory on the
+  configured cadence, defaulting to every 10 provider turns;
+- when a model-native workflow skill is loaded/injected, the full current
+  `codebase_map.md` is injected once for that provider turn, even if multiple
+  skills are involved;
+- the prompt explicitly tells the model to read the codebase map before creating
+  new code files or making significant code changes greater than about 100
+  lines;
+- provider-native file changes trigger one bounded map-maintenance subturn
+  before the next governed action is trusted;
+- the maintenance subturn updates the map or records a clear skip, then replays
+  the previous `TurnDecision` or emits a better decision if the new map
+  information changes the next move.
+
+### Where it belongs
+
+Wave 2 Module G. This feature touches prompt/static-context assembly,
+model-native workflow-skill injection, provider-memory cadence, and
+cache-assisted prompt artifacts. It may add small hooks to shared loop/prompt
+files during Module G work, but it must not become a broad rewrite of the
+governed board loop or reintroduce generic host execution into the brain.
+
+### Constraints / watch-outs
+
+- **No host-action regression.** `read_file`, `replace_file`, and `run_build`
+  remain absent from valid `TurnDecision` actions.
+- **Full map on workflow skill turns.** The prototype hard bar is full
+  `codebase_map.md` injection once per provider turn that receives model-native
+  workflow skill context.
+- **Do not spam full maps on normal turns.** Ordinary turns should carry the
+  rule, path, hash, freshness, and compact summary unless they are skill turns.
+- **Maintenance is bounded.** One map-maintenance subturn per provider turn;
+  malformed maintenance responses use the existing retry path and repeated
+  failures block clearly.
+- **No board bypass.** Map creation and maintenance are provider-native file
+  work only. They must not execute board/server actions or generic host work
+  through the brain.
+- **Logical dependencies are first-class.** Docs, tests, workflow skills,
+  runbooks, board configs, specs, and review files can be dependencies even when
+  no source file imports them.
+
+### Status
+
+Specced in `markdowns/curr/wave2-codebase-map_spec.md` on 2026-06-30. Not yet
+implemented or validated.
 
 ---
 
@@ -3332,6 +3423,8 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
 - Preserve the KV cache (stable prefix for index/safety/tool-defs; bodies arrive
   as persistent tool results), and never gate safety guidance behind a retrieval
   the model might skip.
+- Compose with entry #25: when model-native workflow skill context is injected,
+  also inject the full current `codebase_map.md` once for that provider turn.
 
 ### Constraints / watch-outs
 
@@ -3348,7 +3441,10 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented.
+Partially implemented for Branch B through the model-native `load_skills`
+context-expansion decision and compact governed-tool prompt index. Wave 2 still
+owns selected-skill/static-context refinement, codebase-map injection from entry
+#25, and cache-assisted reuse.
 
 ---
 
