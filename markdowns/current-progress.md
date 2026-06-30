@@ -80,6 +80,18 @@ cleanup. Remaining scaffold proof gaps are external: Claude login/quota,
 API-provider credentials, exact official `nrf52833dk` proof, and fresh-machine
 deployment.
 
+Delta-index follow-up, 2026-06-30: ordinary remote-primary `remote-delta`
+provider turns now include the compact skill context and compact governed-tool
+index in addition to the current turn context. This does not change compact
+memory cadence: provider memory still syncs only according to
+`--native-sync-every` / `PYOCD_TURNKEY_NATIVE_SYNC_EVERY` and defaults to every
+10 provider turns. Full MCP input schemas and the full `TurnDecision` schema
+remain out of ordinary `remote-delta` turns; they are still used for bootstrap,
+sync, retry, or explicit/focused detail-loading paths. Verification for this
+follow-up is recorded in
+`markdowns/curr/r12-delta-compact-indexes_spec.md` and
+`markdowns/tmp/curr-archive-20260630-delta-index-final/wave1-delta-index-adversarial-audit_process.md`.
+
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
 and validated. Agents must not use passing subset tests or narrower branch

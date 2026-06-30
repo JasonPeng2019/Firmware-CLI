@@ -147,7 +147,7 @@ class ClaudeCLIDecisionProvider:
             current_prompt = prompt_bundle.render_bootstrap_text(include_memory=use_local_memory)
         current_prompt_render_mode = prompt_render_mode
         current_memory_injected = use_local_memory
-        current_static_tool_schema_injected = prompt_render_mode != "remote-delta"
+        current_static_tool_schema_injected = bool(prompt_bundle.tool_schema_text.strip())
         current_decision_schema_injected = prompt_render_mode != "remote-delta"
         current_fork_session = False
         retry_count = 0

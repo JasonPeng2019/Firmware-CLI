@@ -201,7 +201,9 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
+| `next-codex-handoff-20260630.md` | Current final-audit handoff for checking the dirty Wave 1 delta-index work, R12 scaffold hardening, important source/test files, and live validation plan. |
 | `r12-context-scaffold-hardening_spec.md` | Active R12 scaffold-hardening contract and verification record for product/client-owned model-native skills, runtime-copy recovery, tool-detail loading, strict details-before-execution guardrails, prompt ordering/dedupe, and future bug-reporting docs. |
+| `r12-delta-compact-indexes_spec.md` | Active implemented task spec for compact skill/tool indexes in ordinary remote-primary `remote-delta` provider turns without changing memory cadence or full-schema cadence. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
 
@@ -222,6 +224,7 @@ a glance before relying on detail.
 | `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
 | `curr-archive-20260628/` | Archived docs moved out of `markdowns/curr/` after Branch B deployment cleanup: completed P0, portability, Branch B, and CLI robustness specs/process/reviews/reports. |
 | `curr-archive-20260630-hardbar-reset/` | Archived current-work docs moved out when the hard prototype bar was corrected: Branch A/B/C status, merge-validation, audit/process, Branch C proof, pyright, and cleanup ledgers. |
+| `curr-archive-20260630-delta-index-final/` | Archived delta-index process/review ledgers and Wave 1 adversarial-audit evidence from the final June 30 delta-index pass. |
 | `markdown-audit-20260630/` | Archived docs moved out of active scope by the final markdown audit: duplicate R12 explanation copy, completed Branch A live-provider cluster, completed server-tool hardening cluster, and superseded Claude-refresh plan. |
 
 ## `superpowers/` — internal authoring playbooks

@@ -16,9 +16,15 @@ active current-step truth, not historical process ledgers or branch proof notes.
   `load_tool_details`, invalid-call auto-details, strict loaded-detail
   guardrails before governed tool/script or brain-owned compound-action
   execution, prompt ordering/dedupe, and future bug-reporting docs.
+- `r12-delta-compact-indexes_spec.md` - active task spec for including compact
+  skill and governed-tool indexes in ordinary `remote-delta` provider turns
+  without changing memory cadence or full-schema cadence.
 - `next-codex-handoff-20260630.md` - current final-audit handoff for a fresh
   Codex session to independently review the pushed R12 scaffold hardening,
-  Wave 1 scope, important code/docs/tests, and live validation plan.
+  delta-index prompt work, Wave 1 scope, important code/docs/tests, and live
+  validation plan.
+- `wave1-final-deployment-adversarial-audit_process.md` - active process
+  ledger for the current Wave 1 product-deployment adversarial audit loop.
 
 Canonical current status now lives in:
 
@@ -45,6 +51,13 @@ handoff were moved to:
 markdowns/tmp/curr-archive-20260630-r12-scaffold-final/
 ```
 
+Completed delta-index process/review ledgers and Wave 1 audit evidence from the
+latest June 30 pass were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260630-delta-index-final/
+```
+
 The previous Branch A/B/C status, merge-validation, audit, pyright, cleanup, and
 Branch C proof docs were moved to:
 
@@ -69,9 +82,11 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 
 ## Verified
 
-- `markdowns/curr/` now contains only this index, the active R12 contract, the
-  active R12 scaffold-hardening spec/verification record, the active Wave 2
-  codebase-map spec, and the current final-audit handoff.
+- `markdowns/curr/` now contains only this index, the active R12 turnkey
+  contract, the active R12 scaffold-hardening spec/verification record, the
+  active delta-index task spec, the active Wave 2 codebase-map spec, the
+  current final-audit handoff, and the active Wave 1 final-deployment audit
+  process ledger.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.

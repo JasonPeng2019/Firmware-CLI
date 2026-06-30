@@ -636,6 +636,7 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     ).with_native_handle_update(response_id="resp-prev")
     bundle = ProviderPromptBundle(
         system_instructions="sys",
+        skill_context_text="skill index",
         tool_schema_text="tool schema",
         provider_memory_text="memory block",
         turn_context_text="prompt",
@@ -647,13 +648,15 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
     kwargs = captured["kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["previous_response_id"] == "resp-prev"
-    assert kwargs["input"] == "prompt"
+    assert kwargs["input"] == "skill index\n\ntool schema\n\nprompt"
+    assert "memory block" not in kwargs["input"]
+    assert "decision schema" not in kwargs["input"]
     assert turn.response_id == "resp-next"
     assert turn.session_state.native_handle is not None
     assert turn.session_state.native_handle.response_id == "resp-next"
     assert turn.provider_metadata["continuation_path"] == "remote-resume"
     assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
-    assert turn.provider_metadata["static_tool_schema_injected"] is False
+    assert turn.provider_metadata["static_tool_schema_injected"] is True
     assert turn.provider_metadata["decision_schema_injected"] is False
     assert [update.stage for update in turn.progress_updates] == [
         "provider_request",
@@ -1117,11 +1120,13 @@ def test_claude_cli_provider_resumes_remote_session_and_records_unified_metadata
     tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
+    inputs: list[str] = []
     working_dir = tmp_path / "claude-resume"
     working_dir.mkdir(parents=True, exist_ok=True)
 
     def fake_run(command: list[str], **kwargs: object) -> object:
         calls.append(command)
+        inputs.append(str(kwargs.get("input", "")))
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -1160,6 +1165,7 @@ def test_claude_cli_provider_resumes_remote_session_and_records_unified_metadata
     ).with_native_handle_update(native_session_id="sess-parent")
     bundle = ProviderPromptBundle(
         system_instructions="system",
+        skill_context_text="skill index",
         tool_schema_text="tool schema",
         provider_memory_text="",
         turn_context_text="turn context",
@@ -1172,6 +1178,8 @@ def test_claude_cli_provider_resumes_remote_session_and_records_unified_metadata
     assert "--resume" in calls[0]
     assert "sess-parent" in calls[0]
     assert "--fork-session" not in calls[0]
+    assert inputs == ["skill index\n\ntool schema\n\nturn context"]
+    assert "decision schema" not in inputs[0]
     assert turn.provider_metadata["remote_strategy"] == "claude-session-resume"
     assert turn.provider_metadata["remote_handle_kind"] == "session_id"
     assert turn.provider_metadata["remote_handle_id"] == "sess-parent"
@@ -1181,6 +1189,8 @@ def test_claude_cli_provider_resumes_remote_session_and_records_unified_metadata
     assert turn.provider_metadata["local_memory_fallback_used"] is False
     assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
     assert turn.provider_metadata["memory_injected"] is False
+    assert turn.provider_metadata["static_tool_schema_injected"] is True
+    assert turn.provider_metadata["decision_schema_injected"] is False
 
 
 def test_claude_cli_provider_fork_retry_commits_child_session_only_on_success(
@@ -1392,11 +1402,13 @@ def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
     tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
+    inputs: list[str] = []
     working_dir = tmp_path / "codex-resume"
     working_dir.mkdir(parents=True, exist_ok=True)
 
     def fake_run(command: list[str], **kwargs: object) -> object:
         calls.append(command)
+        inputs.append(str(kwargs.get("input", "")))
         output_path = Path(command[command.index("-o") + 1])
         output_path.write_text(
             json.dumps(
@@ -1433,6 +1445,7 @@ def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
     )
     bundle = ProviderPromptBundle(
         system_instructions="system",
+        skill_context_text="skill index",
         tool_schema_text="tool schema",
         provider_memory_text="",
         turn_context_text="turn context",
@@ -1444,6 +1457,8 @@ def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
     assert calls
     assert "resume" in calls[0]
     assert "thread-parent" in calls[0]
+    assert inputs == ["skill index\n\ntool schema\n\nturn context"]
+    assert "decision schema" not in inputs[0]
     assert turn.provider_metadata["remote_strategy"] == "codex-thread-resume"
     assert turn.provider_metadata["remote_handle_kind"] == "thread_id"
     assert turn.provider_metadata["remote_handle_id"] == "thread-parent"
@@ -1453,6 +1468,8 @@ def test_codex_cli_provider_resumes_remote_thread_and_records_unified_metadata(
     assert turn.provider_metadata["local_memory_fallback_used"] is False
     assert turn.provider_metadata["prompt_render_mode"] == "remote-delta"
     assert turn.provider_metadata["memory_injected"] is False
+    assert turn.provider_metadata["static_tool_schema_injected"] is True
+    assert turn.provider_metadata["decision_schema_injected"] is False
 
 
 def test_codex_cli_provider_resume_failure_fails_closed_by_default(

@@ -482,7 +482,11 @@ class ProviderPromptBundle:
         return self._join_user_sections(*sections)
 
     def render_remote_delta_text(self) -> str:
-        return self._join_user_sections(self.turn_context_text)
+        return self._join_user_sections(
+            self.skill_context_text,
+            self.tool_schema_text,
+            self.turn_context_text,
+        )
 
     def render_remote_sync_text(self, *, include_memory: bool = True) -> str:
         return self.render_bootstrap_text(include_memory=include_memory)

@@ -1089,7 +1089,7 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     assert bundle.render_bootstrap_text(include_memory=True) == (
         "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
-    assert bundle.render_remote_delta_text() == "turn context"
+    assert bundle.render_remote_delta_text() == "skill context\n\ntool schema\n\nturn context"
     assert bundle.render_remote_sync_text(include_memory=True) == (
         "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
