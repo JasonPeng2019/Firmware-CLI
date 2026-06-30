@@ -80,13 +80,19 @@ def load_skill_manifest(path: Path) -> SkillManifest:
         skill_id=skill_id,
         title=title,
         applies_to=SkillApplicability(
-            board_ids=_normalize_str_list(applies_to.get("board_ids"), field_name="applies_to.board_ids"),
+            board_ids=_normalize_str_list(
+                applies_to.get("board_ids"), field_name="applies_to.board_ids"
+            ),
             mcu_families=_normalize_str_list(
                 applies_to.get("mcu_families"),
                 field_name="applies_to.mcu_families",
             ),
-            case_kinds=_normalize_str_list(applies_to.get("case_kinds"), field_name="applies_to.case_kinds"),
-            task_terms=_normalize_str_list(applies_to.get("task_terms"), field_name="applies_to.task_terms"),
+            case_kinds=_normalize_str_list(
+                applies_to.get("case_kinds"), field_name="applies_to.case_kinds"
+            ),
+            task_terms=_normalize_str_list(
+                applies_to.get("task_terms"), field_name="applies_to.task_terms"
+            ),
         ),
         priority=priority,
         facts=_normalize_str_list(raw.get("facts"), field_name="facts"),
@@ -117,14 +123,12 @@ def _matches(skill: SkillManifest, *, board: BoardConfig, task: str, case_kind: 
     family_match = (
         not skill.applies_to.mcu_families or board.mcu_family in skill.applies_to.mcu_families
     )
-    case_match = (
-        not skill.applies_to.case_kinds
-        or (case_kind is not None and case_kind in skill.applies_to.case_kinds)
+    case_match = not skill.applies_to.case_kinds or (
+        case_kind is not None and case_kind in skill.applies_to.case_kinds
     )
     lowered_task = task.lower()
-    task_match = (
-        not skill.applies_to.task_terms
-        or any(term.lower() in lowered_task for term in skill.applies_to.task_terms)
+    task_match = not skill.applies_to.task_terms or any(
+        term.lower() in lowered_task for term in skill.applies_to.task_terms
     )
     return board_match and family_match and case_match and task_match
 

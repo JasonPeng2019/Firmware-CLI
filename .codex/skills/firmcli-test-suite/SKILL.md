@@ -16,20 +16,32 @@ Use this skill to mirror `.claude/commands/test-suite.md`.
 3. Map the requested chain to concrete checks and note any missing validation surface.
 4. For larger efforts, create or update a spec with the helper:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py spec suite-slug --task "suite summary"`
-5. Run the suite ladder from the repo root:
+5. Before any provider-backed, hardware-backed, MCP-backed, or long-running check,
+   apply the process and board-session hygiene rules from
+   `firmcli-workflow-core`: prefer task/JSON files over fragile inline
+   PowerShell quoting, set explicit timeouts, snapshot relevant processes, and
+   record the run root or provenance needed to identify spawned children.
+6. Run the suite ladder from the repo root:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset suite`
    - add `--command` entries for chain-specific tests, harnesses, or dry-runs
-6. If the ladder exposes a real bug or a coverage gap that can be fixed without user input, route that failure through `firmcli-fix-bug`.
-7. During each suite-driven repair pass, keep the workflow disciplined:
+7. After every provider/hardware/MCP/long-running check, attempt normal product
+   cleanup first, then audit for leftover spawned `uv`, `python`, `node`,
+   `codex`, `claude`, `pyocd`, MCP server, debug-session, and serial-port
+   resources. Clean up only processes that this suite spawned or can identify by
+   precise provenance. Treat any leftover spawned process, locked probe, open
+   serial port, or still-connected board session as a failing suite row or an
+   explicit deployment ambiguity.
+8. If the ladder exposes a real bug or a coverage gap that can be fixed without user input, route that failure through `firmcli-fix-bug`.
+9. During each suite-driven repair pass, keep the workflow disciplined:
    - update or create the narrowest spec needed for the fix
    - build the fix
    - if the fix changes Python code, use `.codex/skills/python-change/SKILL.md` and run its validation gate after the final Python edit
    - review the fix
    - rerun the targeted failing checks
    - rerun the full suite before reporting green
-8. If a finding requires a settled-decision change or real hardware proof, surface it and stop at the hand-off.
-9. Produce a matrix with `feature | check run | result | evidence`.
-10. Keep the outcome honest: a suite can be green only up to the hardware boundary, never past it.
+10. If a finding requires a settled-decision change or real hardware proof, surface it and stop at the hand-off.
+11. Produce a matrix with `feature | check run | result | evidence`, including cleanup/orphan-process evidence for rows that spawn providers, MCP, pyOCD, serial, or hardware sessions.
+12. Keep the outcome honest: a suite can be green only up to the hardware boundary, never past it.
 
 ## Closeout
 

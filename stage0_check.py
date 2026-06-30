@@ -315,8 +315,13 @@ def read_memory_value(
                     pass
 
         combined = last_result.combined
-        if attempt < 2 and isinstance(last_result.error, TargetConnectionError) and (
-            "j-link is already open" in combined or "could not read j-link capabilities" in combined
+        if (
+            attempt < 2
+            and isinstance(last_result.error, TargetConnectionError)
+            and (
+                "j-link is already open" in combined
+                or "could not read j-link capabilities" in combined
+            )
         ):
             time.sleep(0.25)
             continue
@@ -464,8 +469,12 @@ def check_connection(board: BoardConfig, probe: ProbeInfo | None, target_ok: boo
                 f"{board.display_name} probe is visible but the {board.probe_type} backend could not claim it",
             )
             print("      The probe enumerates on the host but the debug channel cannot be opened.")
-            print("      This is almost always a USB driver-binding or exclusive-access issue, not the board:")
-            print("      - Close anything else holding the probe (other pyOCD/JLink/IDE sessions, an MCP server) and replug.")
+            print(
+                "      This is almost always a USB driver-binding or exclusive-access issue, not the board:"
+            )
+            print(
+                "      - Close anything else holding the probe (other pyOCD/JLink/IDE sessions, an MCP server) and replug."
+            )
             if board.probe_family == "jlink":
                 print(
                     "      - The J-Link debug interface must be bound to the SEGGER J-Link driver, not generic WinUSB."
@@ -657,7 +666,15 @@ def flash_reference_firmware(
                 return False
             flash_image_path = hex_candidate
 
-        flash_cmd = ["nrfjprog", "--program", str(flash_image_path), "--sectorerase", "--verify", "-f", "NRF52"]
+        flash_cmd = [
+            "nrfjprog",
+            "--program",
+            str(flash_image_path),
+            "--sectorerase",
+            "--verify",
+            "-f",
+            "NRF52",
+        ]
         reset_cmd = ["nrfjprog", "--reset", "-f", "NRF52"]
         print(f"  Attempting fallback: {' '.join(flash_cmd)}")
         flash_rc, flash_out, flash_err = run(flash_cmd)
@@ -752,8 +769,10 @@ def read_uart_output(
     try:
         on_port_open = None
         if reset_handle is not None:
+
             def on_port_open() -> None:
                 target_control.reset(reset_handle, halt_after=False)
+
         capture = capture_uart_output(
             port.device,
             baudrate,

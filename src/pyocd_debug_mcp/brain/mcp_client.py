@@ -16,7 +16,11 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.exceptions import McpError
 
-from pyocd_debug_mcp.timeouts import MCP_STARTUP_TIMEOUT_SECONDS
+from pyocd_debug_mcp.timeouts import (
+    MCP_STARTUP_TIMEOUT_SECONDS,
+    ServerTimeoutUpdate,
+    server_timeout_update_to_record,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SESSION_ID_PATTERN = re.compile(r"session_id=([A-Za-z0-9T\-]+)")
@@ -35,6 +39,7 @@ class ToolClientProtocol(Protocol):
 
     async def __aenter__(self) -> "ToolClientProtocol":
         """Enter the underlying session context."""
+        ...
 
     async def __aexit__(
         self,
@@ -43,12 +48,15 @@ class ToolClientProtocol(Protocol):
         tb: TracebackType | None,
     ) -> None:
         """Leave the underlying session context."""
+        ...
 
     async def list_tool_descriptors(self) -> tuple["ToolDescriptor", ...]:
         """Return the currently available tool metadata."""
+        ...
 
     async def list_tool_names(self) -> set[str]:
         """Return the currently available tool names."""
+        ...
 
     async def call_tool_text(
         self,
@@ -58,6 +66,7 @@ class ToolClientProtocol(Protocol):
         timeout_seconds: float | None = None,
     ) -> "ToolTextResult":
         """Call one tool and flatten its text result."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -121,7 +130,9 @@ def _result_text(result: types.CallToolResult) -> str:
     for block in result.content:
         if isinstance(block, types.TextContent):
             parts.append(block.text)
-        elif isinstance(block, types.EmbeddedResource) and isinstance(block.resource, types.TextResourceContents):
+        elif isinstance(block, types.EmbeddedResource) and isinstance(
+            block.resource, types.TextResourceContents
+        ):
             parts.append(block.resource.text)
     if parts:
         return "\n".join(part for part in parts if part)
@@ -284,7 +295,9 @@ class LocalMCPClient:
         )
         self.available_tools: tuple[str, ...] = ()
         self._startup_timeout_seconds = (
-            MCP_STARTUP_TIMEOUT_SECONDS if startup_timeout_seconds is None else startup_timeout_seconds
+            MCP_STARTUP_TIMEOUT_SECONDS
+            if startup_timeout_seconds is None
+            else startup_timeout_seconds
         )
         self.tool_descriptors: tuple[ToolDescriptor, ...] = ()
 
@@ -377,6 +390,19 @@ class LocalMCPClient:
 
     async def disconnect(self) -> ToolTextResult:
         return await self.call_tool("disconnect", {})
+
+    async def sync_timeouts(
+        self,
+        update: ServerTimeoutUpdate,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ToolTextResult:
+        payload: dict[str, object] = dict(server_timeout_update_to_record(update) or {})
+        return await self.call_tool(
+            "_brain_sync_timeouts",
+            payload,
+            timeout_seconds=timeout_seconds,
+        )
 
     async def get_board_info(self) -> ToolTextResult:
         return await self.call_tool("get_board_info", {})

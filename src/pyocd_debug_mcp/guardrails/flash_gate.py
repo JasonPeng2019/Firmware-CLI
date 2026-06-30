@@ -69,7 +69,9 @@ def resolve_flash_request(
     action_context: ActionContext,
 ) -> ResolvedFlashRequest:
     if handle is None:
-        raise _refuse("flash/no-session", "Flash requires an active connected session.", action_context)
+        raise _refuse(
+            "flash/no-session", "Flash requires an active connected session.", action_context
+        )
 
     if explicit_path is None:
         if handle.board is None:
@@ -90,7 +92,9 @@ def resolve_flash_request(
 
     raw_text = str(explicit_path)
     if _URL_LIKE.match(raw_text):
-        raise _refuse("flash/non-local-path", "Flash path must be a local filesystem path.", action_context)
+        raise _refuse(
+            "flash/non-local-path", "Flash path must be a local filesystem path.", action_context
+        )
 
     artifact_path = Path(explicit_path).expanduser().resolve()
     if not artifact_path.exists():

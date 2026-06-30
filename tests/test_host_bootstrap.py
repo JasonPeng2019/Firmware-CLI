@@ -52,13 +52,17 @@ def test_assess_board_attachment_statuses_passes_with_unique_probe_and_serial(
             probes=(probe,),
         ),
     )
-    monkeypatch.setattr(host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")])
+    monkeypatch.setattr(
+        host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")]
+    )
     monkeypatch.setattr(
         host_bootstrap,
         "resolve_serial_port",
-        lambda selected_board, ports, probe, override, allow_single_fallback, run_cmd, interactive: SerialResolution(
-            ports[0],
-            "resolved via nrfjprog --com (VCOM0)",
+        lambda selected_board, ports, probe, override, allow_single_fallback, run_cmd, interactive: (
+            SerialResolution(
+                ports[0],
+                "resolved via nrfjprog --com (VCOM0)",
+            )
         ),
     )
 
@@ -89,7 +93,9 @@ def test_assess_board_attachment_statuses_fails_when_probe_missing(
             probes=(),
         ),
     )
-    monkeypatch.setattr(host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")])
+    monkeypatch.setattr(
+        host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")]
+    )
 
     statuses = host_bootstrap.assess_board_attachment_statuses(
         [board],
@@ -117,7 +123,9 @@ def test_assess_board_attachment_statuses_fails_when_probe_ambiguous(
             probes=(probe, probe),
         ),
     )
-    monkeypatch.setattr(host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")])
+    monkeypatch.setattr(
+        host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodem0006854006931")]
+    )
 
     statuses = host_bootstrap.assess_board_attachment_statuses(
         [board],
@@ -172,13 +180,19 @@ def test_board_attachment_summary_warns_on_ambiguous_serial_match(
             probes=(probe,),
         ),
     )
-    monkeypatch.setattr(host_bootstrap, "list_serial_ports", lambda: [_port("/dev/cu.usbmodemA"), _port("/dev/cu.usbmodemB")])
+    monkeypatch.setattr(
+        host_bootstrap,
+        "list_serial_ports",
+        lambda: [_port("/dev/cu.usbmodemA"), _port("/dev/cu.usbmodemB")],
+    )
     monkeypatch.setattr(
         host_bootstrap,
         "resolve_serial_port",
-        lambda selected_board, ports, probe, override, allow_single_fallback, run_cmd, interactive: SerialResolution(
-            None,
-            "multiple matching serial ports found; use --port nrf52833dk=PORT",
+        lambda selected_board, ports, probe, override, allow_single_fallback, run_cmd, interactive: (
+            SerialResolution(
+                None,
+                "multiple matching serial ports found; use --port nrf52833dk=PORT",
+            )
         ),
     )
 
@@ -190,7 +204,10 @@ def test_board_attachment_summary_warns_on_ambiguous_serial_match(
 
     output = capsys.readouterr().out
     assert ready is False
-    assert "[WARN] nrf52833dk: multiple matching serial ports found; use --port nrf52833dk=PORT" in output
+    assert (
+        "[WARN] nrf52833dk: multiple matching serial ports found; use --port nrf52833dk=PORT"
+        in output
+    )
 
 
 def test_main_without_board_id_keeps_host_only_behavior(
@@ -204,9 +221,15 @@ def test_main_without_board_id_keeps_host_only_behavior(
     )
     monkeypatch.setattr(host_bootstrap, "pyocd_summary", lambda pyocd_ok: 1)
     monkeypatch.setattr(host_bootstrap, "serial_summary", lambda pyserial_ok: 1)
-    monkeypatch.setattr(host_bootstrap, "load_selected_board_configs", lambda *args, **kwargs: [board])
+    monkeypatch.setattr(
+        host_bootstrap, "load_selected_board_configs", lambda *args, **kwargs: [board]
+    )
     monkeypatch.setattr(host_bootstrap, "board_config_summary", lambda boards: None)
-    monkeypatch.setattr(host_bootstrap, "target_pack_summary", lambda boards, pyocd_ok, install_packs: {board.board_id: True for board in boards})
+    monkeypatch.setattr(
+        host_bootstrap,
+        "target_pack_summary",
+        lambda boards, pyocd_ok, install_packs: {board.board_id: True for board in boards},
+    )
     monkeypatch.setattr(host_bootstrap, "vendor_serial_tool_summary", lambda boards: None)
 
     def _unexpected_board_check(*args, **kwargs):

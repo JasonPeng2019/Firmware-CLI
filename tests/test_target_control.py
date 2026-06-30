@@ -8,7 +8,11 @@ from pyocd_debug_mcp.adapters import swd_pyocd
 from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.board_config import BoardConfig, RECOVER_MODE_MANUAL_ONLY
 from pyocd_debug_mcp.services import target_control
-from pyocd_debug_mcp.target_errors import ProbeNotFoundError, TargetConnectionError, UnsupportedArtifactError
+from pyocd_debug_mcp.target_errors import (
+    ProbeNotFoundError,
+    TargetConnectionError,
+    UnsupportedArtifactError,
+)
 from pyocd_debug_mcp.timeouts import (
     PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
     PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
@@ -345,7 +349,8 @@ def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monk
             "return_first": True,
             "unique_id": "1050263657",
             "auto_open": False,
-            "options": default_pyocd_timeout_options() | {
+            "options": default_pyocd_timeout_options()
+            | {
                 "target_override": "nrf52840",
                 "jlink.non_interactive": False,
             },
@@ -355,7 +360,8 @@ def test_adapter_open_retries_jlink_uidless_after_known_serial_open_failure(monk
             "return_first": True,
             "unique_id": None,
             "auto_open": False,
-            "options": default_pyocd_timeout_options() | {
+            "options": default_pyocd_timeout_options()
+            | {
                 "target_override": "nrf52840",
                 "jlink.non_interactive": False,
             },

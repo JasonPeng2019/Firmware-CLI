@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-CLIENT_ACTION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")  # PROJECT-DEFINED (JSON/prompt-stable id)
+CLIENT_ACTION_NAME_PATTERN = re.compile(
+    r"^[A-Za-z0-9_.-]+$"
+)  # PROJECT-DEFINED (JSON/prompt-stable id)
 
 
 class ClientActionLoadError(ValueError):
@@ -119,14 +121,14 @@ def load_client_actions_from_specs(
         try:
             parsed = ast.parse(content, filename=str(path))
         except SyntaxError as exc:
-            raise ClientActionLoadError(f"client action {name!r} is not valid Python: {exc.msg}") from exc
+            raise ClientActionLoadError(
+                f"client action {name!r} is not valid Python: {exc.msg}"
+            ) from exc
         if not any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "run"
             for node in parsed.body
         ):
-            raise ClientActionLoadError(
-                f"client action {name!r} must define run(inputs, server)"
-            )
+            raise ClientActionLoadError(f"client action {name!r} must define run(inputs, server)")
         description = _description_from_module(parsed) or path.stem.replace("_", "-")
         records.append(
             ClientActionRecord(

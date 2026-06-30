@@ -25,15 +25,11 @@ _TOOL_RESPONSE_SEMANTICS: dict[str, tuple[str, ...]] = {
     "disconnect": (
         "Success text is `Disconnected.` when a session was active; repeated disconnects may return `Not connected.`.",
     ),
-    "flash_firmware": (
-        "Normal success starts with `Flashed ... via ...; target left ...`.",
-    ),
+    "flash_firmware": ("Normal success starts with `Flashed ... via ...; target left ...`.",),
     "read_serial": (
         "Healthy match text starts with `UART matched ...` and includes the matched excerpt.",
     ),
-    "unlock_recover": (
-        "Successful supported recover starts with `Recover completed via ...`.",
-    ),
+    "unlock_recover": ("Successful supported recover starts with `Recover completed via ...`.",),
 }
 
 
@@ -84,7 +80,9 @@ def build_tool_schema_bundle(tool_descriptors: tuple[ToolDescriptor, ...]) -> To
         )
     rendered_text = _render_bundle(tuple(entries))
     schema_hash = hashlib.sha256(rendered_text.encode("utf-8")).hexdigest()
-    return ToolSchemaBundle(entries=tuple(entries), rendered_text=rendered_text, schema_hash=schema_hash)
+    return ToolSchemaBundle(
+        entries=tuple(entries), rendered_text=rendered_text, schema_hash=schema_hash
+    )
 
 
 def _normalize_description(tool_name: str, description: str) -> str:

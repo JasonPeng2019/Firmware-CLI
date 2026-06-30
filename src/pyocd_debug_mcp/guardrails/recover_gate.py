@@ -27,7 +27,9 @@ def authorize_recover(
     action_context: ActionContext,
 ) -> AuthorizedRecoverRequest:
     if handle is None:
-        raise _refuse("recover/no-session", "Recover requires an active connected session.", action_context)
+        raise _refuse(
+            "recover/no-session", "Recover requires an active connected session.", action_context
+        )
 
     board = handle.board
     if board is None:

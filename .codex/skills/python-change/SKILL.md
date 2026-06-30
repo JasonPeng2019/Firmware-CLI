@@ -37,6 +37,24 @@ If you need raw command output or want to collect all failures in one pass, run:
 python .codex\skills\python-change\scripts\run_python_change_checks.py --continue-on-error
 ```
 
+## Process Hygiene
+
+The Python-change gate can spawn long-lived `uv`, `python`, `pyright`, `pytest`,
+`node`, provider, MCP, or pyOCD child processes indirectly through tests. Before
+running the full gate on a branch with provider/hardware/MCP tests, snapshot
+relevant pre-existing processes and prefer bounded commands over open-ended
+shell sessions.
+
+After the gate, including after failures or interrupts:
+
+- audit for leftover spawned `uv`, `python`, `pyright`, `pytest`, `node`,
+  `codex`, `claude`, `pyocd`, MCP server, serial, or board-debug processes
+- clean up only processes that this validation run spawned or can identify by
+  parent process, command line, run root, or other precise provenance
+- do not broad-kill unrelated user processes by name
+- if cleanup cannot be proven, report the uncertainty and the exact follow-up
+  process/session audit command
+
 ## Type Discipline
 
 - Fix Pyright errors caused by the change before reporting success.

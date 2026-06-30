@@ -122,9 +122,7 @@ def ensure_pack(spec: PackSpec, packs_dir: Path = PACKS_DIR) -> Path:
     return dest
 
 
-def ensure_all(
-    manifest_path: Path = MANIFEST_PATH, packs_dir: Path = PACKS_DIR
-) -> list[Path]:
+def ensure_all(manifest_path: Path = MANIFEST_PATH, packs_dir: Path = PACKS_DIR) -> list[Path]:
     """Provision every pinned pack in the manifest; returns local paths."""
     return [ensure_pack(spec, packs_dir) for spec in load_manifest(manifest_path)]
 

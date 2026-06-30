@@ -69,7 +69,9 @@ def make_stm32_board() -> BoardConfig:
 
 
 def make_handle(board: BoardConfig | None) -> TargetSessionHandle:
-    session_board = type("SessionBoard", (), {"name": board.display_name if board else "Raw Target"})()
+    session_board = type(
+        "SessionBoard", (), {"name": board.display_name if board else "Raw Target"}
+    )()
     session = type("Session", (), {"board": session_board if board else None})()
     return TargetSessionHandle(
         session=session,
@@ -146,11 +148,15 @@ def test_session_store_writes_jsonl_and_summary(tmp_path: Path) -> None:
 
 def test_new_session_starts_without_prior_block_state(tmp_path: Path) -> None:
     store = InMemorySessionStore(tmp_path / "runs")
-    first = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    first = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
     store.set_block(first, FLASH_TOOL, "watch/flash-repetition", "Repeated flash failures.")
     store.close_session(first)
 
-    second = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    second = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
 
     assert second.blocked_actions == {}
 
@@ -279,7 +285,9 @@ def test_recover_gate_refuses_second_recover_in_same_session() -> None:
 
 def test_convergence_watcher_blocks_after_two_identical_flash_failures(tmp_path: Path) -> None:
     store = InMemorySessionStore(tmp_path / "runs")
-    session = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    session = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
     watcher = ConvergenceWatcher()
 
     event1 = make_event(
@@ -309,7 +317,9 @@ def test_convergence_watcher_blocks_after_two_identical_flash_failures(tmp_path:
 
 def test_convergence_watcher_blocks_after_three_identical_uart_misses(tmp_path: Path) -> None:
     store = InMemorySessionStore(tmp_path / "runs")
-    session = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    session = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
     watcher = ConvergenceWatcher()
 
     for _ in range(2):
@@ -348,7 +358,9 @@ def test_convergence_watcher_blocks_after_three_identical_uart_misses(tmp_path: 
 
 def test_convergence_watcher_blocks_after_two_identical_recover_failures(tmp_path: Path) -> None:
     store = InMemorySessionStore(tmp_path / "runs")
-    session = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    session = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
     watcher = ConvergenceWatcher()
 
     event1 = make_event(
@@ -378,7 +390,9 @@ def test_convergence_watcher_blocks_after_two_identical_recover_failures(tmp_pat
 
 def test_convergence_watcher_never_blocks_read_only_tools(tmp_path: Path) -> None:
     store = InMemorySessionStore(tmp_path / "runs")
-    session = store.start_session(board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native")
+    session = store.start_session(
+        board_id="nrf52833dk", probe_uid="probe-123", route_used="pyocd-native"
+    )
     watcher = ConvergenceWatcher()
 
     event = make_event(

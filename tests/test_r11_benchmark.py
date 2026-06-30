@@ -10,9 +10,7 @@ from pyocd_debug_mcp import benchmark_support as r11
 
 
 def load_fixture_result(name: str) -> r11.ParsedAgentResult:
-    fixture_path = (
-        Path(__file__).resolve().parent / "fixtures" / "r11_results" / f"{name}.json"
-    )
+    fixture_path = Path(__file__).resolve().parent / "fixtures" / "r11_results" / f"{name}.json"
     return r11._parse_agent_result(fixture_path)
 
 
@@ -235,7 +233,10 @@ def test_runner_final_verification_is_authoritative() -> None:
 
     assert score.outcome_label == "partial_success"
     assert score.score == 85
-    assert "Final verification failed: RuntimeError: stage1_known_value value mismatch" in score.reasons
+    assert (
+        "Final verification failed: RuntimeError: stage1_known_value value mismatch"
+        in score.reasons
+    )
 
 
 def test_score_blocked_case_caps_at_40() -> None:
@@ -315,7 +316,9 @@ def test_stage1_preflight_caches_failure(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(RuntimeError, match="Benchmark preflight failed for nucleo_l476rg"):
         r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
-    with pytest.raises(RuntimeError, match="Rerun Stage 0 and Stage 1 smoke on this host before R11"):
+    with pytest.raises(
+        RuntimeError, match="Rerun Stage 0 and Stage 1 smoke on this host before R11"
+    ):
         r11._ensure_stage1_preflight("nucleo_l476rg", "probe-1")
 
     assert calls == [("nucleo_l476rg", "probe-1", r11.DEFAULT_SERIAL_READ_SECONDS)]
@@ -393,16 +396,22 @@ def test_record_case_artifacts_writes_expected_files(tmp_path: Path) -> None:
     assert (run_root / "run-metadata" / "benchmark_result.json").exists()
     assert (run_root / "run-metadata" / "score.json").exists()
     assert (run_root / "run-metadata" / "firmware_identity.json").exists()
-    assert (run_root / "logs" / "codex_exec.jsonl").read_text(encoding="utf-8") == '{"event":"done"}\n'
+    assert (run_root / "logs" / "codex_exec.jsonl").read_text(
+        encoding="utf-8"
+    ) == '{"event":"done"}\n'
     assert (run_root / "logs" / "prompt.txt").read_text(encoding="utf-8") == "prompt"
-    assert (run_root / "captured-serial" / "final_excerpt.txt").read_text(encoding="utf-8") == "boot ok\n"
+    assert (run_root / "captured-serial" / "final_excerpt.txt").read_text(
+        encoding="utf-8"
+    ) == "boot ok\n"
     assert (run_root / "applied-patches" / "agent.diff").exists()
     diff_text = (run_root / "applied-patches" / "agent.diff").read_text(encoding="utf-8")
     assert "a/src/file.txt" in diff_text
     assert "b/src/file.txt" in diff_text
     assert "-before" in diff_text
     assert "+after" in diff_text
-    score_payload = json.loads((run_root / "run-metadata" / "score.json").read_text(encoding="utf-8"))
+    score_payload = json.loads(
+        (run_root / "run-metadata" / "score.json").read_text(encoding="utf-8")
+    )
     assert score_payload["canonical_session_id"] == run_root.name
     assert score_payload["supporting_session_ids"] == []
     assert score_payload["runner_warnings"] == []
@@ -490,7 +499,9 @@ def test_run_codex_honors_explicit_timeout_override(
     assert captured["timeout_seconds"] == 42.0
 
 
-def test_run_build_command_uses_cmd_on_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_build_command_uses_cmd_on_windows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     captured: dict[str, object] = {}
 
     def fake_run_cmd(
@@ -592,13 +603,21 @@ def test_render_prompt_pins_exact_case_and_board_identifiers() -> None:
     prompt = r11._render_prompt(case)
 
     assert "do not read repo workflow skills, playbooks, or markdown docs" in prompt
-    assert "the real deployment workflow should still read its repo workflow docs and skills before acting" in prompt
-    assert 'read_symbol_u32(elf_path="build/firmware.elf", symbol_name="stage1_known_value")' in prompt
+    assert (
+        "the real deployment workflow should still read its repo workflow docs and skills before acting"
+        in prompt
+    )
+    assert (
+        'read_symbol_u32(elf_path="build/firmware.elf", symbol_name="stage1_known_value")' in prompt
+    )
     assert "`case_id` exactly as `nucleo_l476rg__k001_reference_green`" in prompt
     assert "`board_id` exactly as `nucleo_l476rg`" in prompt
     assert "do not derive `case_id` from the workspace directory name" in prompt
     assert "do not pass a generic target override such as `cortex_m`" in prompt
-    assert "avoid reconnect churn unless the first session clearly attached to the wrong board" in prompt
+    assert (
+        "avoid reconnect churn unless the first session clearly attached to the wrong board"
+        in prompt
+    )
 
 
 def test_render_prompt_adds_bug_case_phase_contract() -> None:
@@ -677,13 +696,15 @@ def test_run_case_fails_when_no_session_directory_is_created(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
-            exit_code=1,
-            stdout_text="",
-            stderr_text="failed",
-            result_path=result_path,
-            prompt_path=prompt_path,
-            new_session_dirs=(),
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: (
+            r11.CodexRunArtifacts(
+                exit_code=1,
+                stdout_text="",
+                stderr_text="failed",
+                result_path=result_path,
+                prompt_path=prompt_path,
+                new_session_dirs=(),
+            )
         ),
     )
 
@@ -763,13 +784,15 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
-            exit_code=0,
-            stdout_text='{"type":"done"}\n',
-            stderr_text="",
-            result_path=result_path,
-            prompt_path=prompt_path,
-            new_session_dirs=(supporting_root, canonical_root),
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: (
+            r11.CodexRunArtifacts(
+                exit_code=0,
+                stdout_text='{"type":"done"}\n',
+                stderr_text="",
+                result_path=result_path,
+                prompt_path=prompt_path,
+                new_session_dirs=(supporting_root, canonical_root),
+            )
         ),
     )
     monkeypatch.setattr(
@@ -804,11 +827,13 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     monkeypatch.setattr(
         r11,
         "_record_case_artifacts",
-        lambda _prepared, _result, _codex_run, _verification, _score, run_root, session_selection=None: captured.update(
-            {
-                "run_root": run_root,
-                "session_selection": session_selection,
-            }
+        lambda _prepared, _result, _codex_run, _verification, _score, run_root, session_selection=None: (
+            captured.update(
+                {
+                    "run_root": run_root,
+                    "session_selection": session_selection,
+                }
+            )
         ),
     )
 
@@ -822,7 +847,10 @@ def test_run_case_uses_structured_final_session_as_canonical_root(
     assert selection.canonical_run_root == canonical_root
     assert selection.supporting_run_roots == (supporting_root,)
     assert "supporting-session-count:1" in selection.runner_warnings
-    assert f"supporting-session-board-mismatch:{supporting_root.name}:nucleo_l476rg" in selection.runner_warnings
+    assert (
+        f"supporting-session-board-mismatch:{supporting_root.name}:nucleo_l476rg"
+        in selection.runner_warnings
+    )
 
 
 def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_dirs(
@@ -882,13 +910,15 @@ def test_run_case_fails_when_structured_session_id_is_missing_from_new_session_d
     monkeypatch.setattr(
         r11,
         "_run_codex",
-        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: r11.CodexRunArtifacts(
-            exit_code=0,
-            stdout_text='{"type":"done"}\n',
-            stderr_text="",
-            result_path=result_path,
-            prompt_path=prompt_path,
-            new_session_dirs=(unrelated_root,),
+        lambda _case, _workspace, _prompt, timeout_seconds=r11.DEFAULT_CODEX_TIMEOUT_SECONDS: (
+            r11.CodexRunArtifacts(
+                exit_code=0,
+                stdout_text='{"type":"done"}\n',
+                stderr_text="",
+                result_path=result_path,
+                prompt_path=prompt_path,
+                new_session_dirs=(unrelated_root,),
+            )
         ),
     )
 

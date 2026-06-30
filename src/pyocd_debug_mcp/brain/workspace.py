@@ -73,9 +73,7 @@ class WorkspaceSession:
         before = self._relative_files(self.snapshot_root)
         after = self._relative_files(self.root)
         changed = sorted(
-            path
-            for path in set(before) | set(after)
-            if before.get(path) != after.get(path)
+            path for path in set(before) | set(after) if before.get(path) != after.get(path)
         )
         return tuple(changed)
 
@@ -122,8 +120,7 @@ class WorkspaceSession:
         candidate = self._resolve_relative_path(normalized)
         relative = candidate.relative_to(self.root).as_posix()
         if self.allowed_edit_roots and not any(
-            relative == root or relative.startswith(f"{root}/")
-            for root in self.allowed_edit_roots
+            relative == root or relative.startswith(f"{root}/") for root in self.allowed_edit_roots
         ):
             allowed = ", ".join(self.allowed_edit_roots)
             raise WorkspaceError(

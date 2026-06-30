@@ -81,12 +81,16 @@ def parse_master_index(xml_text: str) -> list[PdscRef]:
     return refs
 
 
-def fetch_master_index(index_url: str = DEFAULT_MASTER_INDEX_URL, timeout: float = 60.0) -> list[PdscRef]:
+def fetch_master_index(
+    index_url: str = DEFAULT_MASTER_INDEX_URL, timeout: float = 60.0
+) -> list[PdscRef]:
     try:
         response = httpx.get(index_url, follow_redirects=True, timeout=timeout)
         response.raise_for_status()
     except Exception as exc:
-        raise PackIndexRepairError(f"Failed to fetch CMSIS master index {index_url}: {exc}") from exc
+        raise PackIndexRepairError(
+            f"Failed to fetch CMSIS master index {index_url}: {exc}"
+        ) from exc
     return parse_master_index(response.text)
 
 
@@ -162,7 +166,9 @@ def _download_descriptor(ref: PdscRef, dest: Path, *, timeout: float, retries: i
                 time.sleep(min(float(attempt), 3.0))
 
     assert last_error is not None
-    raise PackIndexRepairError(f"Failed to fetch {ref.remote_pdsc_url}: {last_error}") from last_error
+    raise PackIndexRepairError(
+        f"Failed to fetch {ref.remote_pdsc_url}: {last_error}"
+    ) from last_error
 
 
 def rebuild_cached_index(cache: Cache) -> tuple[int, int]:
@@ -266,7 +272,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the master CMSIS pack index URL.",
     )
     parser.add_argument("--json-path", help="Override the cmsis-pack-manager json cache path.")
-    parser.add_argument("--data-path", help="Override the cmsis-pack-manager descriptor cache path.")
+    parser.add_argument(
+        "--data-path", help="Override the cmsis-pack-manager descriptor cache path."
+    )
     return parser
 
 

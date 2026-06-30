@@ -24,8 +24,9 @@ The scoped pair is green through the current `R11` benchmark layer:
 `nrf52833dk + nucleo_l476rg` have passed the safety/runtime validation, the
 shared Stage 1 smoke harness, the full MCP surface proof, and the frozen
 12-case Codex benchmark corpus. `R12` is now implemented in the repo as a
-turnkey product layer with one live-proven provider path, one still-open
-provider proof gap, and a new additive Pass 1 operator shell over the same
+turnkey product layer with live Codex/Claude CLI proof on the currently
+attached STM32/Nordic boards, an exact official-pair proof gap for
+`nrf52833dk`, and a new additive Pass 1 operator shell over the same
 brain/runtime:
 
 - native Python brain package
@@ -45,6 +46,11 @@ The current live status is:
   hard-coded probe UID or serial-port override
 - for the current prototype boundary, this Codex-backed path is the required
   proven baseline
+- the current Wave 1 A/B/C merge-back candidate has also passed live
+  provider/hardware Branch C harness checks and explicit two-turn CLI smokes
+  with both `codex-cli` and `claude-cli` on the attached
+  `nucleo_l476rg + nrf52840dk` boards; exact `nrf52833dk`,
+  API-provider parity, and fresh-machine proof remain deferred
 - the new `pyocd-debug` shell is now implemented on top of the same shared
   turnkey loop with:
   - structured brain events

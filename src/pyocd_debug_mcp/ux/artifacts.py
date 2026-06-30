@@ -55,7 +55,9 @@ def find_artifact_entry(bundle: SessionBundle, label: str) -> ArtifactEntry | No
 
 def find_shortcut_entries(bundle: SessionBundle, shortcut: str) -> tuple[ArtifactEntry, ...]:
     labels = ARTIFACT_SHORTCUT_LABELS.get(shortcut, ())
-    return tuple(entry for label in labels if (entry := find_artifact_entry(bundle, label)) is not None)
+    return tuple(
+        entry for label in labels if (entry := find_artifact_entry(bundle, label)) is not None
+    )
 
 
 def preview_text(path: Path, *, max_lines: int = 24, max_chars: int = 5000) -> str:

@@ -32,7 +32,7 @@ def spec_template(slug: str, task: str, roadmap: str | None) -> str:
     roadmap_line = roadmap or "[add roadmap anchor if known]"
     return f"""> STATUS: PROPOSAL - not authority, pending reconciliation with build_plan_concrete and user sign-off.
 
-# {slug.replace('-', ' ')}
+# {slug.replace("-", " ")}
 
 ## Goal in plain English
 

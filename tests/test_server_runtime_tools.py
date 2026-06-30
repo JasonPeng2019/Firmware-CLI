@@ -37,7 +37,9 @@ def make_board() -> BoardConfig:
 
 
 def make_handle(board: BoardConfig | None) -> TargetSessionHandle:
-    session_board = type("SessionBoard", (), {"name": board.display_name if board else "Raw Target"})()
+    session_board = type(
+        "SessionBoard", (), {"name": board.display_name if board else "Raw Target"}
+    )()
     session = type("Session", (), {"board": session_board if board else None})()
     return TargetSessionHandle(
         session=session,
@@ -228,11 +230,13 @@ def test_read_serial_uses_port_override(monkeypatch) -> None:
     monkeypatch.setattr(
         server,
         "capture_uart_output",
-        lambda device, baudrate, read_seconds, expected_text, *, on_port_open=None: UARTCaptureResult(
-            text="boot ok\r\n",
-            expected_text=expected_text,
-            reopen_count=0,
-            duration_seconds=0.25,
+        lambda device, baudrate, read_seconds, expected_text, *, on_port_open=None: (
+            UARTCaptureResult(
+                text="boot ok\r\n",
+                expected_text=expected_text,
+                reopen_count=0,
+                duration_seconds=0.25,
+            )
         ),
     )
 
@@ -258,7 +262,9 @@ def test_read_serial_uses_explicit_expected_text(monkeypatch) -> None:
 
     server._session_handle = handle
 
-    monkeypatch.setattr(server, "_resolve_serial_port_for_session", lambda handle_arg, *, override: port)
+    monkeypatch.setattr(
+        server, "_resolve_serial_port_for_session", lambda handle_arg, *, override: port
+    )
 
     def fake_capture(device, baudrate, read_seconds, expected_text, *, on_port_open=None):
         seen["expected_text"] = expected_text
@@ -311,14 +317,14 @@ def test_read_serial_refuses_nonpositive_baudrate(monkeypatch) -> None:
     monkeypatch.setattr(
         server,
         "_resolve_serial_port_for_session",
-        lambda handle_arg, *, override: (_ for _ in ()).throw(AssertionError("should not resolve port")),
+        lambda handle_arg, *, override: (_ for _ in ()).throw(
+            AssertionError("should not resolve port")
+        ),
     )
 
     result = server.read_serial(baudrate=0)
 
-    assert result == (
-        "Refused [uart/invalid-baudrate]: baudrate must be > 0. session_id=(none)"
-    )
+    assert result == ("Refused [uart/invalid-baudrate]: baudrate must be > 0. session_id=(none)")
 
 
 def test_write_serial_uses_port_override_and_utf8_payload(monkeypatch) -> None:
@@ -367,7 +373,9 @@ def test_write_serial_refuses_invalid_timeout(monkeypatch) -> None:
     monkeypatch.setattr(
         server,
         "_resolve_serial_port_for_session",
-        lambda handle_arg, *, override: (_ for _ in ()).throw(AssertionError("should not resolve port")),
+        lambda handle_arg, *, override: (_ for _ in ()).throw(
+            AssertionError("should not resolve port")
+        ),
     )
 
     result = server.write_serial("hello", timeout_seconds=0)
@@ -431,14 +439,14 @@ def test_read_memory_block_refuses_invalid_length(monkeypatch) -> None:
     monkeypatch.setattr(
         server.target_control,
         "read_memory_block",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not read memory block")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("should not read memory block")
+        ),
     )
 
     result = server.read_memory_block("0x10000000", 0)
 
-    assert result == (
-        "Refused [memory/invalid-length]: length must be > 0. session_id=(none)"
-    )
+    assert result == ("Refused [memory/invalid-length]: length must be > 0. session_id=(none)")
 
 
 def test_write_memory_refuses_invalid_word_size(monkeypatch) -> None:
@@ -525,10 +533,11 @@ def test_connect_autoresolves_jlink_probe_on_non_windows_when_uid_is_implicit(
         )(),
     )
 
-    def fake_open_session(*, board, unique_id, target):
+    def fake_open_session(*, board, unique_id, target, server_timeouts=None):
         seen["board"] = board
         seen["unique_id"] = unique_id
         seen["target"] = target
+        seen["server_timeouts"] = server_timeouts
         return TargetSessionHandle(
             session=type("Session", (), {"board": type("Board", (), {"name": "nRF52833 DK"})()})(),
             board=board,
@@ -571,10 +580,11 @@ def test_connect_autoresolves_jlink_probe_on_windows_when_multiple_probes_are_at
         )(),
     )
 
-    def fake_open_session(*, board, unique_id, target):
+    def fake_open_session(*, board, unique_id, target, server_timeouts=None):
         seen["board"] = board
         seen["unique_id"] = unique_id
         seen["target"] = target
+        seen["server_timeouts"] = server_timeouts
         return TargetSessionHandle(
             session=type("Session", (), {"board": type("Board", (), {"name": "nRF52833 DK"})()})(),
             board=board,

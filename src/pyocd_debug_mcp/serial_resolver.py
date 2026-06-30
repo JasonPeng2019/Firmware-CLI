@@ -248,7 +248,9 @@ def looks_like_usb_serial_bridge(port: SerialPortInfo) -> bool:
 
 def parse_nrfjprog_com_output(text: str) -> list[NordicComEntry]:
     entries: list[NordicComEntry] = []
-    pattern = re.compile(r"^(?P<serial>\S+)\s+(?P<port>\S+)\s+(?P<label>VCOM\d+)\s*$", re.IGNORECASE)
+    pattern = re.compile(
+        r"^(?P<serial>\S+)\s+(?P<port>\S+)\s+(?P<label>VCOM\d+)\s*$", re.IGNORECASE
+    )
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -347,26 +349,38 @@ def _prompt_for_candidate(board: BoardLike, candidates: list[SerialPortInfo]) ->
         response = ""
 
     if not response:
-        return SerialResolution(None, f"selection aborted; {_manual_rerun_guidance(board, candidates)}")
+        return SerialResolution(
+            None, f"selection aborted; {_manual_rerun_guidance(board, candidates)}"
+        )
     if not response.isdigit():
-        return SerialResolution(None, f"invalid selection '{response}'; {_manual_rerun_guidance(board, candidates)}")
+        return SerialResolution(
+            None, f"invalid selection '{response}'; {_manual_rerun_guidance(board, candidates)}"
+        )
 
     selected_index = int(response)
     if not 1 <= selected_index <= len(candidates):
-        return SerialResolution(None, f"selection {selected_index} is out of range; {_manual_rerun_guidance(board, candidates)}")
+        return SerialResolution(
+            None,
+            f"selection {selected_index} is out of range; {_manual_rerun_guidance(board, candidates)}",
+        )
 
     selected = candidates[selected_index - 1]
     return SerialResolution(selected, f"user selected {selected.device}")
 
 
-def _generic_candidates(board: BoardLike, ports: list[SerialPortInfo], probe: ProbeLike | None) -> list[SerialPortInfo]:
+def _generic_candidates(
+    board: BoardLike, ports: list[SerialPortInfo], probe: ProbeLike | None
+) -> list[SerialPortInfo]:
     scored: list[tuple[int, SerialPortInfo]] = []
     for port in ports:
         score = score_terms(port.searchable_text, board.serial_hint_terms)
         if probe and probe.uid:
             if probe_uid_matches_serial(probe.uid, port.serial_number):
                 score += 100
-            elif _normalized_probe_uid(probe.uid) and _normalized_probe_uid(probe.uid) in port.searchable_text:
+            elif (
+                _normalized_probe_uid(probe.uid)
+                and _normalized_probe_uid(probe.uid) in port.searchable_text
+            ):
                 score += 10
         # Weak boost so an external USB-serial adapter on a decoupled custom PCB
         # surfaces as a candidate when nothing stronger matches. Stays below a
@@ -405,13 +419,18 @@ def _resolve_nordic_serial(
 
     matching = entries
     if probe and probe.uid:
-        probe_matches = [entry for entry in entries if probe_uid_matches_serial(probe.uid, entry.probe_serial)]
+        probe_matches = [
+            entry for entry in entries if probe_uid_matches_serial(probe.uid, entry.probe_serial)
+        ]
         if probe_matches:
             matching = probe_matches
 
     matching = sorted(
         matching,
-        key=lambda entry: (0 if entry.label.upper() == "VCOM0" else 1, normalize_port_name(entry.port)),
+        key=lambda entry: (
+            0 if entry.label.upper() == "VCOM0" else 1,
+            normalize_port_name(entry.port),
+        ),
     )
     for entry in matching:
         port = _find_port_by_name(ports, entry.port)
@@ -442,7 +461,9 @@ def _resolve_stlink_serial(
 
     matching = entries
     if probe and probe.uid:
-        probe_matches = [entry for entry in entries if probe_uid_matches_serial(probe.uid, entry.probe_serial)]
+        probe_matches = [
+            entry for entry in entries if probe_uid_matches_serial(probe.uid, entry.probe_serial)
+        ]
         if probe_matches:
             matching = probe_matches
 
@@ -452,7 +473,9 @@ def _resolve_stlink_serial(
         if port:
             resolved.append(port)
 
-    unique: dict[str, SerialPortInfo] = {normalize_port_name(port.device): port for port in resolved}
+    unique: dict[str, SerialPortInfo] = {
+        normalize_port_name(port.device): port for port in resolved
+    }
     if len(unique) == 1:
         return SerialResolution(next(iter(unique.values())), "resolved via STM32_Programmer_CLI -l")
     return None
@@ -497,10 +520,15 @@ def resolve_serial_port(
     if candidates:
         if interactive:
             return _prompt_for_candidate(board, candidates)
-        return SerialResolution(None, f"multiple matching serial ports found; {_manual_rerun_guidance(board, candidates)}")
+        return SerialResolution(
+            None,
+            f"multiple matching serial ports found; {_manual_rerun_guidance(board, candidates)}",
+        )
 
     if interactive and ports:
         return _prompt_for_candidate(board, ports)
     if ports:
-        return SerialResolution(None, f"no matching serial port found; {_manual_rerun_guidance(board, ports)}")
+        return SerialResolution(
+            None, f"no matching serial port found; {_manual_rerun_guidance(board, ports)}"
+        )
     return SerialResolution(None, "no serial ports detected")

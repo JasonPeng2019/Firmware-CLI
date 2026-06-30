@@ -120,19 +120,23 @@ def test_resolve_probe_uid_uses_api_only_resolution_on_windows_jlink(monkeypatch
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
-        lambda *args, **kwargs: seen.update(kwargs)
-        or type(
-            "Resolution",
-            (),
-            {"probe": type("Probe", (), {"uid": "jlink-win-123"})(), "note": ""},
-        )(),
+        lambda *args, **kwargs: (
+            seen.update(kwargs)
+            or type(
+                "Resolution",
+                (),
+                {"probe": type("Probe", (), {"uid": "jlink-win-123"})(), "note": ""},
+            )()
+        ),
     )
 
     assert server._resolve_probe_uid_for_connect(board, None) == "jlink-win-123"
     assert seen["allow_subprocess_fallback"] is False
 
 
-def test_resolve_probe_uid_returns_none_when_windows_jlink_api_resolution_is_empty(monkeypatch) -> None:
+def test_resolve_probe_uid_returns_none_when_windows_jlink_api_resolution_is_empty(
+    monkeypatch,
+) -> None:
     board = server.resolve_board_config("nrf52840dk", None)
     assert board is not None
 
@@ -142,12 +146,14 @@ def test_resolve_probe_uid_returns_none_when_windows_jlink_api_resolution_is_emp
     monkeypatch.setattr(
         server,
         "resolve_probe_for_board",
-        lambda *args, **kwargs: seen.update(kwargs)
-        or type(
-            "Resolution",
-            (),
-            {"probe": None, "note": "no probes visible via API"},
-        )(),
+        lambda *args, **kwargs: (
+            seen.update(kwargs)
+            or type(
+                "Resolution",
+                (),
+                {"probe": None, "note": "no probes visible via API"},
+            )()
+        ),
     )
 
     assert server._resolve_probe_uid_for_connect(board, None) is None

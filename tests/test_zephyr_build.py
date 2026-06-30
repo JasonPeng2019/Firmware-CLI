@@ -108,7 +108,9 @@ def test_resolve_sdk_dir_uses_managed_installer_when_no_sdk_exists(
         ],
     )
 
-    def fake_install(*, west_python: Path, workspace_dir: Path, managed_sdk_dir: Path, toolchain: str) -> None:
+    def fake_install(
+        *, west_python: Path, workspace_dir: Path, managed_sdk_dir: Path, toolchain: str
+    ) -> None:
         captured["west_python"] = west_python
         captured["workspace_dir"] = workspace_dir
         captured["managed_sdk_dir"] = managed_sdk_dir
@@ -167,7 +169,9 @@ def test_build_cache_matches_app_uses_cmake_home_directory(tmp_path: Path) -> No
     assert zephyr_build._build_cache_matches_app(build_dir, other_app_dir) is False
 
 
-def test_copy_artifacts_preserves_live_build_tree_when_output_dir_matches_work_dir(tmp_path: Path) -> None:
+def test_copy_artifacts_preserves_live_build_tree_when_output_dir_matches_work_dir(
+    tmp_path: Path,
+) -> None:
     build_dir = tmp_path / "build"
     zephyr_dir = build_dir / "zephyr"
     zephyr_dir.mkdir(parents=True)
@@ -233,7 +237,9 @@ def test_ensure_west_python_reinstalls_when_pyelftools_missing(
     def fake_has_module(_python: Path, module: str) -> bool:
         return module == "patoolib"
 
-    def fake_run(cmd: list[str], cwd: Path | None = None, env=None, timeout_seconds: int = 600) -> None:
+    def fake_run(
+        cmd: list[str], cwd: Path | None = None, env=None, timeout_seconds: int = 600
+    ) -> None:
         del cwd, env, timeout_seconds
         run_calls.append(cmd)
 
@@ -243,7 +249,9 @@ def test_ensure_west_python_reinstalls_when_pyelftools_missing(
     resolved = zephyr_build._ensure_west_python(west_venv_dir)
 
     assert resolved == west_python
-    assert any(cmd[:5] == [str(west_python), "-m", "pip", "install", "--upgrade"] for cmd in run_calls)
+    assert any(
+        cmd[:5] == [str(west_python), "-m", "pip", "install", "--upgrade"] for cmd in run_calls
+    )
     assert any("pyelftools" in cmd for cmd in run_calls)
 
 
@@ -271,4 +279,6 @@ def test_copy_adjacent_common_for_scratch_preserves_local_app_common_layout(tmp_
 
     zephyr_build._copy_adjacent_common_for_scratch(app_dir, scratch_root)
 
-    assert (scratch_root / "common" / "nucleo_l476rg.overlay").read_text(encoding="utf-8") == "overlay"
+    assert (scratch_root / "common" / "nucleo_l476rg.overlay").read_text(
+        encoding="utf-8"
+    ) == "overlay"

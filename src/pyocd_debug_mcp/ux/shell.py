@@ -12,7 +12,9 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import patch_stdout
 
 if sys.platform == "win32":  # pragma: no cover - Windows import path only
-    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError as _NoConsoleScreenBufferError
+    from prompt_toolkit.output.win32 import (
+        NoConsoleScreenBufferError as _NoConsoleScreenBufferError,
+    )
 else:  # pragma: no cover - non-Windows hosts
     _NO_CONSOLE_ERROR_TYPE: type[BaseException] = RuntimeError
     _NO_CONSOLE_ERRORS: tuple[type[BaseException], ...] = (_NO_CONSOLE_ERROR_TYPE,)
@@ -36,8 +38,19 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderResumeRecoveryChoice,
 )
 from pyocd_debug_mcp.ux.artifacts import find_shortcut_entries
-from pyocd_debug_mcp.ux.commands import HELP_TEXT, ShellCommandError, SlashCommand, TaskInput, parse_shell_input
-from pyocd_debug_mcp.ux.history import SessionBundle, UXHistoryError, load_session_bundle, list_history
+from pyocd_debug_mcp.ux.commands import (
+    HELP_TEXT,
+    ShellCommandError,
+    SlashCommand,
+    TaskInput,
+    parse_shell_input,
+)
+from pyocd_debug_mcp.ux.history import (
+    SessionBundle,
+    UXHistoryError,
+    load_session_bundle,
+    list_history,
+)
 from pyocd_debug_mcp.ux.renderer import RawOutputPolicy, UXRenderer
 
 
@@ -229,7 +242,9 @@ class OperatorShell:
                 )
                 return True
             self.context.native_sync_every = value
-            self.renderer.print_info(f"Native sync cadence set to {self.context.native_sync_every}.")
+            self.renderer.print_info(
+                f"Native sync cadence set to {self.context.native_sync_every}."
+            )
             return True
         if command.name == "workspace":
             return self._handle_workspace_command(command)
@@ -259,7 +274,9 @@ class OperatorShell:
             return self._run_guided_command(GUIDED_COMMANDS[command.name], command)
         if command.name == "benchmark":
             if len(command.args) != 2 or command.args[0] not in {"case", "suite"}:
-                self.renderer.print_error("Usage: /benchmark case <case_id> | /benchmark suite <suite_name>")
+                self.renderer.print_error(
+                    "Usage: /benchmark case <case_id> | /benchmark suite <suite_name>"
+                )
                 return True
             if command.args[0] == "case":
                 return self._run_benchmark_case(command.args[1])
@@ -388,15 +405,17 @@ class OperatorShell:
                     flash_artifact=self.context.flash_artifact,
                     elf=self.context.symbol_artifact,
                     workspace_root=workspace_root,
-                        build_command=build_command,
-                        event_sink=self.renderer.emit,
-                        provider_resume_recovery=self._prompt_provider_resume_recovery,
-                    )
+                    build_command=build_command,
+                    event_sink=self.renderer.emit,
+                    provider_resume_recovery=self._prompt_provider_resume_recovery,
+                )
             )
         except BrainConfigError as exc:
             self.renderer.print_error(str(exc))
             return True
-        self.context.last_session_id = execution.result.session_id or self.renderer.current_session_id
+        self.context.last_session_id = (
+            execution.result.session_id or self.renderer.current_session_id
+        )
         self.renderer.render_execution(execution)
         return True
 
@@ -473,7 +492,9 @@ class OperatorShell:
     def _load_selected_bundle(self, session_id: str | None) -> SessionBundle | None:
         selected_session_id = self._select_session_id(session_id)
         if selected_session_id is None:
-            self.renderer.print_error("No session selected. Run something first or pass an explicit session id.")
+            self.renderer.print_error(
+                "No session selected. Run something first or pass an explicit session id."
+            )
             return None
         try:
             return load_session_bundle(selected_session_id)
@@ -540,14 +561,26 @@ class OperatorShell:
                             if isinstance(request.get("memory_mode"), str)
                             else None
                         ),
-                        native_sync_every=native_sync_every if isinstance(native_sync_every, int) else None,
-                        port=request.get("port_override") if isinstance(request.get("port_override"), str) else None,
-                        flash_artifact=request.get("flash_artifact") if isinstance(request.get("flash_artifact"), str) else None,
-                        elf=request.get("symbol_artifact") if isinstance(request.get("symbol_artifact"), str) else None,
+                        native_sync_every=native_sync_every
+                        if isinstance(native_sync_every, int)
+                        else None,
+                        port=request.get("port_override")
+                        if isinstance(request.get("port_override"), str)
+                        else None,
+                        flash_artifact=request.get("flash_artifact")
+                        if isinstance(request.get("flash_artifact"), str)
+                        else None,
+                        elf=request.get("symbol_artifact")
+                        if isinstance(request.get("symbol_artifact"), str)
+                        else None,
                         max_iters=int(request.get("max_iters", 12)),
                         serial_read_seconds=float(request.get("serial_read_seconds", 3.0)),
-                        workspace_root=request.get("workspace_root") if isinstance(request.get("workspace_root"), str) else None,
-                        build_command=request.get("build_command") if isinstance(request.get("build_command"), str) else None,
+                        workspace_root=request.get("workspace_root")
+                        if isinstance(request.get("workspace_root"), str)
+                        else None,
+                        build_command=request.get("build_command")
+                        if isinstance(request.get("build_command"), str)
+                        else None,
                         event_sink=self.renderer.emit,
                         provider_resume_recovery=self._prompt_provider_resume_recovery,
                     )
@@ -555,7 +588,9 @@ class OperatorShell:
             except BrainConfigError as exc:
                 self.renderer.print_error(str(exc))
                 return True
-            self.context.last_session_id = execution.result.session_id or self.renderer.current_session_id
+            self.context.last_session_id = (
+                execution.result.session_id or self.renderer.current_session_id
+            )
             self.renderer.render_execution(execution)
             return True
         if mode == "benchmark":
@@ -576,7 +611,9 @@ class OperatorShell:
                         if isinstance(request.get("memory_mode"), str)
                         else None
                     ),
-                    native_sync_every=native_sync_every if isinstance(native_sync_every, int) else None,
+                    native_sync_every=native_sync_every
+                    if isinstance(native_sync_every, int)
+                    else None,
                     event_sink=self.renderer.emit,
                 )
             except BrainConfigError as exc:
@@ -602,9 +639,13 @@ class OperatorShell:
         )
         self.renderer.print_info("No new provider session has been started.")
         while True:
-            choice = self._session.prompt(
-                "[r] retry resume   [n] new session from saved memory   [a] abort > "
-            ).strip().lower()
+            choice = (
+                self._session.prompt(
+                    "[r] retry resume   [n] new session from saved memory   [a] abort > "
+                )
+                .strip()
+                .lower()
+            )
             if choice in {"r", "retry"}:
                 return "retry"
             if choice in {"n", "new"}:

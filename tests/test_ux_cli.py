@@ -14,7 +14,12 @@ from pyocd_debug_mcp.ux import cli as ux_cli
 from pyocd_debug_mcp.ux import shell as ux_shell
 from pyocd_debug_mcp.ux.artifacts import artifact_entries
 from pyocd_debug_mcp.ux.commands import SlashCommand, TaskInput, parse_shell_input
-from pyocd_debug_mcp.ux.history import HistoryListing, UXHistoryError, load_session_bundle, list_history
+from pyocd_debug_mcp.ux.history import (
+    HistoryListing,
+    UXHistoryError,
+    load_session_bundle,
+    list_history,
+)
 from pyocd_debug_mcp.ux.renderer import UXRenderer
 
 
@@ -330,7 +335,10 @@ def test_operator_cli_parser_supports_memory_controls() -> None:
 
 
 def _make_renderer(stream: io.StringIO | None = None) -> UXRenderer:
-    return UXRenderer(raw_output="off", console=Console(file=stream or io.StringIO(), force_terminal=False, color_system=None))
+    return UXRenderer(
+        raw_output="off",
+        console=Console(file=stream or io.StringIO(), force_terminal=False, color_system=None),
+    )
 
 
 def _make_shell(renderer: UXRenderer | None = None) -> ux_shell.OperatorShell:
@@ -390,7 +398,10 @@ def test_shell_workspace_and_build_context_commands_persist_state(tmp_path: Path
     assert shell._dispatch_command(parse_shell_input(f"/workspace {workspace_root}")) is True
     assert shell.context.workspace_root == str(workspace_root.resolve())
 
-    assert shell._dispatch_command(parse_shell_input('/build-command "west build -b nucleo_l476rg"')) is True
+    assert (
+        shell._dispatch_command(parse_shell_input('/build-command "west build -b nucleo_l476rg"'))
+        is True
+    )
     assert shell.context.build_command == "west build -b nucleo_l476rg"
 
     assert shell._dispatch_command(parse_shell_input(f"/flash-artifact {flash_artifact}")) is True
@@ -528,7 +539,9 @@ def test_guided_repair_refuses_without_required_context() -> None:
     assert "/workspace <path>" in output
 
 
-def test_guided_repair_uses_workspace_context(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_guided_repair_uses_workspace_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     shell = _make_shell()
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -566,7 +579,9 @@ def test_guided_repair_uses_workspace_context(monkeypatch: pytest.MonkeyPatch, t
     assert "restore boot ok output" in str(captured["task"])
 
 
-def test_artifact_shortcuts_resolve_current_or_latest_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_artifact_shortcuts_resolve_current_or_latest_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     run_root = _seed_run(
         tmp_path,
         "20260623T060000Z-shortcuts",
@@ -574,8 +589,10 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(tmp_path: Path, mo
         provider="codex-cli",
         task="Show prompt shortcut",
     )
-    (run_root / "logs" / "brain_events.jsonl").write_text("{\"event_kind\": \"run_start\"}\n", encoding="utf-8")
-    (run_root / "logs" / "events.jsonl").write_text("{\"tool_name\": \"connect\"}\n", encoding="utf-8")
+    (run_root / "logs" / "brain_events.jsonl").write_text(
+        '{"event_kind": "run_start"}\n', encoding="utf-8"
+    )
+    (run_root / "logs" / "events.jsonl").write_text('{"tool_name": "connect"}\n', encoding="utf-8")
     bundle = load_session_bundle("20260623T060000Z-shortcuts", runs_root=tmp_path)
 
     shell = _make_shell()
@@ -589,7 +606,9 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(tmp_path: Path, mo
             warnings=(),
         ),
     )
-    shell.renderer.render_artifact_entry = lambda entry, title=None: rendered.append(title or entry.label)  # type: ignore[method-assign]
+    shell.renderer.render_artifact_entry = lambda entry, title=None: rendered.append(
+        title or entry.label
+    )  # type: ignore[method-assign]
 
     assert shell._dispatch_command(parse_shell_input("/prompt")) is True
     assert rendered == ["prompt: prompt"]

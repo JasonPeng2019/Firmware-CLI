@@ -260,9 +260,7 @@ def _run(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            f"Command timed out after {timeout_seconds}s: {' '.join(cmd)}"
-        ) from exc
+        raise RuntimeError(f"Command timed out after {timeout_seconds}s: {' '.join(cmd)}") from exc
     if result.returncode != 0:
         raise RuntimeError(f"Command failed with exit code {result.returncode}: {' '.join(cmd)}")
 
@@ -363,7 +361,7 @@ def _resolve_toolchain_python(sdk_dir: Path, fallback_python: Path) -> Path:
 def _managed_manifest_text(*, zephyr_repo: str, zephyr_ref: str) -> str:
     return (
         "manifest:\n"
-        "  version: \"0.13\"\n"
+        '  version: "0.13"\n'
         "  projects:\n"
         "    - name: zephyr\n"
         f"      url: {zephyr_repo}\n"
@@ -446,7 +444,9 @@ def _sha256_file(path: Path) -> str:
 
 
 def _expected_sdk_sha256(version: str, filename: str) -> str:
-    sha_url = f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/sha256.sum"
+    sha_url = (
+        f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/sha256.sum"
+    )
     sha_text = _download_bytes(sha_url).decode("utf-8")
     for line in sha_text.splitlines():
         parts = line.strip().split()
@@ -493,7 +493,9 @@ def _run_sdk_setup(west_python: Path, sdk_dir: Path, toolchain: str) -> None:
         raise RuntimeError(f"Managed Zephyr SDK is missing setup script: {setup_path}")
     env = _west_env(west_python, sdk_dir)
     _run([str(setup_path), f"{option_prefix}c"], cwd=sdk_dir, env=env)
-    _run([str(setup_path), f"{option_prefix}t", toolchain, f"{option_prefix}h"], cwd=sdk_dir, env=env)
+    _run(
+        [str(setup_path), f"{option_prefix}t", toolchain, f"{option_prefix}h"], cwd=sdk_dir, env=env
+    )
 
 
 def _install_managed_sdk(
@@ -505,7 +507,9 @@ def _install_managed_sdk(
 ) -> None:
     version = _sdk_version(workspace_dir)
     filename = _sdk_minimal_archive_filename(version)
-    archive_url = f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/{filename}"
+    archive_url = (
+        f"https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v{version}/{filename}"
+    )
     expected_sha = _expected_sdk_sha256(version, filename)
 
     with tempfile.TemporaryDirectory(prefix="firmcli-zephyr-sdk-") as temp_dir_text:
@@ -552,7 +556,9 @@ def _resolve_workspace_dir(
         explicit_workspace_dir=workspace_dir,
         managed_workspace_dir=managed_workspace_dir,
     ):
-        if _is_zephyr_workspace(candidate.path) and _workspace_supports_board(candidate.path, board):
+        if _is_zephyr_workspace(candidate.path) and _workspace_supports_board(
+            candidate.path, board
+        ):
             _print_step(f"using workspace: {candidate.path} ({candidate.source})")
             return candidate.path, candidate.source
 
@@ -565,9 +571,12 @@ def _resolve_workspace_dir(
     manifest_dir = managed_workspace_dir / "manifest"
     manifest_path = manifest_dir / "west.yml"
 
-    if managed_workspace_dir.exists() and any(managed_workspace_dir.iterdir()) and not _is_zephyr_workspace(
-        managed_workspace_dir
-    ) and not manifest_path.exists():
+    if (
+        managed_workspace_dir.exists()
+        and any(managed_workspace_dir.iterdir())
+        and not _is_zephyr_workspace(managed_workspace_dir)
+        and not manifest_path.exists()
+    ):
         raise RuntimeError(
             f"Managed workspace dir exists but is not a Zephyr workspace: {managed_workspace_dir}"
         )
@@ -597,10 +606,16 @@ def _resolve_workspace_dir(
             cwd=managed_workspace_dir,
             env=_west_env(west_python),
         )
-        _run(_west_cmd(west_python, "zephyr-export"), cwd=managed_workspace_dir, env=_west_env(west_python))
+        _run(
+            _west_cmd(west_python, "zephyr-export"),
+            cwd=managed_workspace_dir,
+            env=_west_env(west_python),
+        )
         _install_zephyr_python_requirements(west_python, managed_workspace_dir)
     elif not _workspace_supports_board(managed_workspace_dir, board):
-        _print_step(f"managed workspace exists but is missing modules for board {board}; continuing update")
+        _print_step(
+            f"managed workspace exists but is missing modules for board {board}; continuing update"
+        )
         _run(
             _west_cmd(
                 west_python,
@@ -611,7 +626,11 @@ def _resolve_workspace_dir(
             cwd=managed_workspace_dir,
             env=_west_env(west_python),
         )
-        _run(_west_cmd(west_python, "zephyr-export"), cwd=managed_workspace_dir, env=_west_env(west_python))
+        _run(
+            _west_cmd(west_python, "zephyr-export"),
+            cwd=managed_workspace_dir,
+            env=_west_env(west_python),
+        )
         _install_zephyr_python_requirements(west_python, managed_workspace_dir)
     return managed_workspace_dir, "managed-bootstrap"
 
@@ -648,7 +667,9 @@ def _resolve_sdk_dir(
         toolchain=toolchain,
     )
     if not _is_zephyr_sdk(managed_sdk_dir):
-        raise RuntimeError(f"Managed SDK install completed but sdk_version was not found at {managed_sdk_dir}")
+        raise RuntimeError(
+            f"Managed SDK install completed but sdk_version was not found at {managed_sdk_dir}"
+        )
     return managed_sdk_dir, "managed-install"
 
 
@@ -670,7 +691,11 @@ def ensure_runtime(args: argparse.Namespace) -> ZephyrRuntime:
         skip_workspace_bootstrap=args.skip_workspace_bootstrap,
     )
     if resolved_workspace_dir == managed_workspace_dir:
-        _run(_west_cmd(west_python, "zephyr-export"), cwd=resolved_workspace_dir, env=_west_env(west_python))
+        _run(
+            _west_cmd(west_python, "zephyr-export"),
+            cwd=resolved_workspace_dir,
+            env=_west_env(west_python),
+        )
         _install_zephyr_python_requirements(west_python, resolved_workspace_dir)
     resolved_sdk_dir, sdk_source = _resolve_sdk_dir(
         west_python=west_python,
@@ -850,7 +875,9 @@ def run_build(args: argparse.Namespace, runtime: ZephyrRuntime) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-dir", help="Zephyr application source directory.")
-    parser.add_argument("--build-dir", help="Canonical output directory for firmware.elf / firmware.hex.")
+    parser.add_argument(
+        "--build-dir", help="Canonical output directory for firmware.elf / firmware.hex."
+    )
     parser.add_argument("--board", help="Zephyr board target string, e.g. nucleo_l476rg.")
     parser.add_argument("--workspace-dir", help="Existing Zephyr workspace root to reuse.")
     parser.add_argument("--sdk-dir", help="Existing Zephyr SDK install dir to reuse.")
@@ -912,7 +939,9 @@ def main() -> int:
     load_local_env()
     args = build_parser().parse_args()
     if not args.ensure_only and (not args.app_dir or not args.build_dir or not args.board):
-        raise SystemExit("--app-dir, --build-dir, and --board are required unless --ensure-only is set.")
+        raise SystemExit(
+            "--app-dir, --build-dir, and --board are required unless --ensure-only is set."
+        )
 
     runtime = ensure_runtime(args)
     _print_step(

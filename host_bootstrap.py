@@ -570,7 +570,9 @@ def main(argv: list[str] | None = None) -> int:
     board_config_summary(boards)
     pack_results = target_pack_summary(boards, pyocd_ok=pyocd_ok, install_packs=args.install_packs)
     vendor_serial_tool_summary(boards)
-    selected_board_ids = [board_id.strip().lower() for board_id in args.board_id if board_id.strip()]
+    selected_board_ids = [
+        board_id.strip().lower() for board_id in args.board_id if board_id.strip()
+    ]
     board_attachment_ready: bool | None = None
     if selected_board_ids:
         board_attachment_ready = board_attachment_summary(

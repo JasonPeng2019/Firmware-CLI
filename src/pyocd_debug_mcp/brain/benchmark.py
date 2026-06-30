@@ -244,21 +244,16 @@ def _suite_acceptance(
 
     suite_cases = {case.case_id: case for case in benchmark_support.load_suite(suite_name)}
     by_case = {report.case_id: report for report in reports}
-    known_good_ids = {
-        case_id
-        for case_id, case in suite_cases.items()
-        if case.kind == "known_good"
-    }
+    known_good_ids = {case_id for case_id, case in suite_cases.items() if case.kind == "known_good"}
     if not all(
-        by_case.get(case_id) is not None and by_case[case_id].score_report.outcome_label == "full_success"
+        by_case.get(case_id) is not None
+        and by_case[case_id].score_report.outcome_label == "full_success"
         for case_id in known_good_ids
     ):
         return False
 
     observability_ids = {
-        case_id
-        for case_id, case in suite_cases.items()
-        if case.kind == "observability_fault"
+        case_id for case_id, case in suite_cases.items() if case.kind == "observability_fault"
     }
     if not all(
         by_case.get(case_id) is not None
@@ -269,13 +264,10 @@ def _suite_acceptance(
         return False
 
     injected_bug_ids = {
-        case_id
-        for case_id, case in suite_cases.items()
-        if case.kind == "injected_bug"
+        case_id for case_id, case in suite_cases.items() if case.kind == "injected_bug"
     }
     full_success_bugs = sum(
-        report.score_report.outcome_label == "full_success"
-        and report.case_id in injected_bug_ids
+        report.score_report.outcome_label == "full_success" and report.case_id in injected_bug_ids
         for report in reports
     )
     required_bug_successes = max(1, math.ceil(len(injected_bug_ids) * 0.75))
@@ -442,7 +434,9 @@ async def run_case_async(
         prepared.workspace.workspace_root,
     )
     agent_result = _execution_to_agent_result(execution.result)
-    score_report = benchmark_support._score_case(case, agent_result, verification, actual_changed_files)
+    score_report = benchmark_support._score_case(
+        case, agent_result, verification, actual_changed_files
+    )
     _record_turnkey_case_artifacts(prepared, execution, verification, score_report, run_root)
     return benchmark_support.CaseRunReport(
         case_id=case.case_id,

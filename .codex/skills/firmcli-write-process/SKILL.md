@@ -50,6 +50,9 @@ The final suite must include, when applicable:
 - multiple user turns in the operator-facing flow, such as repeated `pyocd-debug` shell prompts, history/show/rerun behavior, or the closest current CLI equivalent
 - realistic workspace setup, build, flash/verify, artifact capture, and cleanup boundaries
 - fresh run roots, fresh provider/session state where the product promises isolation, and no hidden reuse of prior green state unless cache/reuse is itself the feature under test
+- explicit process and board-session hygiene: no spawned provider, MCP, pyOCD,
+  serial, validation, or board-debug process may remain alive after the run
+  unless it is intentionally user-owned and documented as such
 
 If the exact deployment scenario cannot be run by the agent, still test up to the highest possible confidence boundary:
 
@@ -58,6 +61,10 @@ If the exact deployment scenario cannot be run by the agent, still test up to th
 - evaluate each suspected flaw against the code and tests; dismiss only with evidence
 - fix every real flaw through `firmcli-fix-bug`
 - add or strengthen smoke tests, harnesses, dry-runs, mock-provider runs, fake-MCP runs, CLI transcript tests, artifact inspections, and regression tests that emulate the real deployment scenario as closely as possible
+- for provider/hardware/MCP tests, prefer task files and JSON files over inline
+  PowerShell quoting, set explicit timeouts, snapshot spawned-process
+  provenance, attempt normal product cleanup, and audit for orphaned provider,
+  MCP, pyOCD, serial, or validation processes after every failure or interrupt
 - state exactly what remains untested and why, with the precise hardware/provider/manual hand-off needed
 
 ## Failure loop
@@ -69,6 +76,12 @@ If the final suite exposes any real bug, missing coverage that can be implemente
 3. Rerun the affected `firmcli-spec-loop` if the fix changed feature behavior or acceptance criteria.
 4. Restart the final `firmcli-test-suite` from the beginning, not just the failed row.
 5. Repeat for every issue until the full suite runs green from one end to the other, or until the only remaining boundary is explicit hardware proof, provider quota/credentials, or a human decision.
+
+Leftover spawned processes, locked probes, open serial ports, or still-connected
+debug sessions count as final-suite failures. Route reproducible cleanup bugs
+through `firmcli-fix-bug`; if cleanup cannot be proven because of an interrupt or
+environment limitation, stop with an explicit deployment ambiguity and a cleanup
+runbook.
 
 Do not report the process as complete after a partial rerun. A green final gate means the whole suite passed in one clean end-to-end pass after the last fix.
 

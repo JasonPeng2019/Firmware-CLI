@@ -47,13 +47,22 @@ PARALLEL WAVE 2:
   Branch E: stream checkpoints
   Branch F: scoped green approval
   Branch G: static context efficiency + cache-assisted reuse
+  Branch H: process-tree + board-session cleanup guard
 
 SERIAL:
-  merge D + E + F + G back into Wave 0
+  merge D + E + F + G + H back into Wave 0
 
 SERIAL:
   Final integration + acceptance cleanup
 ```
+
+Current integration note, 2026-06-30: the active `P-Wave-A` worktree now
+contains the Wave 1 A/B/C merge-back candidate. Branch C's event spine,
+timeout policy, effective-timeout state, and hidden server-timeout sync have
+been integrated onto the Branch A/B spine. The current attached-board proof is
+`nucleo_l476rg + nrf52840dk` with both `codex-cli` and `claude-cli`; exact
+official `nrf52833dk`, API-provider parity, and fresh-machine proof remain
+deferred prototype risks.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -301,6 +310,13 @@ Branch C defines event kinds, sinks, timeout clamps, and timeout propagation
 hooks. Branch D renders those events, Branch E owns checkpoint continue/cancel
 decisions, and Branch B applies batch timeout behavior during batch execution.
 
+Current implementation status, 2026-06-30: Branch C is implemented in the
+current Wave 1 merge-back candidate and has been live-validated with the
+Branch C harness on `nucleo_l476rg` and `nrf52840dk` using both local CLI
+providers. The branch still intentionally does not implement killable
+pyOCD/vendor worker cancellation; that remains Wave 2 Branch H / future product
+hardening.
+
 Serial order inside Branch C:
 
 1. `events.py`
@@ -345,14 +361,16 @@ Should not own:
 Wave 2 starts only after Branch A, Branch B, and Branch C have each merged back
 into Wave 0 and the merged Wave 0 branch has passed the agreed checks.
 
-Branch D, Branch E, Branch F, and Branch G then branch from the updated Wave 0
-branch and run in parallel.
+Branch D, Branch E, Branch F, Branch G, and Branch H then branch from the
+updated Wave 0 branch and run in parallel.
 
 - Branch D needs Branch C module 1.
 - Branch E needs Branch B module 5 and Branch C module 1/module 2.
 - Branch F needs Branch B module 5 if green tests use client actions.
 - Branch G needs Branch A prompt/session metadata and Branch C event shapes if
   cache-reuse events are emitted.
+- Branch H needs Branch A provider subprocess/session behavior, Branch C event
+  shapes, and the current MCP/pyOCD/serial lifecycle paths.
 
 ### Branch D - Progress UI + Inspector
 
@@ -371,6 +389,7 @@ Parallel with:
 - Branch E module 1 through module 4
 - Branch F module 1 through module 3
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Should not own:
 
@@ -400,6 +419,7 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch F module 1 through module 3
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
@@ -436,6 +456,7 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch E module 1 through module 4
 - Branch G module 1 through module 5
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
@@ -488,6 +509,7 @@ Parallel with:
 - Branch D module 1 through module 3
 - Branch E module 1 through module 4
 - Branch F module 1 through module 4
+- Branch H module 1 through module 5
 
 Cross-branch dependency:
 
@@ -510,11 +532,72 @@ Should not own:
 - skill-guided host-work A/B/C experiments, owned by later MVP entry #13
 - provider-memory semantics, owned by Branch A and final integration if needed
 
+### Branch H - Process-Tree + Board-Session Cleanup Guard
+
+Branch H owns deployment hygiene for subprocess-backed and hardware-backed runs.
+It ensures provider CLIs, local MCP server children, pyOCD sessions, serial ports,
+validation commands, and board-debug sessions do not leak across failures,
+timeouts, interrupts, or malformed command invocations.
+
+Serial order inside Branch H:
+
+1. `process_hygiene.py`
+   - baseline process snapshots
+   - spawned command/run-root provenance
+   - precise child-tree identification
+   - post-run orphan audit records
+2. Provider subprocess wrapping:
+   - `provider_codex_cli.py`
+   - `provider_claude_cli.py`
+   - explicit wall-clock timeout handling and provenance-based cleanup
+   - prefer task/JSON files over fragile inline PowerShell prompt/JSON quoting in
+     harnesses and docs
+3. MCP client/server lifecycle:
+   - `mcp_client.py`
+   - local MCP subprocess close/reap on provider failure, timeout, or interrupt
+   - always attempt `disconnect` before child cleanup when a session exists
+4. pyOCD/serial cleanup hooks:
+   - target-control/session close paths
+   - serial-port close proof
+   - events/artifacts that state whether cleanup succeeded
+5. Harness/workflow integration:
+   - post-check orphan audit for provider/MCP/hardware smokes
+   - fail rows for leaked spawned children, locked probes, open serial ports, or
+     connected debug sessions
+   - tests that simulate hung child providers, failed MCP startup, timeout during
+     pyOCD/serial work, and interrupted validation
+
+Parallel with:
+
+- Branch D module 1 through module 3
+- Branch E module 1 through module 4
+- Branch F module 1 through module 4
+- Branch G module 1 through module 5
+
+Cross-branch dependency:
+
+- Branch H may consume Branch C event shapes for cleanup events, but must not
+  redesign the event spine.
+- Branch H may wrap Branch A provider subprocesses, but must not change provider
+  memory/session semantics except to make cleanup explicit on failure.
+- Branch H may touch MCP/pyOCD/serial close paths, but it must not implement
+  stream checkpoint continue/cancel policy; that remains Branch E.
+
+Should not own:
+
+- progress/inspector UI rendering, owned by Branch D
+- stream checkpoint policy, owned by Branch E
+- scoped green approval semantics, owned by Branch F
+- static-context rendering or cache reuse, owned by Branch G
+- broad provider SDK rewrites; this branch hardens lifecycle cleanup around the
+  current adapters and leaves final provider API replacement to later
+- direct-hardware sandboxing; accepted soft hardware stance remains unchanged
+
 ## Final Integration - Serial Last
 
-After Branch D, Branch E, Branch F, and Branch G have each merged back into Wave
-0 and the merged Wave 0 branch has passed the agreed checks, do one short serial
-integration branch.
+After Branch D, Branch E, Branch F, Branch G, and Branch H have each merged back
+into Wave 0 and the merged Wave 0 branch has passed the agreed checks, do one
+short serial integration branch.
 
 Owns:
 
@@ -570,13 +653,13 @@ Merge sequence:
 4. Branch A, B, and C from Wave 0.
 5. Merge A, B, and C back into Wave 0 one at a time, running checks after each
    merge.
-6. Branch D, E, F, and G from the updated Wave 0.
-7. Merge D, E, F, and G back into Wave 0 one at a time, running checks after
+6. Branch D, E, F, G, and H from the updated Wave 0.
+7. Merge D, E, F, G, and H back into Wave 0 one at a time, running checks after
    each merge.
 8. Branch `Final` from Wave 0.
 9. Merge `Final` back into Wave 0 after final acceptance cleanup.
 
-This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G
+This lets the people or branch slots used for A/B/C be repurposed for D/E/F/G/H
 without carrying stale branch state forward.
 
 ## Conflict Escalation Rule

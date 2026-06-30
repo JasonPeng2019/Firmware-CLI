@@ -42,8 +42,11 @@ def test_ensure_pack_returns_existing_when_checksum_matches(
 ) -> None:
     _, sha = _write_pack(tmp_path, "x.pack", b"firmware-pack-bytes")
     spec = PackSpec(
-        id="X", version="1.0", filename="x.pack",
-        url="https://example.invalid/x.pack", sha256=sha,
+        id="X",
+        version="1.0",
+        filename="x.pack",
+        url="https://example.invalid/x.pack",
+        sha256=sha,
     )
 
     def _boom(url: str, dest: Path) -> None:
@@ -69,7 +72,9 @@ def test_ensure_pack_checksum_mismatch_after_download_is_removed(
 
     monkeypatch.setattr(pack_provision, "_download", fake_download)
     spec = PackSpec(
-        id="X", version="1.0", filename="y.pack",
+        id="X",
+        version="1.0",
+        filename="y.pack",
         url="https://example.invalid/y.pack",
         sha256=hashlib.sha256(b"expected-bytes").hexdigest(),
     )

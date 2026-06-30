@@ -115,7 +115,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             execution = anyio.run(_run_freeform, args)
             _print_execution(execution)
-            return 0 if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"} else 1
+            return (
+                0
+                if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"}
+                else 1
+            )
 
         timeout_config = _parse_timeout_config_json(args.timeout_config_json)
         timeout_proposal = _parse_timeout_proposal_json(args.timeout_proposal_json)

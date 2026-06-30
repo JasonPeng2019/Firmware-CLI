@@ -100,9 +100,9 @@ class OpenAIDecisionProvider:
             else None
         )
         committed_response_id = previous_response_id
-        has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
-            session_state
-        )
+        has_local_memory = bool(
+            prompt_bundle.provider_memory_text.strip()
+        ) or provider_has_local_memory(session_state)
         recovery_action = provider_resume_recovery_action(session_state)
         explicit_new_session_recovery = recovery_action == "new-session-from-memory"
         use_local_memory = False

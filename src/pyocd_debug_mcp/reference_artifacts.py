@@ -53,9 +53,7 @@ def resolve_reference_artifacts(
             f"Missing canonical symbol artifact for {board_id}: {symbol_artifact}"
         )
     if not flash_resolved.exists():
-        raise ReferenceArtifactError(
-            f"Missing flash artifact for {board_id}: {flash_resolved}"
-        )
+        raise ReferenceArtifactError(f"Missing flash artifact for {board_id}: {flash_resolved}")
 
     return ReferenceArtifactPair(
         board_id=board_id,

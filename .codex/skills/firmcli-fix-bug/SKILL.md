@@ -14,6 +14,7 @@ Use this skill to mirror `.claude/commands/fix-bug.md`.
 1. Read `.claude/commands/fix-bug.md`, `.claude/commands/build.md`, and `.claude/commands/review.md`.
 2. Read the authority docs from the core skill.
 3. Reproduce the bug before editing anything. Prefer a failing test or a minimal repro. If the bug only appears on hardware, write the exact hardware repro command and then capture the strongest non-hardware signal you can build.
+   - For provider-backed, hardware-backed, MCP-backed, pyOCD-backed, serial, or long-running repros, follow the process and board-session hygiene rules from `firmcli-workflow-core`: prefer task/JSON files over fragile inline PowerShell quoting, set explicit timeouts, snapshot spawned-process provenance, and record the run root.
 4. State the root cause in one or two sentences.
 5. For anything beyond a trivial one-file fix, create or update `markdowns/curr/slug_spec.md`. Use the helper if needed:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py spec bug-slug --task "bug summary"`
@@ -24,10 +25,11 @@ Use this skill to mirror `.claude/commands/fix-bug.md`.
 10. Run the validation ladder and any targeted repro checks:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add targeted commands with `--command`
-11. For Python changes, also run the Python-change script unless already run after the final edit:
+11. After every provider/hardware/MCP/pyOCD/serial/long-running repro or validation command, attempt normal product cleanup first, then audit for leftover spawned provider, MCP, pyOCD, serial, validation, or board-debug processes. Clean up only processes this fix pass spawned or can identify by precise provenance. If a spawned process, locked probe, open serial port, or connected debug session remains, treat that as part of the bug unless proven to be an unrelated user process.
+12. For Python changes, also run the Python-change script unless already run after the final edit:
    - `python .codex/skills/python-change/scripts/run_python_change_checks.py`
-12. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
-13. For hardware-only proof, stop at the hand-off and do not claim the live result.
+13. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
+14. For hardware-only proof, stop at the hand-off and do not claim the live result.
 
 ## Closeout
 

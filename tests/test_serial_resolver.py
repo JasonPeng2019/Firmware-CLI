@@ -26,7 +26,9 @@ class FakeProbe:
     uid: str
 
 
-def make_port(device: str, description: str, serial_number: str = "", location: str = "") -> SerialPortInfo:
+def make_port(
+    device: str, description: str, serial_number: str = "", location: str = ""
+) -> SerialPortInfo:
     return SerialPortInfo(
         device=device,
         description=description,
@@ -131,9 +133,7 @@ def test_nordic_dual_port_prefers_vcom0(monkeypatch) -> None:
 
 
 def test_stlink_resolves_from_cubeprogrammer(monkeypatch) -> None:
-    board = FakeBoard(
-        "nucleo_l476rg", "Nucleo-L476RG", "stm32l476", "stlink", ("st-link", "stm32")
-    )
+    board = FakeBoard("nucleo_l476rg", "Nucleo-L476RG", "stm32l476", "stlink", ("st-link", "stm32"))
     probe = FakeProbe("002B00213037510B35333131")
     ports = [
         make_port(
@@ -176,9 +176,7 @@ Manufacturer: STMicroelectronics
 
 
 def test_probe_linked_metadata_match_bypasses_vendor_helper(monkeypatch) -> None:
-    board = FakeBoard(
-        "nucleo_l476rg", "Nucleo-L476RG", "stm32l476", "stlink", ("st-link", "stm32")
-    )
+    board = FakeBoard("nucleo_l476rg", "Nucleo-L476RG", "stm32l476", "stlink", ("st-link", "stm32"))
     probe = FakeProbe("002B00213037510B35333131")
     ports = [
         make_port(

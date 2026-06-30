@@ -75,11 +75,21 @@ from pyocd_debug_mcp.brain.provider_types import (
 )
 from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
 from pyocd_debug_mcp.brain.state import BrainState
+from pyocd_debug_mcp.brain.timeout_runtime import (
+    apply_invocation_timeout_policy,
+    apply_turn_timeout_policy,
+    sync_pending_server_timeouts,
+)
 from pyocd_debug_mcp.brain.tool_schemas import ToolSchemaBundle, build_tool_schema_bundle
-from pyocd_debug_mcp.brain.workspace import WorkspaceError, WorkspaceSession, prepare_workspace_session
+from pyocd_debug_mcp.brain.workspace import (
+    WorkspaceError,
+    WorkspaceSession,
+    prepare_workspace_session,
+)
 from pyocd_debug_mcp.reference_artifacts import resolve_reference_artifacts
 from pyocd_debug_mcp.services.session_runtime import RUNS_ROOT, generate_session_id
 from pyocd_debug_mcp.services.symbols import resolve_symbol
+from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -271,6 +281,7 @@ def _build_turn_prompt(
         f"{_workspace_summary(workspace)}\n\n"
         "Current state:\n"
         f"iteration={state.iteration}\n"
+        f"effective_max_iters={state.effective_max_iters or '(unset)'}\n"
         f"session_id={state.session_id or '(none)'}\n"
         f"session_ids_seen={state.session_ids_seen}\n"
         f"provider_session={state.provider_session_state.summary_record() if state.provider_session_state is not None else '(none)'}\n"
@@ -283,6 +294,7 @@ def _build_turn_prompt(
         f"last_result={state.last_result_text or '(none)'}\n"
         f"blocked_action_families={sorted(state.blocked_action_families)}\n"
         f"refused_action_families={sorted(state.refused_action_families)}\n"
+        f"effective_timeouts={json.dumps(state.effective_timeout_config.to_record(), sort_keys=True)}\n"
         f"verification.flash_ok={verification.flash_ok}\n"
         f"verification.uart_ok={verification.uart_ok}\n"
         f"verification.symbol_ok={verification.symbol_ok}\n"
@@ -432,7 +444,9 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
         return RunBuildAction.model_validate({"kind": "run_build", **args})
     if action_type == "run_green_check":
         return RunGreenCheckAction.model_validate({"kind": "run_green_check", **args})
-    raise TurnkeyRefusal("brain/unsupported-batch-action", f"Unsupported batched action: {action_type}")
+    raise TurnkeyRefusal(
+        "brain/unsupported-batch-action", f"Unsupported batched action: {action_type}"
+    )
 
 
 def _normalize_server_tool_arguments(args: dict[str, object], tool_name: str) -> dict[str, object]:
@@ -1106,13 +1120,15 @@ async def _call_tool_with_timeout(
                 )
             return cast(ToolTextResult, await call_tool(tool_name, arguments))
     except TimeoutError as exc:
-        raise MCPClientError(
-            f"Tool '{tool_name}' timed out after {timeout_seconds:.0f}s."
-        ) from exc
+        raise MCPClientError(f"Tool '{tool_name}' timed out after {timeout_seconds:.0f}s.") from exc
 
 
-def _tool_timeout_seconds(tool_name: str, invocation: TurnkeyInvocation) -> float:
-    return invocation.timeout_config.tool_timeout_seconds(
+def _tool_timeout_seconds(
+    tool_name: str,
+    invocation: TurnkeyInvocation,
+    effective_timeout_config: TurnkeyTimeoutConfig | None = None,
+) -> float:
+    return (effective_timeout_config or invocation.timeout_config).tool_timeout_seconds(
         tool_name,
         serial_read_seconds=invocation.serial_read_seconds,
     )
@@ -1188,7 +1204,11 @@ async def _execute_server_tool(
         client,
         action.tool_name,
         arguments,
-        timeout_seconds=_tool_timeout_seconds(action.tool_name, invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            action.tool_name,
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     state.register_tool_use(action.tool_name)
     state.actions_taken.append(action.tool_name)
@@ -1223,11 +1243,20 @@ async def _execute_server_tool(
             flash_ok=state.verification.flash_ok,
             uart_ok=matched,
             symbol_ok=state.verification.symbol_ok,
-            green_check_ok=state.verification.green_check_ok if not matched else state.verification.green_check_ok,
+            green_check_ok=state.verification.green_check_ok
+            if not matched
+            else state.verification.green_check_ok,
         )
     if action.tool_name == "unlock_recover" and "Recover completed" in result.text:
         state.recover_used = True
-    if action.tool_name in {"connect", "flash_firmware", "unlock_recover", "reset", "halt", "resume"}:
+    if action.tool_name in {
+        "connect",
+        "flash_firmware",
+        "unlock_recover",
+        "reset",
+        "halt",
+        "resume",
+    }:
         _append_experiment(
             state,
             purpose=f"apply MCP tool `{action.tool_name}`",
@@ -1352,7 +1381,9 @@ async def _execute_batched_actions(
             records=brain_events,
             invocation=invocation,
             state=state,
-            event_kind="batch_action_start" if is_batch or not isinstance(action, ServerToolAction) else "tool_start",
+            event_kind="batch_action_start"
+            if is_batch or not isinstance(action, ServerToolAction)
+            else "tool_start",
             message=f"Starting action {index}: `{action.kind}`.",
             details={"batch_index": index, "action": action.model_dump(mode="json")},
         )
@@ -1360,10 +1391,28 @@ async def _execute_batched_actions(
         refused_before = set(state.refused_action_families)
         blocked_before = set(state.blocked_action_families)
         if isinstance(action, ServerToolAction):
+            if action.tool_name == "connect" and state.pending_server_timeout_sync is not None:
+                await sync_pending_server_timeouts(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    client=client,
+                    reason="before-connect",
+                )
             action_result = await _execute_server_tool(invocation, board, state, client, action)
             result_text = action_result.text
             if state.session_id is not None:
                 run_root = _promote_run_root(run_root, state.session_id)
+            if action.tool_name == "disconnect" and state.pending_server_timeout_sync is not None:
+                await sync_pending_server_timeouts(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    client=client,
+                    reason="after-disconnect",
+                )
             if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
                 result = _blocked_result(
                     state,
@@ -1403,7 +1452,9 @@ async def _execute_batched_actions(
             result_text = await _execute_wait(action, state)
             event_details = {"batch_index": index, "result_text": result_text}
         elif isinstance(action, RunScriptAction):
-            result_text = await _execute_run_script(invocation, board, client_actions, client, action, state)
+            result_text = await _execute_run_script(
+                invocation, board, client_actions, client, action, state
+            )
             event_details = {"batch_index": index, "result_text": result_text}
         elif isinstance(action, ReplaceFileAction):
             result_text = _execute_replace_file(workspace, action, state)
@@ -1412,7 +1463,8 @@ async def _execute_batched_actions(
             result_text = _execute_build(workspace, action, state, invocation)
             event_details = {
                 "batch_index": index,
-                "build_command": action.build_command or (workspace.build_command if workspace else None),
+                "build_command": action.build_command
+                or (workspace.build_command if workspace else None),
                 "result_text": result_text,
             }
         elif isinstance(action, RunGreenCheckAction):
@@ -1431,7 +1483,11 @@ async def _execute_batched_actions(
             }
         elif isinstance(action, ReadFileAction):
             result_text = _execute_read_file(workspace, action.path, state)
-            event_details = {"batch_index": index, "path": action.path, "result_length": len(result_text)}
+            event_details = {
+                "batch_index": index,
+                "path": action.path,
+                "result_length": len(result_text),
+            }
         else:
             raise TurnkeyLoopError(f"Unhandled action kind: {action.kind}")
 
@@ -1442,7 +1498,9 @@ async def _execute_batched_actions(
             records=brain_events,
             invocation=invocation,
             state=state,
-            event_kind="batch_action_complete" if is_batch or not isinstance(action, ServerToolAction) else "tool_complete",
+            event_kind="batch_action_complete"
+            if is_batch or not isinstance(action, ServerToolAction)
+            else "tool_complete",
             message=f"Completed action {index}: `{action.kind}`.",
             details=event_details,
         )
@@ -1475,10 +1533,15 @@ async def _execute_batched_actions(
 
         if result is not None:
             break
-        if state.refused_action_families != refused_before or state.blocked_action_families != blocked_before:
+        if (
+            state.refused_action_families != refused_before
+            or state.blocked_action_families != blocked_before
+        ):
             break
-        if isinstance(action, ServerToolAction) and action.tool_name == "read_serial" and not result_text.startswith(
-            "UART matched"
+        if (
+            isinstance(action, ServerToolAction)
+            and action.tool_name == "read_serial"
+            and not result_text.startswith("UART matched")
         ):
             break
 
@@ -1524,7 +1587,7 @@ def _execute_build(
     state.pending_fix_evaluation = True
     build = workspace.run_build(
         action.build_command,
-        timeout_seconds=invocation.timeout_config.build_seconds,
+        timeout_seconds=state.effective_timeout_config.build_seconds,
     )
     state.actions_taken.append("run_build")
     state.last_action_summary = f"run_build({action.build_command or workspace.build_command})"
@@ -1567,7 +1630,11 @@ async def _execute_green_check(
         client,
         "flash_firmware",
         {"path": str(flash_artifact), "halt_after_reset": True},
-        timeout_seconds=_tool_timeout_seconds("flash_firmware", invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            "flash_firmware",
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     if flash_result.refusal_code or flash_result.blocked_code:
         state.last_result_text = flash_result.text
@@ -1577,7 +1644,7 @@ async def _execute_green_check(
         client,
         "read_core_register",
         {"name": "pc"},
-        timeout_seconds=invocation.timeout_config.default_tool_seconds,
+        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
     )
     if pc_result.refusal_code or pc_result.blocked_code:
         state.last_result_text = pc_result.text
@@ -1597,7 +1664,7 @@ async def _execute_green_check(
                 "address": f"0x{resolved_symbol.address:08X}",
                 "word_size": 32,
             },
-            timeout_seconds=invocation.timeout_config.default_tool_seconds,
+            timeout_seconds=state.effective_timeout_config.default_tool_seconds,
         )
         if value_result.refusal_code or value_result.blocked_code:
             state.last_result_text = value_result.text
@@ -1637,7 +1704,11 @@ async def _execute_green_check(
         client,
         "read_serial",
         read_serial_args,
-        timeout_seconds=_tool_timeout_seconds("read_serial", invocation),
+        timeout_seconds=_tool_timeout_seconds(
+            "read_serial",
+            invocation,
+            state.effective_timeout_config,
+        ),
     )
     if serial_result.refusal_code or serial_result.blocked_code:
         state.last_result_text = serial_result.text
@@ -1732,7 +1803,10 @@ def _final_result_from_action(
     action: FinalizeAction,
     workspace: WorkspaceSession | None,
 ) -> TurnkeyRunResult:
-    if action.final_status in {"healthy_confirmed", "fixed"} and not state.verification.green_check_ok:
+    if (
+        action.final_status in {"healthy_confirmed", "fixed"}
+        and not state.verification.green_check_ok
+    ):
         raise TurnkeyRefusal(
             "brain/finalize-without-green-check",
             "A successful run_green_check is required before finalizing a healthy or fixed result.",
@@ -1862,6 +1936,8 @@ async def _tooling_failure_execution(
             native_sync_every=invocation.native_sync_every,
             runtime_context=provider_runtime_context,
         ),
+        effective_timeout_config=invocation.timeout_config,
+        effective_max_iters=invocation.max_iters,
     )
     prompt_bundle = ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
@@ -1977,14 +2053,13 @@ async def run_turnkey(
             runtime_context=provider_runtime_context,
         ),
         provider_capabilities=provider.capabilities,
+        effective_timeout_config=invocation.timeout_config,
+        effective_max_iters=invocation.max_iters,
     )
     result: TurnkeyRunResult | None = None
     model_turns: list[dict[str, object]] = []
     brain_trace: list[dict[str, object]] = []
     brain_events: list[dict[str, object]] = []
-    resolved_client_factory = client_factory or (
-        lambda: LocalMCPClient(startup_timeout_seconds=invocation.timeout_config.mcp_startup_seconds)
-    )
     client_action_store = client_actions or InMemoryClientActionStore()
     client_action_snapshots = snapshot_all_actions(client_action_store)
     initial_prompt_text = ""
@@ -2005,22 +2080,44 @@ async def run_turnkey(
         },
         iteration=0,
     )
+    if invocation.timeout_proposal is not None or invocation.iteration_estimate is not None:
+        await apply_invocation_timeout_policy(
+            sink=event_sink,
+            records=brain_events,
+            invocation=invocation,
+            state=state,
+        )
+    resolved_client_factory = client_factory or (
+        lambda: LocalMCPClient(
+            startup_timeout_seconds=state.effective_timeout_config.mcp_startup_seconds
+        )
+    )
 
     try:
         async with resolved_client_factory() as client:
+            if state.pending_server_timeout_sync is not None and state.session_id is None:
+                await sync_pending_server_timeouts(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    client=client,
+                    reason="bootstrap-before-connect",
+                )
             tool_schema_bundle = build_tool_schema_bundle(await client.list_tools())
             state.tool_schema_summary = tool_schema_bundle.to_record()
-            for iteration in range(1, invocation.max_iters + 1):
+            iteration = 1
+            while iteration <= state.effective_max_iters:
                 state.iteration = iteration
                 prompt_bundle = _build_prompt_bundle(
                     invocation=invocation,
                     board=board,
                     state=state,
-                      skills_text=skills_text,
-                      workspace=workspace,
-                      tool_schema_bundle=tool_schema_bundle,
-                      client_actions=client_action_store,
-                  )
+                    skills_text=skills_text,
+                    workspace=workspace,
+                    tool_schema_bundle=tool_schema_bundle,
+                    client_actions=client_action_store,
+                )
                 if not initial_prompt_text:
                     initial_prompt_text = prompt_bundle.full_prompt_text()
                 await _record_brain_event(
@@ -2039,20 +2136,24 @@ async def run_turnkey(
                     },
                 )
                 provider_started = time.perf_counter()
-                provider_session_for_turn = state.provider_session_state or make_provider_session_state(
-                    provider=invocation.provider,
-                    model=invocation.model,
-                    memory_mode=invocation.memory_mode,
-                    continuation_mode=provider.capabilities.continuation_mode,
-                    native_sync_every=invocation.native_sync_every,
+                provider_session_for_turn = (
+                    state.provider_session_state
+                    or make_provider_session_state(
+                        provider=invocation.provider,
+                        model=invocation.model,
+                        memory_mode=invocation.memory_mode,
+                        continuation_mode=provider.capabilities.continuation_mode,
+                        native_sync_every=invocation.native_sync_every,
+                    )
                 )
                 provider_turn: ProviderTurn | None = None
                 while provider_turn is None:
                     try:
-                        provider_turn = await provider.next_decision(
-                            prompt_bundle=prompt_bundle,
-                            session_state=provider_session_for_turn,
-                        )
+                        with anyio.fail_after(state.effective_timeout_config.provider_seconds):
+                            provider_turn = await provider.next_decision(
+                                prompt_bundle=prompt_bundle,
+                                session_state=provider_session_for_turn,
+                            )
                     except ProviderResumeFailure as exc:
                         failure_record = exc.to_record()
                         await _record_brain_event(
@@ -2070,10 +2171,7 @@ async def run_turnkey(
                         if provider_resume_recovery is None:
                             result = _tooling_failure_result(
                                 state,
-                                summary=(
-                                    "Blocked [turnkey/provider-resume-failed]: "
-                                    f"{exc}"
-                                ),
+                                summary=(f"Blocked [turnkey/provider-resume-failed]: {exc}"),
                                 root_cause=(
                                     "Provider resume failed and the headless "
                                     "runtime failed closed without starting a "
@@ -2095,7 +2193,9 @@ async def run_turnkey(
                             },
                         )
                         if choice == "retry":
-                            provider_session_for_turn = state.provider_session_state or provider_session_for_turn
+                            provider_session_for_turn = (
+                                state.provider_session_state or provider_session_for_turn
+                            )
                             continue
                         if choice == "new-session-from-memory":
                             provider_session_for_turn = with_provider_resume_recovery_request(
@@ -2165,6 +2265,15 @@ async def run_turnkey(
                         "decision": provider_turn.decision.model_dump(mode="json"),
                     },
                 )
+                if decision.timeout_proposal is not None or decision.iteration_estimate is not None:
+                    await apply_turn_timeout_policy(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        client=client,
+                        decision=decision,
+                    )
 
                 try:
                     result_text, run_root, action_result = await _execute_batched_actions(
@@ -2263,18 +2372,21 @@ async def run_turnkey(
                         state=state,
                         event_kind="block",
                         message=blocked.summary,
-                        details={"code": blocked.summary.split("]:", 1)[0].replace("Blocked [", "")},
+                        details={
+                            "code": blocked.summary.split("]:", 1)[0].replace("Blocked [", "")
+                        },
                     )
                     break
                 if result is not None:
                     break
+                iteration += 1
 
             if result is None:
                 result = _blocked_result(
                     state,
                     classification=state.last_classification or "observability_fault",
                     code="brain/max-iters",
-                    message=f"Reached max_iters={invocation.max_iters} without a final answer.",
+                    message=f"Reached effective_max_iters={state.effective_max_iters} without a final answer.",
                 )
                 await _record_brain_event(
                     sink=event_sink,
@@ -2293,7 +2405,7 @@ async def run_turnkey(
                         client,
                         "disconnect",
                         {},
-                        timeout_seconds=invocation.timeout_config.default_tool_seconds,
+                        timeout_seconds=state.effective_timeout_config.default_tool_seconds,
                     )
                     state.register_disconnect()
                     await _record_brain_event(

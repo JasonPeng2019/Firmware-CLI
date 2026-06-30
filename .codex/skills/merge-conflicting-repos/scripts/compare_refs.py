@@ -57,9 +57,7 @@ def render_markdown(payload: dict[str, object]) -> str:
     lines.append("")
     lines.append("## Files changed on both sides")
     for row in payload["overlap"]:
-        lines.append(
-            f"- `{row['path']}`: left={row['left_status']} right={row['right_status']}"
-        )
+        lines.append(f"- `{row['path']}`: left={row['left_status']} right={row['right_status']}")
     if not payload["overlap"]:
         lines.append("- none")
     lines.append("")

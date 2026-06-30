@@ -148,7 +148,9 @@ class SessionStore(Protocol):
 
     def append_global_event(self, event: ToolEvent) -> None: ...
 
-    def set_block(self, session: SessionRecord, action_family: str, code: str, message: str) -> None: ...
+    def set_block(
+        self, session: SessionRecord, action_family: str, code: str, message: str
+    ) -> None: ...
 
     def clear_block(self, session: SessionRecord, action_family: str) -> None: ...
 
@@ -202,7 +204,9 @@ class InMemorySessionStore:
         self._global_event_count += 1
         self._append_jsonl(self._global_events_path, event.to_record())
 
-    def set_block(self, session: SessionRecord, action_family: str, code: str, message: str) -> None:
+    def set_block(
+        self, session: SessionRecord, action_family: str, code: str, message: str
+    ) -> None:
         session.blocked_actions[action_family] = {"code": code, "message": message}
         self._write_summary(session)
 

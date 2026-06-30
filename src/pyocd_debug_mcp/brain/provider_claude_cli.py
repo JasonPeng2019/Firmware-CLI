@@ -102,9 +102,9 @@ class ClaudeCLIDecisionProvider:
             if session_state.native_handle is not None
             else None
         )
-        has_local_memory = bool(prompt_bundle.provider_memory_text.strip()) or provider_has_local_memory(
-            session_state
-        )
+        has_local_memory = bool(
+            prompt_bundle.provider_memory_text.strip()
+        ) or provider_has_local_memory(session_state)
         recovery_action = provider_resume_recovery_action(session_state)
         explicit_new_session_recovery = recovery_action == "new-session-from-memory"
         use_local_memory = False
@@ -337,22 +337,26 @@ class ClaudeCLIDecisionProvider:
                     "resume_recovery_failure": recovery_record,
                 },
             )
-            updated_session = session_state.with_native_handle_update(
-                native_session_id=effective_session_id,
-                provider_fields=(
-                    {"claude_session_id": effective_session_id}
-                    if effective_session_id is not None
-                    else None
-                ),
-            ).with_runtime_transport_metadata(
-                {
-                    "working_directory": str(working_dir),
-                    "claude_session_id": effective_session_id,
-                    "remote_strategy": self.capabilities.remote_strategy,
-                }
-            ).with_last_continuation_path(
-                continuation_path,
-                metadata=turn_metadata,
+            updated_session = (
+                session_state.with_native_handle_update(
+                    native_session_id=effective_session_id,
+                    provider_fields=(
+                        {"claude_session_id": effective_session_id}
+                        if effective_session_id is not None
+                        else None
+                    ),
+                )
+                .with_runtime_transport_metadata(
+                    {
+                        "working_directory": str(working_dir),
+                        "claude_session_id": effective_session_id,
+                        "remote_strategy": self.capabilities.remote_strategy,
+                    }
+                )
+                .with_last_continuation_path(
+                    continuation_path,
+                    metadata=turn_metadata,
+                )
             )
             if explicit_new_session_recovery:
                 updated_session = clear_provider_resume_recovery_request(
@@ -389,8 +393,7 @@ class ClaudeCLIDecisionProvider:
             summary_char_limit=session_state.summary_char_limit,
         )
         current_prompt = (
-            f"{prompt}\n\n"
-            "Return exactly one JSON object with a non-empty summary_text field."
+            f"{prompt}\n\nReturn exactly one JSON object with a non-empty summary_text field."
         )
         system = "Return only one JSON object with a non-empty summary_text field."
         working_dir = (
@@ -520,7 +523,10 @@ def _require_runtime_working_directory(session_state: ProviderSessionState) -> s
 
 
 def _ensure_runtime_context(session_state: ProviderSessionState) -> ProviderSessionState:
-    if session_state.runtime_context is not None and session_state.runtime_context.working_directory:
+    if (
+        session_state.runtime_context is not None
+        and session_state.runtime_context.working_directory
+    ):
         return session_state
     working_dir = tempfile.mkdtemp(prefix="pyocd-turnkey-claude-runtime-")
     return session_state.with_runtime_context(

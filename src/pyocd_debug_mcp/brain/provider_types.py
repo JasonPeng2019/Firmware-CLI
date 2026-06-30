@@ -295,11 +295,11 @@ class ProviderSessionState:
             "memory_mode": self.memory_mode,
             "continuation_mode": self.continuation_mode,
             "runtime_context": (
-                self.runtime_context.to_record()
-                if self.runtime_context is not None
-                else None
+                self.runtime_context.to_record() if self.runtime_context is not None else None
             ),
-            "native_handle": self.native_handle.to_record() if self.native_handle is not None else None,
+            "native_handle": self.native_handle.to_record()
+            if self.native_handle is not None
+            else None,
             "recent_turn_limit": self.recent_turn_limit,
             "recent_render_char_limit": self.recent_render_char_limit,
             "summary_char_limit": self.summary_char_limit,
@@ -307,7 +307,9 @@ class ProviderSessionState:
             "turns_since_last_memory_sync": self.turns_since_last_memory_sync,
             "last_continuation_path": self.last_continuation_path,
             "recent_memory_entries": [entry.to_record() for entry in self.recent_memory_entries],
-            "memory_summary": self.memory_summary.to_record() if self.memory_summary is not None else None,
+            "memory_summary": self.memory_summary.to_record()
+            if self.memory_summary is not None
+            else None,
             "metadata": dict(self.metadata),
         }
 
@@ -318,17 +320,15 @@ class ProviderSessionState:
             "memory_mode": self.memory_mode,
             "continuation_mode": self.continuation_mode,
             "runtime_context": (
-                self.runtime_context.summary_record()
-                if self.runtime_context is not None
-                else None
+                self.runtime_context.summary_record() if self.runtime_context is not None else None
             ),
             "native_handle": (
-                self.native_handle.summary_record()
-                if self.native_handle is not None
-                else None
+                self.native_handle.summary_record() if self.native_handle is not None else None
             ),
             "recent_memory_entry_count": len(self.recent_memory_entries),
-            "recent_memory_render_char_count": len(_render_recent_memory_entries(self.recent_memory_entries)),
+            "recent_memory_render_char_count": len(
+                _render_recent_memory_entries(self.recent_memory_entries)
+            ),
             "memory_summary": (
                 {
                     "covered_through_turn": self.memory_summary.covered_through_turn,
@@ -344,10 +344,14 @@ class ProviderSessionState:
             "metadata": dict(self.metadata),
         }
 
-    def with_runtime_context(self, runtime_context: ProviderRuntimeContext) -> "ProviderSessionState":
+    def with_runtime_context(
+        self, runtime_context: ProviderRuntimeContext
+    ) -> "ProviderSessionState":
         return replace(self, runtime_context=runtime_context)
 
-    def with_updated_metadata(self, metadata: dict[str, object] | None = None) -> "ProviderSessionState":
+    def with_updated_metadata(
+        self, metadata: dict[str, object] | None = None
+    ) -> "ProviderSessionState":
         merged = dict(self.metadata)
         if metadata is not None:
             merged.update(metadata)
@@ -434,7 +438,9 @@ class ProviderSessionState:
         return replace(
             self,
             recent_memory_entries=(
-                self.recent_memory_entries if recent_memory_entries is None else recent_memory_entries
+                self.recent_memory_entries
+                if recent_memory_entries is None
+                else recent_memory_entries
             ),
             memory_summary=resolved_memory_summary,
             turns_since_last_memory_sync=(
@@ -693,8 +699,13 @@ def _render_recent_memory_entries(
 
 def render_provider_memory_text(session_state: ProviderSessionState) -> str:
     sections: list[str] = []
-    if session_state.memory_summary is not None and session_state.memory_summary.summary_text.strip():
-        sections.append("Compacted prior turn facts:\n" + session_state.memory_summary.summary_text.strip())
+    if (
+        session_state.memory_summary is not None
+        and session_state.memory_summary.summary_text.strip()
+    ):
+        sections.append(
+            "Compacted prior turn facts:\n" + session_state.memory_summary.summary_text.strip()
+        )
     recent_text = render_recent_memory_entries(
         session_state.recent_memory_entries,
         char_limit=session_state.recent_render_char_limit,
@@ -724,11 +735,16 @@ def append_memory_entry(
     )
 
 
-def plan_memory_compaction(session_state: ProviderSessionState) -> ProviderMemoryCompactionPlan | None:
+def plan_memory_compaction(
+    session_state: ProviderSessionState,
+) -> ProviderMemoryCompactionPlan | None:
     retained = list(session_state.recent_memory_entries)
     evicted: list[ProviderMemoryEntry] = []
     rendered_char_count = len(_render_recent_memory_entries(tuple(retained)))
-    if len(retained) <= session_state.recent_turn_limit and rendered_char_count <= session_state.recent_render_char_limit:
+    if (
+        len(retained) <= session_state.recent_turn_limit
+        and rendered_char_count <= session_state.recent_render_char_limit
+    ):
         return None
     while len(retained) > session_state.recent_turn_limit:
         evicted.append(retained.pop(0))
@@ -750,7 +766,9 @@ def apply_deterministic_compaction(
     source: str = "deterministic",
 ) -> ProviderSessionState:
     merged_lines = _merged_summary_lines(
-        existing_summary=session_state.memory_summary.summary_text if session_state.memory_summary else "",
+        existing_summary=session_state.memory_summary.summary_text
+        if session_state.memory_summary
+        else "",
         new_lines=[_deterministic_summary_line(entry) for entry in plan.evicted_entries],
         char_limit=session_state.summary_char_limit,
     )
@@ -784,7 +802,9 @@ def apply_summary_compaction(
     summary_text: str,
     source: str,
 ) -> ProviderSessionState:
-    normalized_summary = _trim_summary_text(summary_text, char_limit=session_state.summary_char_limit)
+    normalized_summary = _trim_summary_text(
+        summary_text, char_limit=session_state.summary_char_limit
+    )
     if plan.evicted_entries:
         covered_through_turn = plan.evicted_entries[-1].turn_index
     else:
@@ -861,9 +881,13 @@ def _deterministic_summary_line(entry: ProviderMemoryEntry) -> str:
     ]
     if entry.hypothesis:
         components.append(f"hyp={_trim_text(entry.hypothesis, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
-    components.append(f"action={entry.action_kind}:{_trim_text(entry.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
+    components.append(
+        f"action={entry.action_kind}:{_trim_text(entry.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}"
+    )
     components.append(f"result={_trim_text(entry.result_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
-    components.append(f"verify={_trim_text(entry.verification_snapshot, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
+    components.append(
+        f"verify={_trim_text(entry.verification_snapshot, _SUMMARY_COMPONENT_CHAR_LIMIT)}"
+    )
     return "- " + "; ".join(components)
 
 

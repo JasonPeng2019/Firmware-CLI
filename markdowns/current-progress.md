@@ -173,6 +173,54 @@ Latest Branch A/B live-provider refresh proof on 2026-06-29:
   `runs/`; these run IDs are retained as historical ledger evidence, but the
   specific artifacts cannot be reinspected from this checkout until restored
 
+Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
+
+- `P-Wave-C` event/timeout work has been selectively merged into the current
+  `P-Wave-A` spine that already carried Branch A and Branch B.
+- The merge keeps Branch A provider/session/schema behavior, Branch B
+  action-boundary/batch/wait/client-action behavior, and Branch C
+  event-spine/timeout-policy/server-sync behavior in one loop.
+- Non-hardware validation passed after the final harness fix:
+  - focused A/B/C suite: `121 passed`
+  - Branch C no-hardware harness: `4 passed, 0 failed, 0 skipped`
+  - full pytest: `338 passed`
+  - ruff check/fix and ruff format passed
+  - mypy over `src`: passed
+  - R11 benchmark tests: `34 passed`
+  - `python -m tests.harness.r11_benchmark --help`: passed
+- Pyright remains a repo-wide baseline failure (`95` diagnostics), but the
+  changed-file filter for the A/B/C merge and harness fix reported `0`
+  diagnostics on the touched merge files.
+- Live hardware substrate proof passed on the attached boards:
+  - `nucleo_l476rg`: `host_bootstrap.py`, `stage0_check.py`, and
+    `tests.harness.stage1_smoke`
+  - `nrf52840dk`: `host_bootstrap.py`, `stage0_check.py` with recover test,
+    and `tests.harness.stage1_smoke`
+- Branch C live provider/hardware harness passed with both local CLI providers
+  on both attached boards:
+  - `nucleo_l476rg`: `codex-cli` run root
+    `20260630T035533Z-13eb8716`, `claude-cli` run root
+    `20260630T035604Z-1cab4775`
+  - `nrf52840dk`: `codex-cli` run root
+    `20260630T035749Z-166e2f98`, `claude-cli` run root
+    `20260630T035823Z-4733fa03`
+- Explicit two-turn deployed CLI smokes passed on both attached boards and
+  both providers. Each run used turn 1 `action_batch(connect, get_board_info)`
+  and turn 2 standalone `finalize`:
+  - `nucleo_l476rg` + `codex-cli`: `20260630T035908Z-792e4e13`
+  - `nucleo_l476rg` + `claude-cli`: `20260630T035938Z-d595f811`
+  - `nrf52840dk` + `codex-cli`: `20260630T040008Z-8a79ddbf`
+  - `nrf52840dk` + `claude-cli`: `20260630T040034Z-b497ea08`
+- A real acceptance-harness false negative was found and fixed: Codex reached
+  hardware after recovering from an unsupported batched `finalize`, but the
+  Branch C harness only accepted per-tool `tool_complete` event evidence. The
+  harness now also accepts `TurnkeyRunResult.mcp_tools_used`, with a focused
+  regression test.
+- Process cleanup audits after the live provider and hardware smokes showed no
+  leftover spawned `uv`, `python`, `codex`, `claude`, `pyocd`, MCP, or debug
+  helper children. The only matching long-lived process was the pre-existing
+  VS Code Codex app-server.
+
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
 

@@ -365,7 +365,9 @@ def merge_board_lists(builtins: list[BoardConfig], customs: list[BoardConfig]) -
     return merged
 
 
-def select_boards_by_id(boards: list[BoardConfig], requested_ids: Iterable[str]) -> list[BoardConfig]:
+def select_boards_by_id(
+    boards: list[BoardConfig], requested_ids: Iterable[str]
+) -> list[BoardConfig]:
     requested = [board_id.strip().lower() for board_id in requested_ids if board_id.strip()]
     if not requested:
         return boards

@@ -124,7 +124,9 @@ class _FakeClient:
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         return None
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> ToolTextResult:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, object] | None = None
+    ) -> ToolTextResult:
         queue = self._results.get(tool_name)
         if not queue:
             raise RuntimeError(f"Unexpected tool call: {tool_name}")
@@ -283,14 +285,21 @@ def test_stdio_tool_client_maps_mcp_timeout_to_mcp_client_error() -> None:
         ) -> object:
             del name, arguments, read_timeout_seconds
             raise McpError(
-                ErrorData(code=408, message="Timed out while waiting for response to CallToolRequest. Waited 0.01 seconds.")
+                ErrorData(
+                    code=408,
+                    message="Timed out while waiting for response to CallToolRequest. Waited 0.01 seconds.",
+                )
             )
 
     client = StdioToolClient(default_server_command())
     client._session = FakeSession()  # type: ignore[assignment]
 
     with pytest.raises(MCPClientError, match="Tool 'read_serial' timed out after 0s"):
-        anyio.run(lambda: client.call_tool_text("read_serial", {"read_seconds": 1.0}, timeout_seconds=0.01))
+        anyio.run(
+            lambda: client.call_tool_text(
+                "read_serial", {"read_seconds": 1.0}, timeout_seconds=0.01
+            )
+        )
 
 
 def test_run_local_command_uses_windows_shell_on_windows(
@@ -377,7 +386,9 @@ def test_brain_state_to_record_includes_typed_evidence() -> None:
 def test_execute_read_file_returns_file_contents(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     (workspace_root / "src").mkdir(parents=True)
-    (workspace_root / "src" / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
+    (workspace_root / "src" / "main.c").write_text(
+        "int main(void) { return 0; }\n", encoding="utf-8"
+    )
     session = workspace_mod.prepare_workspace_session(
         workspace_root=workspace_root,
         allowed_edit_roots=("src",),
@@ -425,7 +436,11 @@ def test_run_turnkey_records_decision_evidence_and_timeout_fallback(
                 classification="healthy",
                 hypothesis="The board is probably already healthy.",
                 strategy_evaluation="Connect first so the next decision uses real board evidence.",
-                action={"kind": "server_tool", "tool_name": "connect", "arguments": {"board_id": "nrf52840dk"}},
+                action={
+                    "kind": "server_tool",
+                    "tool_name": "connect",
+                    "arguments": {"board_id": "nrf52840dk"},
+                },
             ),
             TurnDecision(
                 observation_summary="The board connected cleanly, so the run can stop after diagnosis.",
@@ -476,7 +491,9 @@ def test_run_turnkey_records_decision_evidence_and_timeout_fallback(
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
 
 
-def _case_report(case_id: str, *, score: int = 100, outcome: str = "full_success") -> r11.CaseRunReport:
+def _case_report(
+    case_id: str, *, score: int = 100, outcome: str = "full_success"
+) -> r11.CaseRunReport:
     return r11.CaseRunReport(
         case_id=case_id,
         board_id=case_id.split("__", 1)[0],
@@ -558,7 +575,10 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
         )
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory",
+        lambda prefix: _TempDir(),
+    )
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model=None)
@@ -748,8 +768,13 @@ def test_openai_provider_retry_updates_prompt_metadata(
     )
 
     assert len(call_inputs) == 2
-    assert call_inputs[0]["input"] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
-    assert call_inputs[1]["input"] == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    assert (
+        call_inputs[0]["input"] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+    )
+    assert (
+        call_inputs[1]["input"]
+        == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    )
     assert turn.provider_metadata["prompt_render_mode"] == "retry"
     assert turn.provider_metadata["memory_injected"] is False
     assert turn.provider_metadata["static_tool_schema_injected"] is False
@@ -770,7 +795,10 @@ def test_codex_cli_provider_surfaces_subprocess_timeout(
     def fake_run(command: list[str], **kwargs: object) -> object:
         raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
 
-    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory",
+        lambda prefix: _TempDir(),
+    )
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model=None, timeout_seconds=1.0)
@@ -785,7 +813,9 @@ def test_codex_cli_provider_surfaces_subprocess_timeout(
     with pytest.raises(CodexProviderResponseError, match="Codex CLI timed out after 1s"):
         provider._next_decision_sync(
             bundle,
-            make_provider_session_state(provider="codex-cli", model=None, continuation_mode="local-primary"),
+            make_provider_session_state(
+                provider="codex-cli", model=None, continuation_mode="local-primary"
+            ),
         )
 
 
@@ -828,7 +858,10 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
             stderr="",
         )
 
-    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory",
+        lambda prefix: _TempDir(),
+    )
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
 
     provider = ClaudeCLIDecisionProvider(model=None)
@@ -841,7 +874,9 @@ def test_claude_cli_provider_uses_utf8_subprocess_capture(
     )
     turn = provider._next_decision_sync(
         bundle,
-        make_provider_session_state(provider="claude-cli", model=None, continuation_mode="remote-primary"),
+        make_provider_session_state(
+            provider="claude-cli", model=None, continuation_mode="remote-primary"
+        ),
     )
 
     assert turn.decision.classification == "healthy"
@@ -973,7 +1008,10 @@ def test_anthropic_provider_retry_updates_prompt_metadata(
 
     assert len(captured_messages) == 2
     assert captured_messages[0] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
-    assert captured_messages[1] == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    assert (
+        captured_messages[1]
+        == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."
+    )
     assert turn.provider_metadata["prompt_render_mode"] == "retry"
     assert turn.provider_metadata["memory_injected"] is False
     assert turn.provider_metadata["static_tool_schema_injected"] is False
@@ -994,7 +1032,10 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
     def fake_run(command: list[str], **kwargs: object) -> object:
         raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
 
-    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory",
+        lambda prefix: _TempDir(),
+    )
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_claude_cli.subprocess.run", fake_run)
 
     provider = ClaudeCLIDecisionProvider(model=None, timeout_seconds=1.0)
@@ -1009,7 +1050,9 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
     with pytest.raises(ClaudeProviderResponseError, match="Claude CLI timed out after 1s"):
         provider._next_decision_sync(
             bundle,
-            make_provider_session_state(provider="claude-cli", model=None, continuation_mode="remote-primary"),
+            make_provider_session_state(
+                provider="claude-cli", model=None, continuation_mode="remote-primary"
+            ),
         )
 
 
@@ -1046,7 +1089,10 @@ def test_codex_cli_provider_reports_memory_injected_only_when_memory_block_exist
         )
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory", lambda prefix: _TempDir())
+    monkeypatch.setattr(
+        "pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory",
+        lambda prefix: _TempDir(),
+    )
     monkeypatch.setattr("pyocd_debug_mcp.brain.provider_codex_cli.subprocess.run", fake_run)
 
     provider = CodexCLIDecisionProvider(model=None)

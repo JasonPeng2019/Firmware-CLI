@@ -37,7 +37,7 @@ def is_project_root(path: Path) -> bool:
 
 
 def repo_root(start: Path | None = None) -> Path:
-    here = (start or Path(__file__).resolve())
+    here = start or Path(__file__).resolve()
     for parent in here.parents:
         if is_project_root(parent):
             return parent
@@ -51,9 +51,7 @@ def render_summary(results: list[Result]) -> str:
     lines = ["Summary:"]
     for result in results:
         status = "PASS" if result.returncode == 0 else "FAIL"
-        lines.append(
-            f"- {status} | {result.duration_s:.2f}s | {result.command}"
-        )
+        lines.append(f"- {status} | {result.duration_s:.2f}s | {result.command}")
     return "\n".join(lines)
 
 

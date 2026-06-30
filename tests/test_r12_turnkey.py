@@ -140,7 +140,10 @@ class FakeClient:
             ToolDescriptor(
                 name="read_serial",
                 description="Read serial text until a match or timeout.",
-                input_schema={"type": "object", "properties": {"expected_text": {"type": "string"}}},
+                input_schema={
+                    "type": "object",
+                    "properties": {"expected_text": {"type": "string"}},
+                },
             ),
             ToolDescriptor(
                 name="write_serial",
@@ -175,7 +178,9 @@ class FakeClient:
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         return None
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> ToolTextResult:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, object] | None = None
+    ) -> ToolTextResult:
         self.calls.append((tool_name, arguments))
         queue = self._results.get(tool_name)
         if not queue:
@@ -339,7 +344,9 @@ async def test_run_turnkey_strips_redundant_tool_name_from_namespaced_server_too
 
 @pytest.mark.anyio
 async def test_run_turnkey_refuses_conflicting_tool_name_on_namespaced_server_tool() -> None:
-    client = FakeClient({"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]})
+    client = FakeClient(
+        {"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]}
+    )
     provider = FakeProvider(
         [
             TurnDecision.model_validate(
@@ -385,7 +392,9 @@ async def test_run_turnkey_refuses_conflicting_tool_name_on_namespaced_server_to
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert execution.brain_trace[0]["result_text"].startswith("Refused [brain/conflicting-server-tool-name]")
+    assert execution.brain_trace[0]["result_text"].startswith(
+        "Refused [brain/conflicting-server-tool-name]"
+    )
     assert client.calls == []
 
 
@@ -424,7 +433,7 @@ async def test_run_turnkey_unwraps_nested_legacy_server_tool_arguments() -> None
                                     "tool_name": "read_memory",
                                     "arguments": {"address": "0x08000000", "word_size": 32},
                                 },
-                            }
+                            },
                         ]
                     },
                 }
@@ -467,7 +476,9 @@ async def test_run_turnkey_unwraps_nested_legacy_server_tool_arguments() -> None
 
 @pytest.mark.anyio
 async def test_run_turnkey_refuses_conflicting_nested_server_tool_argument() -> None:
-    client = FakeClient({"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]})
+    client = FakeClient(
+        {"disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")]}
+    )
     provider = FakeProvider(
         [
             TurnDecision.model_validate(
@@ -517,7 +528,9 @@ async def test_run_turnkey_refuses_conflicting_nested_server_tool_argument() -> 
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert execution.brain_trace[0]["result_text"].startswith("Refused [brain/conflicting-server-tool-argument]")
+    assert execution.brain_trace[0]["result_text"].startswith(
+        "Refused [brain/conflicting-server-tool-argument]"
+    )
     assert client.calls == []
 
 
@@ -857,7 +870,10 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
             ToolDescriptor(
                 name="read_serial",
                 description="Read UART.",
-                input_schema={"type": "object", "properties": {"expected_text": {"type": "string"}}},
+                input_schema={
+                    "type": "object",
+                    "properties": {"expected_text": {"type": "string"}},
+                },
             ),
             ToolDescriptor(
                 name="connect",
@@ -1102,7 +1118,7 @@ def test_prepare_workspace_session_tracks_diff_without_copy(tmp_path: Path) -> N
 def test_prepare_workspace_session_refuses_binary_read(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     (workspace_root / "src").mkdir(parents=True)
-    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xFF\x10")
+    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xff\x10")
 
     session = prepare_workspace_session(
         workspace_root=workspace_root,
@@ -1177,7 +1193,7 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
                 ToolTextResult(
                     tool_name="read_serial",
                     text="UART matched on /dev/cu.usbmodem0006854006931 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
-                )
+                ),
             ],
             "flash_firmware": [
                 ToolTextResult(
@@ -1219,7 +1235,9 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
     event_kinds = [
         json.loads(line)["event_kind"]
-        for line in (execution.run_root / "logs" / "brain_events.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (execution.run_root / "logs" / "brain_events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     assert "provider_turn_start" in event_kinds
     assert "provider_turn_complete" in event_kinds
@@ -1413,7 +1431,9 @@ def test_run_turnkey_resume_failure_fails_closed_and_records_artifact_event(
     assert provider.calls == 1
     events_path = execution.run_root / "logs" / "brain_events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
-    resume_event = next(record for record in events if record["event_kind"] == "provider_resume_failed")
+    resume_event = next(
+        record for record in events if record["event_kind"] == "provider_resume_failed"
+    )
     assert resume_event["details"]["provider"] == "codex-cli"
     assert resume_event["details"]["expected_handle_id"] == "thread-parent"
     assert resume_event["details"]["replacement_provider_session_started"] is False
@@ -1449,8 +1469,12 @@ def test_run_turnkey_resume_failure_retries_when_interactive_handler_chooses_ret
 
     assert execution.result.summary == "Provider resume handling completed."
     assert provider.calls == 2
-    assert all(metadata.get("resume_recovery_action") is None for metadata in provider.session_metadata)
-    assert any(event["event_kind"] == "provider_resume_recovery_choice" for event in execution.brain_events)
+    assert all(
+        metadata.get("resume_recovery_action") is None for metadata in provider.session_metadata
+    )
+    assert any(
+        event["event_kind"] == "provider_resume_recovery_choice" for event in execution.brain_events
+    )
 
 
 def test_run_turnkey_resume_failure_can_start_labeled_recovery_session(
@@ -1485,7 +1509,10 @@ def test_run_turnkey_resume_failure_can_start_labeled_recovery_session(
     assert provider.calls == 2
     assert provider.session_metadata[1]["resume_recovery_action"] == "new-session-from-memory"
     assert execution.model_turns[-1]["provider_metadata"]["recovery_created_new_session"] is True
-    assert execution.model_turns[-1]["provider_metadata"]["replaced_remote_handle_id"] == "thread-parent"
+    assert (
+        execution.model_turns[-1]["provider_metadata"]["replaced_remote_handle_id"]
+        == "thread-parent"
+    )
     choice_event = next(
         event
         for event in execution.brain_events
@@ -1611,10 +1638,14 @@ def test_run_turnkey_uses_invocation_default_timeout_for_disconnect(
     captured_disconnect_timeouts: list[float] = []
     original_call_tool = loop_mod._call_tool_with_timeout
 
-    async def _wrapped_call_tool(client: Any, tool_name: str, arguments: dict[str, object], *, timeout_seconds: float) -> ToolTextResult:
+    async def _wrapped_call_tool(
+        client: Any, tool_name: str, arguments: dict[str, object], *, timeout_seconds: float
+    ) -> ToolTextResult:
         if tool_name == "disconnect":
             captured_disconnect_timeouts.append(timeout_seconds)
-        return await original_call_tool(client, tool_name, arguments, timeout_seconds=timeout_seconds)
+        return await original_call_tool(
+            client, tool_name, arguments, timeout_seconds=timeout_seconds
+        )
 
     monkeypatch.setattr("pyocd_debug_mcp.brain.loop._call_tool_with_timeout", _wrapped_call_tool)
     invocation = build_turnkey_invocation(
@@ -1665,7 +1696,9 @@ def test_run_turnkey_uses_invocation_default_timeout_for_disconnect(
                                 ),
                             )
                         ],
-                        "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+                        "disconnect": [
+                            ToolTextResult(tool_name="disconnect", text="Disconnected.")
+                        ],
                     }
                 ),
             ),
@@ -1764,7 +1797,7 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
     monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
     workspace_root = tmp_path / "workspace"
     (workspace_root / "src").mkdir(parents=True)
-    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xFF\x10")
+    (workspace_root / "src" / "firmware.bin").write_bytes(b"\x90\x00\xff\x10")
 
     invocation = build_turnkey_invocation(
         mode="benchmark",
@@ -1827,7 +1860,10 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
     assert record["action_payload"]["path"] == "src/firmware.bin"
     assert record["result_status"] == "failure"
     assert str(record["codebase_summary"]).startswith("workspace_root=")
-    assert "do not finalize healthy/fixed without successful run_green_check" in record["acceptance_constraints"]
+    assert (
+        "do not finalize healthy/fixed without successful run_green_check"
+        in record["acceptance_constraints"]
+    )
 
 
 def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
@@ -1864,7 +1900,9 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
             TurnDecision(
                 observation_summary="Connect to the scoped board first.",
                 classification=None,
-                action=ServerToolAction(tool_name="connect", arguments={"board_id": "nucleo_l476rg"}),
+                action=ServerToolAction(
+                    tool_name="connect", arguments={"board_id": "nucleo_l476rg"}
+                ),
             ),
             TurnDecision(
                 observation_summary="Flash the current workspace image before checking UART.",
@@ -1951,14 +1989,12 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
                 ToolTextResult(
                     tool_name="read_serial",
                     text="UART matched on /dev/cu.usbmodem143103 at 115200 baud via pyocd-native; expected='boot ok'; reopen_count=0; duration=1.00s; excerpt=boot ok",
-                )
+                ),
             ],
             "read_core_register": [
                 ToolTextResult(tool_name="read_core_register", text="0x08000B28")
             ],
-            "read_memory": [
-                ToolTextResult(tool_name="read_memory", text="0x1234ABCD")
-            ],
+            "read_memory": [ToolTextResult(tool_name="read_memory", text="0x1234ABCD")],
             "disconnect": [
                 ToolTextResult(tool_name="disconnect", text="Disconnected."),
             ],
@@ -2175,7 +2211,9 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
             TurnDecision(
                 observation_summary="Reconnect after the failed verifier.",
                 classification="code_bug",
-                action=ServerToolAction(tool_name="connect", arguments={"board_id": "nucleo_l476rg"}),
+                action=ServerToolAction(
+                    tool_name="connect", arguments={"board_id": "nucleo_l476rg"}
+                ),
             ),
             TurnDecision(
                 observation_summary="Stop after the reconnect refusal.",
@@ -2216,9 +2254,11 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
     )
     monkeypatch.setattr(
         "pyocd_debug_mcp.brain.loop._parse_hex_text",
-        lambda text, *, label: (_ for _ in ()).throw(RuntimeError("forced symbol read failure"))
-        if label == "symbol stage1_known_value"
-        else int(text, 0),
+        lambda text, *, label: (
+            (_ for _ in ()).throw(RuntimeError("forced symbol read failure"))
+            if label == "symbol stage1_known_value"
+            else int(text, 0)
+        ),
     )
 
     execution = anyio.run(
@@ -2499,6 +2539,7 @@ def test_r12_benchmark_records_case_artifacts(
             {"api_key": "key", "model": "gpt-test", "provider": "openai-api"},
         )(),
     )
+
     async def fake_run_turnkey_with_provider(
         _invocation: object, *, provider_config: object, event_sink: object | None = None
     ) -> TurnkeyExecution:
@@ -2727,8 +2768,13 @@ def test_r12_benchmark_task_guides_minimal_b001_repair() -> None:
     assert "keep `stage1_known_value` as the flash-backed `const uint32_t ...` declaration" in task
     assert "do not convert `stage1_known_value` into a RAM-backed mutable/volatile variable" in task
     assert "fix the UART print path only" in task
-    assert "keep the existing loop and the live `*(const volatile uint32_t *)&stage1_known_value` read intact" in task
-    assert "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+    assert (
+        "keep the existing loop and the live `*(const volatile uint32_t *)&stage1_known_value` read intact"
+        in task
+    )
+    assert (
+        "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+    )
     assert "restore the application success text from `boot nope` to `boot ok`" in task
 
 
@@ -2762,11 +2808,15 @@ def test_r12_benchmark_task_guides_b003_to_preserve_live_symbol_path() -> None:
     assert "missing application success UART" in task
     assert "flash-backed `const uint32_t ...` declaration" in task
     assert "keep the existing loop and live `stage1_known_value` read intact" in task
-    assert "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+    assert (
+        "keep the exact `const uint32_t stage1_known_value = 0x1234ABCD;` declaration form" in task
+    )
 
 
 def test_turnkey_cli_uses_higher_default_iteration_budget_for_benchmarks() -> None:
-    args = build_turnkey_cli_parser().parse_args(["benchmark", "--case-id", "nrf52833dk__b003_silent_uart"])
+    args = build_turnkey_cli_parser().parse_args(
+        ["benchmark", "--case-id", "nrf52833dk__b003_silent_uart"]
+    )
 
     assert args.max_iters == 18
 
@@ -2778,17 +2828,17 @@ def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
             "--case-id",
             "nrf52833dk__k001_reference_green",
             "--timeout-config-json",
-            "{\"default_tool_seconds\": 19.0}",
+            '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
-            "{\"provider_seconds\": 120.0}",
+            '{"provider_seconds": 120.0}',
             "--iteration-estimate-json",
-            "{\"requested_max_iterations\": 6}",
+            '{"requested_max_iterations": 6}',
         ]
     )
 
-    assert args.timeout_config_json == "{\"default_tool_seconds\": 19.0}"
-    assert args.timeout_proposal_json == "{\"provider_seconds\": 120.0}"
-    assert args.iteration_estimate_json == "{\"requested_max_iterations\": 6}"
+    assert args.timeout_config_json == '{"default_tool_seconds": 19.0}'
+    assert args.timeout_proposal_json == '{"provider_seconds": 120.0}'
+    assert args.iteration_estimate_json == '{"requested_max_iterations": 6}'
 
 
 def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2818,11 +2868,11 @@ def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyP
             "--case-id",
             "nrf52833dk__k001_reference_green",
             "--timeout-config-json",
-            "{\"default_tool_seconds\": 19.0}",
+            '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
-            "{\"provider_seconds\": 120.0}",
+            '{"provider_seconds": 120.0}',
             "--iteration-estimate-json",
-            "{\"requested_max_iterations\": 6}",
+            '{"requested_max_iterations": 6}',
         ]
     )
 
@@ -2871,7 +2921,7 @@ def test_claude_output_extractor_surfaces_provider_error() -> None:
                 "type": "result",
                 "subtype": "success",
                 "is_error": True,
-                "result": "API Error: 404 {\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: claude-sonnet-4-20250514\"}}",
+                "result": 'API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-4-20250514"}}',
             }
         ),
         stderr="",

@@ -25,6 +25,7 @@ ONLY INCLUDE for the first capability prototype:
 12. Proof escalation ladder for expensive live validation.
 13. Cache-assisted artifact/result reuse for setup and repeated non-final checks.
 14. Skill index/on-demand skill bodies for static-context efficiency.
+15. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -108,6 +109,7 @@ north star.
 - [22. Proof escalation ladder for expensive live validation](#22-proof-escalation-ladder-for-expensive-live-validation)
 - [23. Cache-assisted artifact/result reuse for setup and repeated non-final checks](#23-cache-assisted-artifactresult-reuse-for-setup-and-repeated-non-final-checks)
 - [3. Inject skills as a cached index + on-demand bodies, not a full per-turn block](#3-inject-skills-as-a-cached-index--on-demand-bodies-not-a-full-per-turn-block)
+- [24. Process-tree and board-session cleanup guard](#24-process-tree-and-board-session-cleanup-guard)
 
 ### Later MVP / nice-to-have backlog
 
@@ -133,7 +135,8 @@ laid out in the same sequence.
 4. **Visibility / Wave 2 branch work** - add live provider/brain progress,
    developer inspector logs, stream checkpoints for UART/build/client-action
    flows, skill index/on-demand skill bodies, cache-assisted setup/result
-   reuse, and the existing configurable provider-memory safety sync.
+   reuse, process-tree / board-session cleanup guard, and the existing
+   configurable provider-memory safety sync.
 5. **Prototype proof gate** - add scoped green approval with manual or narrow
    flipped-value tests and the proof escalation ladder.
 6. **Later MVP polish** - projects, broad skill-guided host experiments,
@@ -452,9 +455,10 @@ resumable session handle.
 ### Wave placement
 
 Wave 2 is Branch D (progress/inspector), Branch E (stream checkpoints), Branch F
-(scoped green approval), and Branch G (static context/cache reuse). Provider
-memory semantics stay with the already-implemented Branch A provider/session
-layer plus the configurable native safety-sync cadence.
+(scoped green approval), Branch G (static context/cache reuse), and Branch H
+(process-tree / board-session cleanup guard). Provider memory semantics stay
+with the already-implemented Branch A provider/session layer plus the
+configurable native safety-sync cadence.
 
 ### What it is supposed to do
 
@@ -2958,6 +2962,90 @@ live final verifier.
 ### Status
 
 Proposal only. Not yet specced, not yet implemented.
+
+---
+
+## 24. Process-tree and board-session cleanup guard
+
+### Problem / current behavior
+
+The prototype currently shells out to provider CLIs, `uv`, Python validation
+commands, the local MCP server, pyOCD, and serial helpers. Most normal paths use
+context managers and `disconnect`, but failures, interrupts, bad quoting, provider
+CLI hangs, or parent-process exits can still leave child processes, debug sessions,
+serial ports, or boards alive after the command that spawned them appears to have
+finished.
+
+That is a deployment risk, not just a test nuisance. A leaked provider child can
+burn compute or keep a run directory active. A leaked MCP/pyOCD process can hold a
+probe, serial port, or board debug session, leaving the next run blocked or the board
+in the wrong state.
+
+### What the change is
+
+Add a deterministic process/session hygiene layer around every provider-backed,
+MCP-backed, pyOCD-backed, serial, hardware, and long-running validation command:
+
+- create command/run provenance for spawned process trees, including run root,
+  parent PID where available, command line, provider, board id, and session id;
+- prefer task files and JSON files over fragile inline PowerShell prompt/JSON
+  quoting for live provider and deployment-smoke runs;
+- enforce explicit wall-clock timeouts for provider, MCP, pyOCD, serial, and
+  validation subprocesses;
+- on normal exit, failure, timeout, or interrupt, attempt product cleanup first:
+  provider close where supported, MCP `disconnect`, serial close, pyOCD/session
+  close, run-artifact finalization;
+- audit for leftover spawned `uv`, `python`, `node`, `codex`, `claude`, `pyocd`,
+  MCP server, serial, and board-debug processes by provenance, not broad process
+  name;
+- clean up only process trees this run spawned or can identify with precise
+  provenance;
+- report any leftover spawned process, locked probe, open serial port, or
+  connected debug session as a failed cleanup row or explicit deployment
+  ambiguity.
+
+### Where it belongs
+
+1. **Process/session guard module** - reusable helper for baseline process
+   snapshots, spawned-process provenance, timeout wrappers, child-tree cleanup, and
+   post-run audits.
+2. **Provider CLI adapters** - wrap Codex/Claude CLI subprocesses with provenance,
+   bounded waits, and child cleanup on timeout/interrupt.
+3. **MCP client/server lifecycle** - ensure local MCP subprocesses and debug
+   sessions are disconnected and reaped even when provider execution fails.
+4. **pyOCD/serial services** - make probe/session/serial close paths explicit and
+   observable in events/artifacts.
+5. **Harnesses and workflow scripts** - expose a post-check orphan audit, fail rows
+   with leaked spawned resources, and use task/JSON files for live prompt smokes.
+
+### What it is supposed to do
+
+- Make "the test finished" mean the process tree and board session are actually
+  clean.
+- Prevent leaked provider compute, leaked MCP servers, locked probes, stuck serial
+  ports, or boards left connected/ halted from carrying into the next run.
+- Give deployment acceptance reports a concrete cleanup row instead of relying on
+  implicit context-manager behavior.
+
+### Constraints / watch-outs
+
+- **No broad kills.** Never kill all `python`, `node`, `codex`, `claude`, or
+  `pyocd` processes by name. Cleanup must be provenance-based.
+- **Interrupts count.** Ctrl-C, agent aborts, provider timeouts, and parsing failures
+  must still run best-effort cleanup and leave a clear audit result.
+- **Board cleanup is product behavior.** A leaked session, locked probe, open serial
+  port, or halted target is a product bug or deployment ambiguity, not a harmless
+  test artifact.
+- **Works with accepted soft hardware stance.** This does not sandbox direct
+  hardware access; it cleans up the processes and sessions the product/harness
+  actually spawned and can identify.
+- **Doc-sync + verify.** Add tests that simulate a hung provider child, a failed MCP
+  startup, a timeout during pyOCD/serial work, and an interrupted validation command;
+  prove no spawned child/session remains.
+
+### Status
+
+Proposal only. Not yet specced, not yet implemented. Wave 2 Branch H.
 
 ## 16. Scoped success gates (replace the whole-board green check)
 

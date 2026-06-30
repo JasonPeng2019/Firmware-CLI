@@ -33,6 +33,40 @@ Respect the repo's authority order:
 
 Surface conflicts instead of silently resolving them. Never claim a hardware result that was not produced by a real board in the current session.
 
+## Process and Board-Session Hygiene
+
+Provider, MCP, pyOCD, serial, hardware, and long validation commands must not
+leave child processes, debug sessions, serial ports, or boards alive after the
+check that spawned them.
+
+Before running any provider-backed, hardware-backed, MCP-backed, or long-running
+subprocess check:
+
+- prefer task files, JSON files, or generated argument files over fragile inline
+  PowerShell quoting for prompts and JSON payloads
+- set an explicit timeout appropriate to the proof being run
+- record enough context to identify the spawned command, run root, and child
+  process tree when possible
+- snapshot relevant pre-existing processes so cleanup does not broad-kill user
+  work
+
+After each such check, including failures and interrupts:
+
+- attempt normal product cleanup first, especially MCP `disconnect`, serial-port
+  close, provider session close where available, and run-artifact finalization
+- audit for leftover `uv`, `python`, `pyright`, `pytest`, `node`, `codex`,
+  `claude`, `pyocd`, and repo MCP server processes
+- clean up only processes that this workflow spawned or can identify by run root,
+  command line, parent process, or other precise provenance
+- never broad-kill unrelated user processes just because their names match
+- treat an identified leftover spawned process, locked probe, open serial port,
+  or still-connected debug session as a test failure or deployment ambiguity
+  until it is cleaned up or handed off explicitly
+
+If the agent cannot prove cleanup because the environment hides child processes
+or the user interrupted the command, state that uncertainty in the closeout and
+give the exact process/session audit command to run next.
+
 ## Shared Helpers
 
 Use these scripts from the folder that contains this mirrored `.codex` tree. They auto-resolve the real Firmware-CLI repo root:

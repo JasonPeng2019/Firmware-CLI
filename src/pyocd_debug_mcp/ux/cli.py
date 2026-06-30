@@ -35,7 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--build-command")
     run_parser.add_argument("--raw-output", choices=["off", "final", "all"], default="final")
 
-    benchmark_parser = subparsers.add_parser("benchmark", help="Run turnkey benchmark cases with live rendering.")
+    benchmark_parser = subparsers.add_parser(
+        "benchmark", help="Run turnkey benchmark cases with live rendering."
+    )
     benchmark_group = benchmark_parser.add_mutually_exclusive_group(required=True)
     benchmark_group.add_argument("--case-id")
     benchmark_group.add_argument("--suite")
@@ -53,7 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
     show_parser = subparsers.add_parser("show", help="Show a saved turnkey run summary.")
     show_parser.add_argument("session_id")
 
-    rerun_parser = subparsers.add_parser("rerun", help="Rerun a saved turnkey request in a new session.")
+    rerun_parser = subparsers.add_parser(
+        "rerun", help="Rerun a saved turnkey request in a new session."
+    )
     rerun_parser.add_argument("session_id")
     rerun_parser.add_argument("--raw-output", choices=["off", "final", "all"], default="final")
 
@@ -86,7 +90,11 @@ def _render_run(args: argparse.Namespace) -> int:
         renderer.print_error(str(exc))
         return 2
     renderer.render_execution(execution)
-    return 0 if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"} else 1
+    return (
+        0
+        if execution.result.final_status in {"fixed", "healthy_confirmed", "diagnosed_only"}
+        else 1
+    )
 
 
 def _render_benchmark(args: argparse.Namespace) -> int:

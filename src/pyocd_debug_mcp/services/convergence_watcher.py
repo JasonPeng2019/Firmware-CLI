@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pyocd_debug_mcp.services.session_runtime import SessionRecord, ToolEvent, ToolOutcome, WatcherBlocked
+from pyocd_debug_mcp.services.session_runtime import (
+    SessionRecord,
+    ToolEvent,
+    ToolOutcome,
+    WatcherBlocked,
+)
 
 FLASH_TOOL = "flash_firmware"
 UART_TOOL = "read_serial"
@@ -91,10 +96,9 @@ class ConvergenceWatcher:
         if event.tool_name == FLASH_TOOL:
             if event.outcome_kind not in {ToolOutcome.FAILED, ToolOutcome.REFUSED}:
                 return None
-            artifact_identity = (
-                event.normalized_args.get("artifact_sha256")
-                or event.normalized_args.get("artifact_path")
-            )
+            artifact_identity = event.normalized_args.get(
+                "artifact_sha256"
+            ) or event.normalized_args.get("artifact_path")
             if artifact_identity is None or event.error_code is None:
                 return None
             return (

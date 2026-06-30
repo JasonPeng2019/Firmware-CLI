@@ -29,15 +29,8 @@ from pyocd_debug_mcp.target_errors import (
 )
 from pyocd_debug_mcp.timeouts import (
     DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS,
-    PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
-    PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
-    PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
-    PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
-    PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
-    PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
-    PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
-    PYOCD_RESET_HALT_TIMEOUT_SECONDS,
-    PYOCD_STEP_TIMEOUT_SECONDS,
+    ServerTimeoutConfig,
+    default_server_timeout_config,
     subprocess_timeout_stream_text,
 )
 
@@ -119,7 +112,9 @@ def _typed_backend_error(exc: Exception) -> TargetConnectionError:
         )
     message = f"{type(exc).__name__}: {exc}"
     lowered = message.lower()
-    if any(term in lowered for term in ("approtect", "access port", "locked target", "device locked")):
+    if any(
+        term in lowered for term in ("approtect", "access port", "locked target", "device locked")
+    ):
         return LockedTargetError(message)
     return TargetConnectionError(message)
 
@@ -135,9 +130,7 @@ def _single_matching_probe_visible_for_board_family(board: BoardConfig) -> bool:
     if not family_terms:
         return False
     matching = [
-        probe
-        for probe in probes
-        if any(term in probe.searchable_text for term in family_terms)
+        probe for probe in probes if any(term in probe.searchable_text for term in family_terms)
     ]
     return len(matching) == 1
 
@@ -159,25 +152,14 @@ def _should_retry_without_uid(
 def build_session_options(
     board: BoardConfig | None,
     target: str | None,
+    server_timeouts: ServerTimeoutConfig | None = None,
 ) -> dict[str, object] | None:
     """Build pyOCD session options from shared board facts."""
 
     options: dict[str, object] = {}
     if target:
         options["target_override"] = target
-    options.update(
-        {
-            "cpu.step.instruction.timeout": PYOCD_STEP_TIMEOUT_SECONDS,
-            "reset.halt_timeout": PYOCD_RESET_HALT_TIMEOUT_SECONDS,
-            "reset.dap_recover.timeout": PYOCD_DAP_RECOVER_TIMEOUT_SECONDS,
-            "reset.core_recover.timeout": PYOCD_CORE_RECOVER_TIMEOUT_SECONDS,
-            "flash.timeout.init": PYOCD_FLASH_INIT_TIMEOUT_SECONDS,
-            "flash.timeout.program": PYOCD_FLASH_PROGRAM_TIMEOUT_SECONDS,
-            "flash.timeout.erase_sector": PYOCD_FLASH_ERASE_SECTOR_TIMEOUT_SECONDS,
-            "flash.timeout.erase_all": PYOCD_FLASH_ERASE_ALL_TIMEOUT_SECONDS,
-            "flash.timeout.analyzer": PYOCD_FLASH_ANALYZER_TIMEOUT_SECONDS,
-        }
-    )
+    options.update((server_timeouts or default_server_timeout_config()).pyocd_options())
     if board and board.probe_family == "jlink":
         # Match the Stage 0/J-Link open-by-serial workaround proven on hardware.
         options["jlink.non_interactive"] = False
@@ -222,6 +204,7 @@ class PyOCDSWDInterface(SWDInterface):
         board: BoardConfig | None,
         unique_id: str | None,
         target: str | None,
+        server_timeouts: ServerTimeoutConfig | None = None,
     ) -> TargetSessionHandle:
         probe_uid = unique_id or os.environ.get("PYOCD_PROBE_UID") or None
         target_override = (
@@ -230,7 +213,7 @@ class PyOCDSWDInterface(SWDInterface):
             or os.environ.get("PYOCD_TARGET")
             or None
         )
-        options = build_session_options(board, target_override)
+        options = build_session_options(board, target_override, server_timeouts)
         # Load any locally-provisioned CMSIS-Packs (pinned + sha256-verified) so the
         # exact target resolves without depending on the live pyOCD pack index. This
         # is a runtime/filesystem concern, kept out of the pure build_session_options.
@@ -286,10 +269,14 @@ class PyOCDSWDInterface(SWDInterface):
         except Exception as exc:  # noqa: BLE001 - preserve backend context
             raise _typed_backend_error(exc) from exc
 
-    def read_memory_block(self, handle: TargetSessionHandle, address: int, length: int) -> list[int]:
+    def read_memory_block(
+        self, handle: TargetSessionHandle, address: int, length: int
+    ) -> list[int]:
         try:
             with _quiet_backend_streams():
-                return list(cast(list[int], handle.session.target.read_memory_block8(address, length)))
+                return list(
+                    cast(list[int], handle.session.target.read_memory_block8(address, length))
+                )
         except Exception as exc:  # noqa: BLE001 - preserve backend context
             raise _typed_backend_error(exc) from exc
 

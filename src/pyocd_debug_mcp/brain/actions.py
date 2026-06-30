@@ -33,7 +33,9 @@ AllowedServerToolName = Literal[
 ]
 
 FinalStatus = Literal["fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"]
-Classification = Literal["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"]
+Classification = Literal[
+    "healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"
+]
 
 
 class _StrictModel(BaseModel):
@@ -112,6 +114,8 @@ class TurnDecision(_StrictModel):
     strategy_evaluation: str | None = None
     action: ActionUnion | None = None
     action_batch: ActionBatch | None = None
+    timeout_proposal: TimeoutProposal | None = None
+    iteration_estimate: IterationEstimate | None = None
 
     @model_validator(mode="after")
     def _require_single_action_or_batch(self) -> TurnDecision:
@@ -237,11 +241,23 @@ def turn_decision_output_schema() -> dict[str, object]:
                 "kind": {"type": "string", "const": "finalize"},
                 "final_status": {
                     "type": "string",
-                    "enum": ["fixed", "healthy_confirmed", "diagnosed_only", "unresolved", "blocked"],
+                    "enum": [
+                        "fixed",
+                        "healthy_confirmed",
+                        "diagnosed_only",
+                        "unresolved",
+                        "blocked",
+                    ],
                 },
                 "classification": {
                     "type": "string",
-                    "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"],
+                    "enum": [
+                        "healthy",
+                        "code_bug",
+                        "observability_fault",
+                        "physical_fault",
+                        "tooling_failure",
+                    ],
                 },
                 "root_cause": {"type": "string", "minLength": 1},
                 "summary": {"type": "string", "minLength": 1},
@@ -258,10 +274,45 @@ def turn_decision_output_schema() -> dict[str, object]:
             "observation_summary": {"type": "string", "minLength": 1},
             "classification": {
                 "type": ["string", "null"],
-                "enum": ["healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure", None],
+                "enum": [
+                    "healthy",
+                    "code_bug",
+                    "observability_fault",
+                    "physical_fault",
+                    "tooling_failure",
+                    None,
+                ],
             },
             "hypothesis": {"type": ["string", "null"]},
             "strategy_evaluation": {"type": ["string", "null"]},
+            "timeout_proposal": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "default_tool_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "connect_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "flash_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "recover_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "uart_read_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "uart_read_grace_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "build_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "batch_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "external_command_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "provider_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "mcp_startup_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                },
+            },
+            "iteration_estimate": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "board_tool_calls": {"type": ["integer", "null"], "minimum": 0},
+                    "debug_cycles": {"type": ["integer", "null"], "minimum": 0},
+                    "false_termination_retries": {"type": ["integer", "null"], "minimum": 0},
+                    "safety_buffer": {"type": ["integer", "null"], "minimum": 0},
+                    "requested_max_iterations": {"type": ["integer", "null"], "minimum": 1},
+                },
+            },
             "action": {"oneOf": action_variants},
             "action_batch": {
                 "type": "object",

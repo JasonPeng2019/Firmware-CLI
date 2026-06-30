@@ -636,7 +636,7 @@ def _render_prompt(case: BenchmarkCase) -> str:
         f"- symbol artifact path: `{case.artifacts.symbol_artifact}`\n"
         "- prefer `read_serial(expected_text=..., reset_on_open=true)` when you need fresh boot text\n"
         "- verify the symbol directly with "
-        f"`read_symbol_u32(elf_path=\"{case.artifacts.symbol_artifact}\", symbol_name=\"{case.expected_observables.symbol_name}\")`\n\n"
+        f'`read_symbol_u32(elf_path="{case.artifacts.symbol_artifact}", symbol_name="{case.expected_observables.symbol_name}")`\n\n'
         "Structured result contract:\n\n"
         f"- return `case_id` exactly as `{case.case_id}`\n"
         f"- return `board_id` exactly as `{case.board_id}`\n"
@@ -794,13 +794,9 @@ def _select_canonical_session(
         board_id = str(metadata.get("board_id") or "")
         probe_uid = str(metadata.get("probe_uid") or "")
         if board_id and board_id != prepared.case.board_id:
-            runner_warnings.append(
-                f"supporting-session-board-mismatch:{run_root.name}:{board_id}"
-            )
+            runner_warnings.append(f"supporting-session-board-mismatch:{run_root.name}:{board_id}")
         if probe_uid and probe_uid != prepared.probe_uid:
-            runner_warnings.append(
-                f"supporting-session-probe-mismatch:{run_root.name}:{probe_uid}"
-            )
+            runner_warnings.append(f"supporting-session-probe-mismatch:{run_root.name}:{probe_uid}")
 
     return SessionSelection(
         canonical_run_root=canonical_run_root,
@@ -827,9 +823,7 @@ def _changed_files(before_root: Path, after_root: Path) -> tuple[str, ...]:
     before = _relative_files(before_root)
     after = _relative_files(after_root)
     changed = sorted(
-        path
-        for path in set(before) | set(after)
-        if before.get(path) != after.get(path)
+        path for path in set(before) | set(after) if before.get(path) != after.get(path)
     )
     return tuple(changed)
 
@@ -989,7 +983,10 @@ def _score_case(
         penalties.append("watcher-block-cap:40")
         reasons.append("The run ended in a watcher block.")
 
-    if case.success_criteria.expected_classification == "observability_fault" and actual_changed_files:
+    if (
+        case.success_criteria.expected_classification == "observability_fault"
+        and actual_changed_files
+    ):
         total = min(total, 50)
         penalties.append("observability-edit-cap:50")
         reasons.append("The run edited code during an observability-fault case.")
@@ -1101,7 +1098,9 @@ def _record_case_artifacts(
         "actual_changed_files": list(score_report.actual_changed_files),
         "runner_verification": asdict(verification),
         "codex_exit_code": codex_run.exit_code,
-        "canonical_session_id": session_selection.canonical_run_root.name if session_selection else run_root.name,
+        "canonical_session_id": session_selection.canonical_run_root.name
+        if session_selection
+        else run_root.name,
         "supporting_session_ids": (
             [path.name for path in session_selection.supporting_run_roots]
             if session_selection
@@ -1160,7 +1159,9 @@ def run_case(
     session_root_error: str | None = None
     if agent_result is not None:
         if agent_result.case_id != case.case_id or agent_result.board_id != case.board_id:
-            raise RuntimeError("Structured benchmark result did not match the requested case or board.")
+            raise RuntimeError(
+                "Structured benchmark result did not match the requested case or board."
+            )
         try:
             session_selection = _select_canonical_session(
                 prepared,
@@ -1268,7 +1269,8 @@ def _suite_acceptance(suite_name: str, reports: list[CaseRunReport]) -> bool:
         "nrf52833dk__k001_reference_green",
     }
     if not all(
-        by_case.get(case_id) is not None and by_case[case_id].score_report.outcome_label == "full_success"
+        by_case.get(case_id) is not None
+        and by_case[case_id].score_report.outcome_label == "full_success"
         for case_id in known_good_ids
     ):
         return False

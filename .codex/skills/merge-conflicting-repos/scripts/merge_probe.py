@@ -112,7 +112,9 @@ def main() -> int:
         payload["merge_exit_code"] = merge_result.returncode
         payload["merge_stdout"] = merge_result.stdout.strip()
         payload["merge_stderr"] = merge_result.stderr.strip()
-        payload["status_lines"] = [line for line in status_result.stdout.splitlines() if line.strip()]
+        payload["status_lines"] = [
+            line for line in status_result.stdout.splitlines() if line.strip()
+        ]
         payload["conflicted_files"] = conflicted_paths_from_status(status_result.stdout)
         payload["touched_files"] = touched_paths_from_status(status_result.stdout)
         payload["clean_merge"] = merge_result.returncode == 0 and not payload["conflicted_files"]

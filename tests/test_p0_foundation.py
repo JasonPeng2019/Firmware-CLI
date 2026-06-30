@@ -109,7 +109,9 @@ def test_provider_turn_carries_optional_session_and_progress_fields() -> None:
         output_text="{}",
         response_id="resp-1",
         session_state=session_state.with_native_handle_update(response_id="resp-1"),
-        progress_updates=(ProviderProgressUpdate(stage="thinking", message="provider is reasoning"),),
+        progress_updates=(
+            ProviderProgressUpdate(stage="thinking", message="provider is reasoning"),
+        ),
     )
 
     assert turn.session_state.native_handle is not None
@@ -168,8 +170,7 @@ def test_client_action_loader_rejects_duplicate_missing_or_invalid_scripts(tmp_p
     script.write_text("VALUE = 1\n", encoding="utf-8")
     valid_script = tmp_path / "valid.py"
     valid_script.write_text(
-        "async def run(inputs, server):\n"
-        "    return inputs\n",
+        "async def run(inputs, server):\n    return inputs\n",
         encoding="utf-8",
     )
 
@@ -300,19 +301,19 @@ def test_brain_cli_parser_accepts_planning_hook_arguments() -> None:
             "--task",
             "Verify this board.",
             "--timeout-config-json",
-            "{\"connect_seconds\": 42.0}",
+            '{"connect_seconds": 42.0}',
             "--timeout-proposal-json",
-            "{\"provider_seconds\": 120.0}",
+            '{"provider_seconds": 120.0}',
             "--iteration-estimate-json",
-            "{\"requested_max_iterations\": 7}",
+            '{"requested_max_iterations": 7}',
             "--client-action",
             "uart_write=client_actions/uart_write.py",
         ]
     )
 
-    assert args.timeout_config_json == "{\"connect_seconds\": 42.0}"
-    assert args.timeout_proposal_json == "{\"provider_seconds\": 120.0}"
-    assert args.iteration_estimate_json == "{\"requested_max_iterations\": 7}"
+    assert args.timeout_config_json == '{"connect_seconds": 42.0}'
+    assert args.timeout_proposal_json == '{"provider_seconds": 120.0}'
+    assert args.iteration_estimate_json == '{"requested_max_iterations": 7}'
     assert args.client_action == ["uart_write=client_actions/uart_write.py"]
 
 
@@ -380,7 +381,7 @@ def test_brain_cli_task_sources_are_mutually_exclusive_and_non_empty(tmp_path) -
 
 
 def test_brain_cli_timeout_config_json_applies_partial_override() -> None:
-    config = brain_cli._parse_timeout_config_json("{\"connect_seconds\": 42.0}")
+    config = brain_cli._parse_timeout_config_json('{"connect_seconds": 42.0}')
 
     assert config is not None
     assert config.connect_seconds == 42.0
@@ -389,7 +390,7 @@ def test_brain_cli_timeout_config_json_applies_partial_override() -> None:
 
 def test_brain_cli_rejects_unknown_timeout_override_keys() -> None:
     with pytest.raises(Exception, match="unsupported keys"):
-        brain_cli._parse_timeout_config_json("{\"not_real\": 1}")
+        brain_cli._parse_timeout_config_json('{"not_real": 1}')
 
 
 @pytest.mark.anyio
@@ -436,9 +437,9 @@ async def test_brain_cli_run_freeform_threads_planning_hooks(
         client_action=[],
         task_file=None,
         task_stdin=False,
-        timeout_config_json="{\"connect_seconds\": 42.0, \"provider_seconds\": 111.0}",
-        timeout_proposal_json="{\"provider_seconds\": 120.0}",
-        iteration_estimate_json="{\"requested_max_iterations\": 7}",
+        timeout_config_json='{"connect_seconds": 42.0, "provider_seconds": 111.0}',
+        timeout_proposal_json='{"provider_seconds": 120.0}',
+        iteration_estimate_json='{"requested_max_iterations": 7}',
     )
 
     await brain_cli._run_freeform(args)

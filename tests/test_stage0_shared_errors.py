@@ -73,7 +73,9 @@ def test_check_connection_handles_locked_target_error(monkeypatch, capsys) -> No
     )
     monkeypatch.setattr(stage0_check, "build_recover_attempts", lambda board, probe: [])
 
-    ok = stage0_check.check_connection(make_board(), stage0_check.ProbeInfo("123", "stlink", "raw"), True)
+    ok = stage0_check.check_connection(
+        make_board(), stage0_check.ProbeInfo("123", "stlink", "raw"), True
+    )
 
     assert ok is False
     captured = capsys.readouterr().out
@@ -92,7 +94,9 @@ def test_check_connection_handles_typed_target_connection_error(monkeypatch, cap
         ),
     )
 
-    ok = stage0_check.check_connection(make_board(), stage0_check.ProbeInfo("123", "stlink", "raw"), True)
+    ok = stage0_check.check_connection(
+        make_board(), stage0_check.ProbeInfo("123", "stlink", "raw"), True
+    )
 
     assert ok is False
     captured = capsys.readouterr().out
@@ -130,13 +134,17 @@ def test_read_uart_output_preserves_typed_failure_context(monkeypatch, capsys) -
     assert "Expected: boot ok" in captured
 
 
-def test_flash_reference_firmware_surfaces_policy_refusal(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_flash_reference_firmware_surfaces_policy_refusal(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     board = make_nordic_board()
     probe = stage0_check.ProbeInfo("685400693", "J-Link", "raw")
     artifact = tmp_path / "firmware.elf"
     artifact.write_text("elf", encoding="utf-8")
 
-    monkeypatch.setattr(stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board))
+    monkeypatch.setattr(
+        stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board)
+    )
     monkeypatch.setattr(
         stage0_check,
         "resolve_flash_request",
@@ -163,7 +171,9 @@ def test_run_recover_test_surfaces_policy_refusal(monkeypatch, capsys) -> None:
     board = make_nordic_board()
     probe = stage0_check.ProbeInfo("685400693", "J-Link", "raw")
 
-    monkeypatch.setattr(stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board))
+    monkeypatch.setattr(
+        stage0_check.target_control, "open_session", lambda **kwargs: make_handle(board)
+    )
     monkeypatch.setattr(
         stage0_check,
         "authorize_recover",

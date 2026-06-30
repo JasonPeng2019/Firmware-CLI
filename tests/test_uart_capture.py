@@ -246,7 +246,9 @@ def test_pyserial_open_sets_read_and_write_timeouts(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class FakeSerial:
-        def __init__(self, device: str, *, baudrate: int, timeout: float, write_timeout: float) -> None:
+        def __init__(
+            self, device: str, *, baudrate: int, timeout: float, write_timeout: float
+        ) -> None:
             captured["device"] = device
             captured["baudrate"] = baudrate
             captured["timeout"] = timeout
@@ -267,7 +269,9 @@ def test_pyserial_open_sets_read_and_write_timeouts(monkeypatch) -> None:
 
 def test_pyserial_write_flushes_and_returns_count(monkeypatch) -> None:
     class FakeSerial:
-        def __init__(self, device: str, *, baudrate: int, timeout: float, write_timeout: float) -> None:
+        def __init__(
+            self, device: str, *, baudrate: int, timeout: float, write_timeout: float
+        ) -> None:
             self.flushed = False
 
         def write(self, data: bytes) -> int:

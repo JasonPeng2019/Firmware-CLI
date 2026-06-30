@@ -54,7 +54,12 @@ class UXRenderer:
     def emit(self, event: BrainEvent) -> None:
         self._current_session_id = event.session_id or self._current_session_id
         details = event.details
-        if event.event_kind in {"provider_turn_start", "tool_start", "build_start", "green_check_start"}:
+        if event.event_kind in {
+            "provider_turn_start",
+            "tool_start",
+            "build_start",
+            "green_check_start",
+        }:
             self._start_status(event.message)
             if event.event_kind == "tool_start":
                 tool_name = details.get("tool_name", "(tool)")
@@ -62,7 +67,12 @@ class UXRenderer:
                 self.console.print(f"[bold cyan]tool[/bold cyan] {tool_name} {args}")
             return
 
-        if event.event_kind in {"provider_turn_complete", "tool_complete", "build_complete", "green_check_complete"}:
+        if event.event_kind in {
+            "provider_turn_complete",
+            "tool_complete",
+            "build_complete",
+            "green_check_complete",
+        }:
             self._stop_status()
 
         if event.event_kind == "provider_turn_complete":
@@ -181,10 +191,16 @@ class UXRenderer:
             self.console.print(f"  [dim]- {reason}[/dim]")
 
     def render_suite_summary(self, suite_name: str, reports: list[Any]) -> None:
-        full_success = sum(report.score_report.outcome_label == "full_success" for report in reports)
-        partial_success = sum(report.score_report.outcome_label == "partial_success" for report in reports)
+        full_success = sum(
+            report.score_report.outcome_label == "full_success" for report in reports
+        )
+        partial_success = sum(
+            report.score_report.outcome_label == "partial_success" for report in reports
+        )
         failures = len(reports) - full_success - partial_success
-        average = sum(report.score_report.score for report in reports) / len(reports) if reports else 0.0
+        average = (
+            sum(report.score_report.score for report in reports) / len(reports) if reports else 0.0
+        )
         self.console.print(
             Panel(
                 (
@@ -254,9 +270,13 @@ class UXRenderer:
 
     def render_artifact_entry(self, entry: ArtifactEntry, *, title: str | None = None) -> None:
         if entry.path.suffix == ".json":
-            self.console.print(Panel(preview_json(entry.path), title=title or entry.label, border_style="blue"))
+            self.console.print(
+                Panel(preview_json(entry.path), title=title or entry.label, border_style="blue")
+            )
         elif entry.path.suffix in {".txt", ".jsonl", ".diff"}:
-            self.console.print(Panel(preview_text(entry.path), title=title or entry.label, border_style="blue"))
+            self.console.print(
+                Panel(preview_text(entry.path), title=title or entry.label, border_style="blue")
+            )
 
     def print_info(self, message: str) -> None:
         self.console.print(message)

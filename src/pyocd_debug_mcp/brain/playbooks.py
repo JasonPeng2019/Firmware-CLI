@@ -107,11 +107,15 @@ def load_playbook_manifest(path: Path) -> PlaybookSpec:
     playbook_id = str(data.get("skill_id") or data.get("playbook_id") or "").strip()
     title = str(data.get("title", "")).strip()
     if not playbook_id:
-        raise PlaybookConfigError(f"{path.name} is missing required field 'skill_id' or 'playbook_id'")
+        raise PlaybookConfigError(
+            f"{path.name} is missing required field 'skill_id' or 'playbook_id'"
+        )
     if not title:
         raise PlaybookConfigError(f"{path.name} is missing required field 'title'")
 
-    supported_kinds = _normalize_string_list(data.get("supported_kinds"), field_name="supported_kinds")
+    supported_kinds = _normalize_string_list(
+        data.get("supported_kinds"), field_name="supported_kinds"
+    )
     if not supported_kinds:
         raise PlaybookConfigError(f"{path.name} must define at least one supported_kinds entry")
     unsupported = sorted(set(supported_kinds) - SUPPORTED_BOARD_KINDS)
@@ -140,7 +144,9 @@ def load_playbook_manifest(path: Path) -> PlaybookSpec:
         supported_kinds=supported_kinds,
         workflow_kind=workflow_kind,
         steps=steps,
-        final_assertions=_normalize_string_list(data.get("final_assertions"), field_name="final_assertions"),
+        final_assertions=_normalize_string_list(
+            data.get("final_assertions"), field_name="final_assertions"
+        ),
         requires_workspace=bool(data.get("requires_workspace", False)),
         source_path=path.resolve(),
     )

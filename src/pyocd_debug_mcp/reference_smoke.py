@@ -304,7 +304,11 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - surface the concrete harness failure
         header("Summary")
         log(FAIL, f"{type(exc).__name__}: {exc}")
-        flash_label = str(Path(args.flash_artifact).expanduser().resolve()) if args.flash_artifact else "(unresolved)"
+        flash_label = (
+            str(Path(args.flash_artifact).expanduser().resolve())
+            if args.flash_artifact
+            else "(unresolved)"
+        )
         symbol_label = str(Path(args.elf).expanduser().resolve()) if args.elf else "(unresolved)"
         serial_label = args.port or "(unresolved)"
         print(f"      board_id: {requested_board_id}")

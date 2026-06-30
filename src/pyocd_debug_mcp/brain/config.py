@@ -110,7 +110,9 @@ def load_provider_config(
             raise BrainConfigError(
                 "A model is required. Pass `--model` or set `PYOCD_TURNKEY_MODEL` in your environment or local .env."
             )
-        return BrainProviderConfig(provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds)
+        return BrainProviderConfig(
+            provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds
+        )
 
     if provider == "anthropic-api":
         api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
@@ -123,7 +125,9 @@ def load_provider_config(
             raise BrainConfigError(
                 "A model is required. Pass `--model` or set `PYOCD_TURNKEY_MODEL` in your environment or local .env."
             )
-        return BrainProviderConfig(provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds)
+        return BrainProviderConfig(
+            provider=provider, api_key=api_key, model=model, timeout_seconds=timeout_seconds
+        )
 
     if provider == "codex-cli":
         _require_executable("codex", provider)
@@ -149,9 +153,7 @@ def cast_memory_mode(raw_mode: str) -> TurnkeyMemoryMode:
     candidate = raw_mode.strip().lower()
     if candidate in {"deterministic", "model-summary"}:
         return cast(TurnkeyMemoryMode, candidate)
-    raise BrainConfigError(
-        "Unsupported memory mode. Use one of: deterministic, model-summary."
-    )
+    raise BrainConfigError("Unsupported memory mode. Use one of: deterministic, model-summary.")
 
 
 def resolve_memory_mode(memory_mode_override: str | None = None) -> TurnkeyMemoryMode:
@@ -174,9 +176,7 @@ def resolve_native_sync_every(native_sync_every_override: int | None = None) -> 
     try:
         value = int(raw_value)
     except ValueError as exc:
-        raise BrainConfigError(
-            "PYOCD_TURNKEY_NATIVE_SYNC_EVERY must be an integer >= 0."
-        ) from exc
+        raise BrainConfigError("PYOCD_TURNKEY_NATIVE_SYNC_EVERY must be an integer >= 0.") from exc
     if value < 0:
         raise BrainConfigError("PYOCD_TURNKEY_NATIVE_SYNC_EVERY must be >= 0.")
     return value
