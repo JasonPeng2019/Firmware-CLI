@@ -8,14 +8,6 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12_turnkey_spec.md` - current R12 turnkey contract. It remains useful, but
   it is subordinate to `markdowns/firmware_agent_build_plan_concrete (10).md`
   and the hard prototype bar in `markdowns/things-to-change.md`.
-- `next-codex-handoff-20260630.md` - handoff for the next Codex/Claude session,
-  including validation status, Claude quota blockers, exact-board proof gaps,
-  and morning rerun commands.
-- `model-native-skill-loading-codex-smoke-task.txt` - no-hardware Codex/Claude
-  CLI smoke prompt used to verify `load_skills` without touching the board.
-- `compact-tool-schema-index-codex-smoke-task.txt` - no-hardware Codex/Claude
-  CLI smoke prompt used to verify compact tool-index injection without touching
-  the board.
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
 
@@ -43,6 +35,13 @@ Branch C proof docs were moved to:
 markdowns/tmp/curr-archive-20260630-hardbar-reset/
 ```
 
+The superseded June 30 handoff and old Branch B no-hardware smoke prompt files
+were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260630-wave2-spec-cleanup/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -53,8 +52,8 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 
 ## Verified
 
-- `markdowns/curr/` now contains only the active R12 contract, the current
-  handoff, and the two smoke prompts still used by the handoff runbook.
+- `markdowns/curr/` now contains only this index, the active R12 contract, and
+  the active Wave 2 codebase-map spec.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.

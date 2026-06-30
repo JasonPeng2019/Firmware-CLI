@@ -274,11 +274,9 @@ Firmware-CLI/
     |-- current-progress.md
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
-    |   |-- p0-0-doc-sync-superpowers-audit_spec.md
-    |   |-- p0-0-static-audit-fix_spec.md
-    |   |-- p0_0_layered_validation_plan.md
-    |   |-- p0_0_validation_report.md
-    |   `-- r12_turnkey_spec.md
+    |   |-- README.md
+    |   |-- r12_turnkey_spec.md
+    |   `-- wave2-codebase-map_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
 
@@ -627,10 +625,11 @@ Current limitation:
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
-- `P0.0` layered validation plan: [markdowns/curr/p0_0_layered_validation_plan.md](./markdowns/curr/p0_0_layered_validation_plan.md)
-- `P0.0` validation report: [markdowns/curr/p0_0_validation_report.md](./markdowns/curr/p0_0_validation_report.md)
-- `P0.0` doc-sync and superpowers audit spec: [markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md](./markdowns/curr/p0-0-doc-sync-superpowers-audit_spec.md)
-- `P0.0` static audit fix spec: [markdowns/curr/p0-0-static-audit-fix_spec.md](./markdowns/curr/p0-0-static-audit-fix_spec.md)
+- Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
+- Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
+- Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)
+- Archived `P0.0` doc-sync and superpowers audit spec: [markdowns/tmp/curr-archive-20260628/p0-0-doc-sync-superpowers-audit_spec.md](./markdowns/tmp/curr-archive-20260628/p0-0-doc-sync-superpowers-audit_spec.md)
+- Archived `P0.0` static audit fix spec: [markdowns/tmp/curr-archive-20260628/p0-0-static-audit-fix_spec.md](./markdowns/tmp/curr-archive-20260628/p0-0-static-audit-fix_spec.md)
 - Archived Wave 0 reconcile spec: [markdowns/tmp/p0-wave0-main-reconcile_spec.md](./markdowns/tmp/p0-wave0-main-reconcile_spec.md)
 - Concrete build plan: [markdowns/firmware_agent_build_plan_concrete (10).md](./markdowns/firmware_agent_build_plan_concrete%20%2810%29.md)
 - Architecture notes: [markdowns/firmware_agent_mcp_architecture.md](./markdowns/firmware_agent_mcp_architecture.md)

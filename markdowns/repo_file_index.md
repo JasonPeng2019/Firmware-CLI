@@ -202,6 +202,7 @@ a glance before relying on detail.
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
+| `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
