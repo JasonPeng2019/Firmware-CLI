@@ -1,4 +1,4 @@
-> STATUS: PROPOSAL - not authority, pending reconciliation with build_plan_concrete and user sign-off.
+> STATUS: IMPLEMENTED FOR CURRENT WINDOWS ATTACHED-BOARD CLI PROVIDER SCOPE. Official `nrf52833dk`, macOS/fresh-host, and live API-provider proof remain pending.
 
 # R12 Branch C Provider And Portability Coverage Spec
 

@@ -27,9 +27,14 @@ portable Windows/macOS post-bootstrap contract.
 
 ## Current limits
 
-- This process ledger does not claim hardware proof.
-- This process ledger does not claim Claude CLI coverage.
+- This process ledger now claims Branch C hardware/provider proof only for the
+  current Windows host's attached `nucleo_l476rg` and retained `nrf52840dk`
+  boards.
+- This process ledger now claims local CLI provider coverage for `codex-cli`
+  and `claude-cli` on those attached boards.
 - This process ledger does not claim macOS/fresh-host portability proof.
+- This process ledger does not claim official `nrf52833dk` hardware proof; the
+  attached Nordic board reports nRF52840 silicon.
 - The provider/portability gap is tracked separately in
   `markdowns/curr/r12-branch-c-provider-portability-coverage_spec.md`.
 
@@ -87,4 +92,4 @@ uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-sk
 ## Pending verification
 
 - Current hardware Branch C harness on official `nrf52833dk`.
-- Claude/provider-neutral Branch C harness work.
+- macOS/fresh-host provider matrix.

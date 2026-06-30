@@ -1,28 +1,31 @@
-> STATUS: REVIEW - restored after accidental cleanup; rerun validation required.
+> STATUS: REVIEW - current for the Windows attached-board Branch C evidence boundary.
 
 # R12 Branch C Completion Review
 
 ## Result
 
-CHANGES RESTORED, NON-HARDWARE CLEAN.
+WINDOWS ATTACHED-BOARD BRANCH C SURFACE CLEAN.
 
-The restored implementation matches the intended Branch C repair scope:
+The implementation matches the intended Branch C repair scope:
 
 - the harness no longer depends on brittle raw pyOCD console parsing for probe
   visibility;
 - the live Codex task uses a schema-valid classification;
 - acceptance mode can fail selected skipped checks;
 - existing `host_bootstrap.py` callers can omit `port_overrides`;
-- docs distinguish non-hardware evidence from pending hardware/provider proof.
+- docs distinguish current Windows attached-board evidence from pending
+  official `nrf52833dk` and macOS/fresh-host proof.
 
 ## Findings
 
 No new blocking design finding is recorded in this review. The remaining gaps
-are proof gaps:
+are proof/deployment gaps:
 
-- real hardware Branch C harness runs on both official boards are pending;
-- live Codex-plus-hardware check 9 is pending;
-- Claude CLI/provider-neutral Branch C coverage is pending;
+- official `nrf52833dk` Branch C hardware proof is pending because the attached
+  Nordic board reports nRF52840 silicon;
+- live API-provider proof is not part of the completed local CLI evidence;
+- forced physical timeout/hang cancellation is not proven by Branch C and still
+  needs a future killable worker/job layer if the product requires it;
 - macOS/fresh-host portability proof is pending.
 
 ## Checks run
@@ -62,14 +65,31 @@ Results:
 - `uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --fail-on-skip`:
   blocked in Stage 0 because the attached Nordic board reported
   `FICR.INFO.PART actual=0x52840, expected=0x52833`
+- provider-neutral Branch C follow-on validation:
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    returned `13 passed`
+  - `uv run pytest -q` returned `289 passed`
+  - `uv run ruff check .` passed
+  - `uv run mypy src` passed
+  - non-hardware `codex-cli` + `claude-cli` matrix returned
+    `6 passed, 0 failed, 0 skipped` on both `nucleo_l476rg` and retained
+    `nrf52840dk`
+  - hardware/provider matrix returned `11 passed, 0 failed, 0 skipped` on
+    `nucleo_l476rg` and retained `nrf52840dk`
+  - public deployed CLI smokes passed for both providers on both attached
+    boards:
+    `runs/20260630T011733Z-ae2eb3ee`,
+    `runs/20260630T011814Z-4c33bc87`,
+    `runs/20260630T011858Z-f269f813`,
+    `runs/20260630T011944Z-7b9c4186`
 
 ## Verified
 
 - Review doc restored.
-- Current non-hardware command output is recorded above.
-- Current STM32 and retained Nordic hardware command output is recorded above.
+- Current non-hardware, provider-neutral, STM32 hardware, and retained Nordic
+  hardware command output is recorded above.
 
 ## Pending verification
 
 - Official `nrf52833dk` hardware acceptance proof.
-- Provider-neutral / Claude Branch C acceptance proof.
+- macOS/fresh-host proof.

@@ -1,4 +1,4 @@
-> STATUS: PROPOSAL - not authority, pending reconciliation with build_plan_concrete and user sign-off.
+> STATUS: IMPLEMENTED FOR CURRENT WINDOWS ATTACHED-BOARD SCOPE. Official `nrf52833dk` and macOS/fresh-host proof remain pending.
 
 # R12 Branch C Completion Spec
 
@@ -67,7 +67,7 @@ Out of scope:
   prototype must harden blocking paths, let the model refine timeout and
   iteration budgets inside brain caps, and sync allowed timeout changes to the
   server as partial updates for later operations.
-- Current code: Branch C implementation is partly present in `brain/events.py`,
+- Current code: Branch C implementation is present in `brain/events.py`,
   `brain/timeout_policy.py`, `brain/timeout_runtime.py`, `timeouts.py`,
   `BrainState` timeout fields, provider/tool timeout consumption hooks in
   `brain/loop.py`, hidden `_brain_sync_timeouts` in `server.py`, and
@@ -88,9 +88,11 @@ Out of scope:
   success. `SKIP` is acceptable for local development when hardware or Codex
   auth is absent, but Branch C completion must use `--fail-on-skip` or remain
   explicitly pending.
-- AMBIGUITY: full provider parity and macOS/fresh-host proof are broader R12
-  risks. This spec keeps Branch C focused, but a follow-on spec must close the
-  provider/portability gap before claiming deployable product completeness.
+- RESOLUTION: local CLI provider coverage for `codex-cli` and `claude-cli` was
+  closed by the follow-on provider-portability pass for the current Windows
+  host and attached `nucleo_l476rg` + retained `nrf52840dk` boards. macOS,
+  fresh-host, live API-provider, and official `nrf52833dk` proof remain outside
+  the completed evidence boundary.
 
 ## Design
 
@@ -174,11 +176,12 @@ uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardw
 uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --skip-codex
 ```
 
-Codex dry-run prompt checks, if Codex CLI is installed and authenticated:
+CLI provider dry-run prompt checks, if provider CLIs are installed and
+authenticated:
 
 ```bash
-uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware
-uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware
+uv run python tests/harness/branch_c_tests.py --board-id nrf52833dk --skip-hardware --provider codex-cli --provider claude-cli --fail-on-skip
+uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-hardware --provider codex-cli --provider claude-cli --fail-on-skip
 ```
 
 Full hardware acceptance:

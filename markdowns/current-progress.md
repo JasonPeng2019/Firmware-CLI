@@ -147,14 +147,15 @@ implemented on top of the P0 baseline:
 - the server now has a brain-owned staged timeout-sync path that applies
   partial low-level timeout defaults on the next `connect`
 
-Current Branch C proof on this host:
+Current Branch C proof on this branch:
 
 - the full non-hardware ladder passes:
   `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src`, and
   `uv run python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
-- the official scoped pair Wave 0 rerun passes:
-  strict `host_bootstrap.py --board-id ...`, `stage0_check.py`, and
-  `tests.harness.stage1_smoke` all passed on `nucleo_l476rg` and `nrf52833dk`
+- historical Wave 0/scoped-pair proof exists for `nucleo_l476rg` and
+  `nrf52833dk`, but the current Windows Branch C proof is for
+  `nucleo_l476rg` plus the retained `nrf52840dk` board because the attached
+  Nordic hardware reports nRF52840 silicon
 - the Branch C hardening pass fixed:
   cumulative pending staged timeout sync, centralized event constants, and the
   internal-tool doc leak
@@ -1522,8 +1523,8 @@ Current Branch C non-hardware restoration status on this host:
 - Still pending after the non-hardware restoration run at that point: hardware
   `--fail-on-skip` Branch C harness runs, live Codex-plus-hardware check 9,
   Claude CLI provider coverage for Branch C, and separate fresh-host/macOS
-  portability proof. The later hardware status below supersedes this pending
-  hardware line for boards that were actually run.
+  portability proof. The later hardware and provider-neutral sections below
+  supersede this pending line for boards and providers that were actually run.
 
 Current Branch C hardware status on this host after the live-sync halt fix:
 
@@ -1554,9 +1555,12 @@ Current Branch C hardware status on this host after the live-sync halt fix:
   silicon reported `FICR.INFO.PART actual=0x52840, expected=0x52833`. The
   attached Nordic board is therefore valid `nrf52840dk` retained-board proof,
   not official `nrf52833dk` proof.
-- Still pending: official `nrf52833dk` Branch C hardware proof, Claude/provider
-  neutral Branch C harness implementation, Claude Branch C provider proof, and
-  separate fresh-host/macOS portability proof.
+- Still pending at this point in the ledger: official `nrf52833dk` Branch C
+  hardware proof, Claude/provider-neutral Branch C harness implementation,
+  Claude Branch C provider proof, and separate fresh-host/macOS portability
+  proof. The provider-neutral section below closes the Claude/provider-neutral
+  items for the current Windows host and attached `nucleo_l476rg` +
+  `nrf52840dk` boards.
 
 Current Branch C provider-neutral status on this host:
 
