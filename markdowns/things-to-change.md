@@ -29,7 +29,13 @@ ONLY INCLUDE for the first capability prototype:
    Skill loads resolve dependencies recursively, run init scripts
    dependency-first post-order once per provider session/run, expose usable
    scripts/assets under per-skill provider-runtime folders, and inject loaded
-   markdown/context into the next provider turn.
+   markdown/context into the next provider turn. Immediate scaffold hardening
+   now also requires a product/client-owned skill root instead of `.codex`,
+   read-only installed skills, runtime-copy-only provider repair, structured
+   skill-load failures, `load_tool_details(tool_names=[...])`, invalid-tool-call
+   auto-details, strict loaded-detail guardrails before governed tool/script or
+   brain-owned compound-action execution, and canonical prompt ordering/dedupe
+   for the context surfaces that already exist.
 15. Client-side `codebase_map.md` for Wave 2 model-native code work. On first
    workspace boot the provider authors a codebase map from a deterministic
    inventory skeleton; every provider turn gets the skill index, available-tool
@@ -61,10 +67,17 @@ Prototype acceptance contract:
   `TurnDecision` actions, executor branches, batch special-cases, or
   model-visible decisions. `load_skills` is implemented as the required
   model-native context-expansion decision for loading workflow skills between
-  provider turns, with focused tests, full Python-change gate, and a no-hardware
-  Codex CLI smoke green. Full product-suite closure is still pending because
-  Claude CLI code-writing proof is blocked by provider quota, exact official
-  `nrf52833dk` proof is not available in this session, and the Wave 2
+  provider turns, and the follow-up scaffold hardening in
+  `markdowns/curr/r12-context-scaffold-hardening_spec.md` is implemented:
+  product/client skill root, runtime skill copies, structured skill-load
+  failures, `load_tool_details`, invalid-call auto-details, strict loaded-detail
+  guardrails, prompt ordering/dedupe, and failure classification. Compact
+  indexes are discovery-only: if a provider tries to call a governed tool,
+  governed client script, or brain-owned compound action before its details are
+  loaded in the session, the brain blocks execution, auto-loads the focused
+  details, records the guardrail, and asks for a fresh decision. Full
+  product-suite closure is still pending because Claude/API proof, exact
+  official `nrf52833dk` proof, fresh-machine proof, and the Wave 2
   prototype-priority modules remain required. Wave 2 codebase-map scaffolding is
   now specified in `markdowns/curr/wave2-codebase-map_spec.md`, not implemented.
 
@@ -75,6 +88,7 @@ Defer until after the prototype proves the core loop:
 - broader project-level persistent custom tools;
 - skill-guided A/B/C host-work experiments;
 - provider-native tool-call output format;
+- client-owned global bug/report registry and backend telemetry sync;
 - wider device stimulus beyond UART;
 - broad shipped-product UI polish.
 
@@ -809,6 +823,19 @@ metadata on the floor in the turnkey path. It must not reprint full MCP JSON
 schema bodies into provider prompts; the server and client descriptors retain
 the real schemas for validation/provenance.
 
+Follow-up hardening implemented by
+`markdowns/curr/r12-context-scaffold-hardening_spec.md`: the compact index is
+only the discovery layer. The model has a context-expansion decision,
+`load_tool_details(tool_names=[...])`, that loads one or more full governed-tool
+descriptions/input schemas into the next provider turn. If a governed tool call
+fails validation because the model supplied bad arguments, the brain
+auto-returns focused full details for that tool in the retry context. This keeps
+ordinary prompts compact without leaving the model unable to self-correct.
+The same scaffold enforces a hard details-before-execution guardrail: a
+governed tool call made from index-only context is not executed. The brain
+auto-loads the focused detail block, returns a `brain/details-required`-style
+block, and waits for a new provider decision made with the full schema visible.
+
 ### Where it belongs
 
 1. **`src/pyocd_debug_mcp/brain/mcp_client.py`** â€” stop discarding metadata.
@@ -884,7 +911,11 @@ Anthropic Messages `tools`) instead of prose.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented.
+Partially implemented for the compact index. The follow-up `load_tool_details`,
+details-before-execution guardrail, invalid-call auto-detail retry behavior, and
+canonical prompt ordering/dedupe are specced in
+`markdowns/curr/r12-context-scaffold-hardening_spec.md` and must land before the
+scaffold is treated as ready for later skill/codebase-map work.
 
 ---
 
@@ -3383,6 +3414,19 @@ on-demand:
   which skills exist and that it can `load_skill` to pull detail when it judges
   it needs a reminder.
 
+The model-native workflow-skill scaffold must also respect the product/client
+boundary. Installed skills are FirmCLI client assets, not `.codex`/`.claude`
+operator skills. The provider may inspect and repair only the runtime/session
+copy under the provider runtime; it must never mutate installed source skills.
+Blocked or broken skill loads should return structured provider-visible
+failures with recovery choices rather than surfacing as opaque brain crashes.
+For executable surfaces, the same index-first principle is stricter: governed
+MCP tools, governed client-action/tool-script calls, and brain-owned compound
+actions such as `run_green_check` require a brain-owned loaded-detail flag before
+execution. If the flag is false, the brain blocks the call, auto-loads the
+focused details, and asks the provider for a fresh decision; it must not
+auto-load and execute the original call in the same step.
+
 **Reject fixed-cadence reinjection** ("re-inject all skills every X turns"). It
 pays the full skill cost on a timer regardless of need, and in a native session
 each reinjection invalidates the cached prefix and re-bills the tokens. On-demand
@@ -3428,6 +3472,13 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
 
 ### Constraints / watch-outs
 
+- **Product skill root is not `.codex`.** `.codex/skills` belongs to the
+  operator/agent that builds FirmCLI. Model-native product skills load from a
+  client-owned root and are copied into the provider runtime before init/context
+  execution.
+- **Runtime repair only.** Installed skills are client-owned and read-only;
+  provider edits are limited to the session/runtime copy. Durable source-skill
+  fixes are maintainer work outside the run.
 - **Safety lines are never on-demand-only.** `forbidden_actions` must always be
   in context; only the diagnostic/verification detail is pullable.
 - **Selection stays deterministic.** `load_skills_for_context` is unchanged; only
@@ -3441,10 +3492,14 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
 
 ### Status
 
-Partially implemented for Branch B through the model-native `load_skills`
-context-expansion decision and compact governed-tool prompt index. Wave 2 still
-owns selected-skill/static-context refinement, codebase-map injection from entry
-#25, and cache-assisted reuse.
+Implemented for Branch B through the model-native `load_skills`
+context-expansion decision, compact governed-tool prompt index, and the
+scaffold-hardening pass in
+`markdowns/curr/r12-context-scaffold-hardening_spec.md`: product/client skill
+root, runtime-copy init/context, structured failures/recovery, prompt
+ordering/dedupe, tool-detail loading, and strict loaded-detail guardrails before
+governed tool/script or brain-owned compound-action execution. Wave 2 still owns
+codebase-map injection from entry #25 and cache-assisted reuse.
 
 ---
 
@@ -3780,6 +3835,51 @@ Projects are first-class in the CLI, with visible storage and explicit deletion:
 
 Proposal only. Not yet specced, not yet implemented. Extends entry #3 (skills) and
 entry #9 (session tools) as the persistence tier between shipped and session.
+
+---
+
+## 26. Client-owned bug reporting and telemetry sync
+
+### Problem / current behavior
+
+The prototype can preserve failures in run artifacts and events, but there is no
+client-owned product bug registry that indexes all skill-load failures,
+tool-schema mismatches, invalid provider output, adapter bugs, governed tool
+failures, board failures, or provider runtime failures across runs. That is
+acceptable for the current prototype, but once the product has remote
+connection/account infrastructure, failures that reveal broken shipped skills or
+runtime defects should be collected for maintainer review.
+
+### What the change is
+
+Add a client-owned report system after the remote/backend layer exists:
+
+- a local client-owned report root;
+- an all-bugs index/registry;
+- structured report categories and payload schemas;
+- dedupe/grouping rules;
+- privacy/redaction policy;
+- offline retention while the client is disconnected;
+- backend upload/sync once the remote service exists;
+- maintainer review workflow so the application author can inspect and fix
+  broken shipped skills, bad schemas, provider failure patterns, and runtime
+  bugs.
+
+Provider prompts may receive sanitized summaries of a failure, but canonical
+reports are client-owned product/runtime artifacts. Providers should not own or
+edit the global report registry.
+
+### Where it belongs
+
+This belongs with future remote/account/backend work, not the current Branch B
+scaffold. The current scaffold should only return structured failures and
+preserve details in existing run events/artifacts.
+
+### Status
+
+Future/non-prototype. Specced as a documentation requirement by
+`markdowns/curr/r12-context-scaffold-hardening_spec.md`; not implemented and not
+required for the current prototype gate.
 
 ---
 

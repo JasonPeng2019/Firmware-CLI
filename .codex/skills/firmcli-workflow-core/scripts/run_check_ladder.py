@@ -33,7 +33,7 @@ class Result:
 
 
 def is_project_root(path: Path) -> bool:
-    return (path / ".claude" / "commands").is_dir() and (path / "superpowers").is_dir()
+    return (path / ".codex" / "skills").is_dir() and (path / "superpowers").is_dir()
 
 
 def repo_root(start: Path | None = None) -> Path:

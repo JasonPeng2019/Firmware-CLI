@@ -7,12 +7,13 @@ description: Write reconciled task specs for Firmware-CLI before any implementat
 
 If you have not already loaded `.codex/skills/firmcli-workflow-core/SKILL.md`, read it first.
 
-Use this skill to mirror `.claude/commands/specs.md`.
+This skill is self-contained. Do not read legacy slash-command files; any
+legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 
 ## Workflow
 
 1. Read the authority docs in the load order from the core skill.
-2. Read `.claude/commands/specs.md` and `superpowers/spec_build_review_loop_playbook.md` if you need to confirm parity with the original Claude workflow.
+2. Read `superpowers/spec_build_review_loop_playbook.md` when you need the broader loop semantics or artifact conventions.
 3. Read `markdowns/ROADMAP.md`, `markdowns/current-progress.md`, and every current file the task will touch or depend on.
 4. Build a reconciliation list:
    - what the build plan says

@@ -72,6 +72,19 @@ class LoadSkillsAction(_StrictModel):
         return self
 
 
+class LoadToolDetailsAction(_StrictModel):
+    kind: Literal["load_tool_details"] = "load_tool_details"
+    tool_names: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_tool_names(self) -> LoadToolDetailsAction:
+        normalized = tuple(tool_name.strip() for tool_name in self.tool_names)
+        if any(not tool_name for tool_name in normalized):
+            raise ValueError("tool_names must contain non-empty tool names.")
+        self.tool_names = normalized
+        return self
+
+
 class WaitAction(_StrictModel):
     kind: Literal["wait"] = "wait"
     seconds: float = Field(gt=0, le=30)
@@ -94,6 +107,7 @@ class FinalizeAction(_StrictModel):
 ActionUnion = Annotated[
     ServerToolAction
     | LoadSkillsAction
+    | LoadToolDetailsAction
     | RunGreenCheckAction
     | WaitAction
     | RunScriptAction
@@ -180,6 +194,19 @@ def turn_decision_output_schema() -> dict[str, object]:
             "properties": {
                 "kind": {"type": "string", "const": "load_skills"},
                 "skill_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "tool_names"],
+            "properties": {
+                "kind": {"type": "string", "const": "load_tool_details"},
+                "tool_names": {
                     "type": "array",
                     "minItems": 1,
                     "items": {"type": "string", "minLength": 1},
@@ -329,6 +356,7 @@ __all__ = [
     "FinalizeAction",
     "IterationEstimate",
     "LoadSkillsAction",
+    "LoadToolDetailsAction",
     "RunGreenCheckAction",
     "RunScriptAction",
     "ServerToolAction",

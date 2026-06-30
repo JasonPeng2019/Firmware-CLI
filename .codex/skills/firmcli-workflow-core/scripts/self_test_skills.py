@@ -21,13 +21,6 @@ EXPECTED_SKILLS = (
 )
 
 EXPECTED_SOURCE_FILES = (
-    ".claude/commands/build.md",
-    ".claude/commands/fix-bug.md",
-    ".claude/commands/review.md",
-    ".claude/commands/spec-loop.md",
-    ".claude/commands/specs.md",
-    ".claude/commands/test-suite.md",
-    ".claude/commands/write-process.md",
     "superpowers/agent_index_START_HERE.md",
     "superpowers/agent_consistency_playbook.md",
     "superpowers/agent_doc_sync_playbook.md",
@@ -45,7 +38,7 @@ EXPECTED_CORE_SCRIPTS = (
 
 
 def is_project_root(path: Path) -> bool:
-    return (path / ".claude" / "commands").is_dir() and (path / "superpowers").is_dir()
+    return (path / ".codex" / "skills").is_dir() and (path / "superpowers").is_dir()
 
 
 def repo_root() -> Path:

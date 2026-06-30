@@ -20,6 +20,8 @@ from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain.actions import (
     FinalizeAction,
     LoadSkillsAction,
+    LoadToolDetailsAction,
+    RunScriptAction,
     ServerToolAction,
     TurnDecision,
     TurnkeyRunResult,
@@ -66,7 +68,7 @@ from pyocd_debug_mcp.brain.provider_types import (
 )
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
-from pyocd_debug_mcp.brain.tool_schemas import build_tool_schema_bundle
+from pyocd_debug_mcp.brain.tool_schemas import build_tool_schema_bundle, load_tool_details
 from pyocd_debug_mcp.brain.workspace import WorkspaceError, prepare_workspace_session
 from pyocd_debug_mcp.timeouts import (
     TURNKEY_CONNECT_TIMEOUT_SECONDS,
@@ -208,6 +210,25 @@ class FakeClient:
                 input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
             ),
             ToolDescriptor(
+                name="read_memory",
+                description="Read target memory.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "address": {"type": "string"},
+                        "word_size": {"type": "integer"},
+                    },
+                },
+            ),
+            ToolDescriptor(
+                name="read_core_register",
+                description="Read one core register.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"register": {"type": "string"}},
+                },
+            ),
+            ToolDescriptor(
                 name="unlock_recover",
                 description="Recover a protected device.",
                 input_schema={"type": "object", "properties": {"confirm": {"type": "boolean"}}},
@@ -248,6 +269,14 @@ def require_mapping(value: object) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def load_tool_details_decision(*tool_names: str) -> TurnDecision:
+    return TurnDecision(
+        observation_summary="Load details before using governed tools.",
+        classification=None,
+        action=LoadToolDetailsAction(tool_names=tool_names),
+    )
+
+
 @pytest.mark.anyio
 async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_write() -> None:
     client = FakeClient(
@@ -278,6 +307,7 @@ async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_writ
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "write_serial", "read_serial"),
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Need one session, a UART command, then response.",
@@ -313,7 +343,7 @@ async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_writ
         board_id="nrf52833dk",
         task="Exercise Branch B batch actions.",
         model=None,
-        max_iters=2,
+        max_iters=3,
         serial_read_seconds=0.1,
     )
 
@@ -350,6 +380,7 @@ async def test_run_turnkey_strips_redundant_tool_name_from_namespaced_server_too
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Provider emitted a redundant embedded tool_name.",
@@ -382,7 +413,7 @@ async def test_run_turnkey_strips_redundant_tool_name_from_namespaced_server_too
         board_id="nrf52833dk",
         task="Exercise redundant namespaced server tool normalization.",
         model=None,
-        max_iters=2,
+        max_iters=3,
         serial_read_seconds=0.1,
     )
 
@@ -471,6 +502,7 @@ async def test_run_turnkey_unwraps_nested_legacy_server_tool_arguments() -> None
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "read_memory"),
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Provider emitted legacy server_tool with nested arguments.",
@@ -513,7 +545,7 @@ async def test_run_turnkey_unwraps_nested_legacy_server_tool_arguments() -> None
         board_id="nrf52833dk",
         task="Exercise nested legacy server_tool normalization.",
         model=None,
-        max_iters=2,
+        max_iters=3,
         serial_read_seconds=0.1,
     )
 
@@ -634,6 +666,7 @@ async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool(
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "write_serial", "read_serial"),
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Run a named client action through the gated server API.",
@@ -641,6 +674,21 @@ async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool(
                     "action_batch": {
                         "calls": [
                             {"action_type": "connect", "arguments": {}},
+                            {
+                                "action_type": "run_script",
+                                "arguments": {"name": "uart-write", "inputs": {"text": "hello"}},
+                            },
+                            {"action_type": "read_serial", "arguments": {"read_seconds": 0.1}},
+                        ]
+                    },
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Client-action details are loaded; retry the script and UART read.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
                             {
                                 "action_type": "run_script",
                                 "arguments": {"name": "uart-write", "inputs": {"text": "hello"}},
@@ -668,7 +716,7 @@ async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool(
         board_id="nrf52833dk",
         task="Exercise Branch B client action.",
         model=None,
-        max_iters=2,
+        max_iters=4,
         serial_read_seconds=0.1,
     )
 
@@ -688,6 +736,117 @@ async def test_run_turnkey_run_script_server_calls_use_brain_gate_and_logs_tool(
     ]
     assert "run_script:uart-write" in execution.result.actions_taken
     assert "write_serial" in execution.result.mcp_tools_used
+
+
+@pytest.mark.anyio
+async def test_run_turnkey_run_script_inner_tool_requires_loaded_details() -> None:
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to nRF52833 DK via probe TEST123. session_id=sess-1",
+                )
+            ],
+            "write_serial": [
+                ToolTextResult(
+                    tool_name="write_serial",
+                    text="UART wrote 6 byte(s) on COM7 at 115200 baud via pyocd-native; duration=0.01s",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    client_actions = InMemoryClientActionStore(
+        [
+            ClientActionRecord(
+                name="uart-write",
+                relative_path="client_actions/uart_write.py",
+                content=(
+                    "async def run(inputs, server):\n"
+                    "    result = await server.call_tool('write_serial', {'text': inputs['text']})\n"
+                    "    return result.text\n"
+                ),
+            )
+        ]
+    )
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("connect"),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Connect and load the client-action contract.",
+                    "classification": "observability_fault",
+                    "action_batch": {
+                        "calls": [
+                            {"action_type": "connect", "arguments": {}},
+                            {
+                                "action_type": "run_script",
+                                "arguments": {"name": "uart-write", "inputs": {"text": "hello"}},
+                            },
+                        ]
+                    },
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Client-action details are loaded, but write_serial details are not.",
+                    "classification": "observability_fault",
+                    "action": {
+                        "kind": "run_script",
+                        "name": "uart-write",
+                        "inputs": {"text": "hello"},
+                    },
+                }
+            ),
+            TurnDecision(
+                observation_summary="The inner tool details are now loaded, so retry.",
+                classification="observability_fault",
+                action=RunScriptAction(name="uart-write", inputs={"text": "hello"}),
+            ),
+            TurnDecision(
+                observation_summary="The script wrote UART only after write_serial details loaded.",
+                classification="observability_fault",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="observability_fault",
+                    root_cause="Inner server tool details are enforced.",
+                    summary="Script inner tool guard passed.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise inner client-action detail guard.",
+        model=None,
+        max_iters=5,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+        client_actions=client_actions,
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls == [
+        ("connect", {"board_id": "nrf52833dk"}),
+        ("write_serial", {"text": "hello"}),
+        ("disconnect", {}),
+    ]
+    blocked_events = [
+        event
+        for event in execution.brain_events
+        if event["event_kind"] == "details_required"
+        and require_mapping(event["details"]).get("object_name") == "write_serial"
+    ]
+    assert blocked_events
+    assert "write_serial" in execution.state.loaded_tool_details
 
 
 @pytest.mark.anyio
@@ -725,6 +884,7 @@ async def test_run_turnkey_prompts_and_audits_registered_client_actions(
     client_actions = load_client_actions_from_specs((f"uart_write={script}",))
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "write_serial"),
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Use the registered session script.",
@@ -737,6 +897,17 @@ async def test_run_turnkey_prompts_and_audits_registered_client_actions(
                                 "arguments": {"name": "uart_write", "inputs": {"text": "hello"}},
                             },
                         ]
+                    },
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "Client-action details are loaded; retry the script.",
+                    "classification": "observability_fault",
+                    "action": {
+                        "kind": "run_script",
+                        "name": "uart_write",
+                        "inputs": {"text": "hello"},
                     },
                 }
             ),
@@ -758,7 +929,7 @@ async def test_run_turnkey_prompts_and_audits_registered_client_actions(
         board_id="nrf52833dk",
         task="Exercise public client-action registration.",
         model=None,
-        max_iters=2,
+        max_iters=4,
         serial_read_seconds=0.1,
     )
 
@@ -916,10 +1087,12 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     assert bundle.render_bootstrap_text(include_memory=True) == (
         "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
     )
-    assert bundle.render_native_delta_text() == "turn context"
-    assert bundle.render_native_sync_text(include_memory=True) == (
+    assert bundle.render_remote_delta_text() == "turn context"
+    assert bundle.render_remote_sync_text(include_memory=True) == (
         "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
     )
+    assert not hasattr(bundle, "render_native_delta_text")
+    assert not hasattr(bundle, "render_native_sync_text")
     assert bundle.render_retry_text("retry now") == "turn context\n\ndecision schema\n\nretry now"
 
 
@@ -967,6 +1140,219 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
     assert "Success text includes `session_id=...`" in bundle.rendered_text
     assert bundle.entries[0].to_record()["input_schema"]
     assert bundle.schema_hash
+
+    detail_result = load_tool_details(bundle, ("connect",))
+    assert detail_result.loaded_tool_names == ("connect",)
+    assert detail_result.missing_tool_names == ()
+    assert "input_schema:" in detail_result.detail_text
+    assert '"board_id"' in detail_result.detail_text
+
+
+def test_run_turnkey_blocks_server_tool_until_details_are_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board nucleo_l476rg via probe TEST via native. session_id=sess-1",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Connect only after details are loaded.",
+        model="gpt-test",
+        max_iters=3,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Try to connect from the compact index.",
+                classification=None,
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Details are now visible; connect again.",
+                classification=None,
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Connected after details were loaded.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Details guard worked.",
+                    summary="Connected after details-required guard.",
+                ),
+            ),
+        ]
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: client),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert [name for name, _ in client.calls] == ["connect", "disconnect"]
+    assert "No governed tool details loaded." in provider.turn_prompts[0]
+    assert "input_schema:" in provider.turn_prompts[1]
+    assert "Blocked [brain/details-required]" in require_str(
+        execution.brain_trace[0]["result_text"]
+    )
+    assert any(event["event_kind"] == "details_required" for event in execution.brain_events)
+
+
+def test_run_turnkey_load_tool_details_action_makes_schema_visible(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Load tool details, then finish.",
+        model="gpt-test",
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need full connect details.",
+                classification=None,
+                action=LoadToolDetailsAction(tool_names=("connect",)),
+            ),
+            TurnDecision(
+                observation_summary="Full connect details are visible.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Details loaded.",
+                    summary="Loaded details.",
+                ),
+            ),
+        ]
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert "input_schema:" in provider.turn_prompts[1]
+    assert "connect" in execution.state.loaded_tool_details
+
+
+def test_run_turnkey_load_tool_details_can_load_green_check_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Load green-check details, then finish.",
+        model="gpt-test",
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("run_green_check"),
+            TurnDecision(
+                observation_summary="The green-check contract is visible.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Green-check details loaded.",
+                    summary="Loaded run_green_check contract.",
+                ),
+            ),
+        ]
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert "run_green_check" in execution.state.loaded_compound_action_details
+    assert "Brain-owned compound action `run_green_check`" in provider.turn_prompts[1]
+    assert "load_tool_details" not in execution.state.refused_action_families
+
+
+def test_run_turnkey_finalize_updates_state_and_memory_action_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Load details, then finalize.",
+        model="gpt-test",
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("connect"),
+            TurnDecision(
+                observation_summary="Finalizing after detail load.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="No board action needed.",
+                    summary="Finalized after details.",
+                ),
+            ),
+        ]
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert execution.state.last_action_summary == "finalize(diagnosed_only)"
+    assert execution.state.last_result_text == "Finalized after details."
+    assert execution.state.provider_session_state is not None
+    memory_entry = execution.state.provider_session_state.recent_memory_entries[-1]
+    record = memory_entry.to_record()
+    assert record["action_kind"] == "finalize"
+    assert record["action_summary"] == "finalize(diagnosed_only)"
 
 
 def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1215,11 +1601,12 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
         board_id="nrf52833dk",
         task="Verify this reference firmware is healthy and explain why.",
         model="gpt-test",
-        max_iters=4,
+        max_iters=6,
         serial_read_seconds=1.0,
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "read_serial"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -1233,6 +1620,13 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
             TurnDecision.model_validate(
                 {
                     "observation_summary": "The board now has enough evidence for a full green check.",
+                    "classification": "healthy",
+                    "action": {"kind": "run_green_check"},
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "The green-check contract is visible; run it now.",
                     "classification": "healthy",
                     "action": {"kind": "run_green_check"},
                 }
@@ -1725,12 +2119,13 @@ def test_run_turnkey_uses_invocation_default_timeout_for_disconnect(
         board_id="nucleo_l476rg",
         task="Verify this reference firmware is healthy.",
         model=None,
-        max_iters=2,
+        max_iters=3,
         serial_read_seconds=1.0,
         timeout_config=replace(TurnkeyTimeoutConfig(), default_tool_seconds=17.0),
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -1802,11 +2197,12 @@ def test_run_turnkey_blocks_when_final_disconnect_cleanup_fails(
         board_id="nucleo_l476rg",
         task="Verify this reference firmware is healthy.",
         model=None,
-        max_iters=2,
+        max_iters=3,
         serial_read_seconds=1.0,
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -2014,13 +2410,16 @@ def test_run_turnkey_treats_removed_host_action_batch_as_unsupported(
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    last_result_text = execution.state.last_result_text
-    assert last_result_text is not None
-    assert "brain/unsupported-batch-action" in last_result_text
-    assert "Unsupported batched action: read_file" in last_result_text
+    assert (
+        execution.state.last_result_text == "Removed host actions are not valid governed decisions."
+    )
+    first_trace_result = require_str(execution.brain_trace[0]["result_text"])
+    assert "brain/unsupported-batch-action" in first_trace_result
+    assert "Unsupported batched action: read_file" in first_trace_result
     assert execution.state.provider_session_state is not None
     memory_entry = execution.state.provider_session_state.recent_memory_entries[0]
     record = memory_entry.to_record()
+    assert "brain/unsupported-batch-action" in require_str(record["result_summary"])
     assert require_str(record["decision_rationale"]).startswith("This stale batch action")
     payload = require_mapping(record["action_payload"])
     calls = cast(list[dict[str, object]], payload["calls"])
@@ -2217,6 +2616,7 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "flash_firmware", "read_serial"),
             TurnDecision(
                 observation_summary="Connect to the scoped board first.",
                 classification=None,
@@ -2246,6 +2646,13 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
                     "action": {"kind": "run_green_check"},
                 }
             ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "The green-check contract is visible; run it now.",
+                    "classification": "code_bug",
+                    "action": {"kind": "run_green_check"},
+                }
+            ),
             TurnDecision(
                 observation_summary="The repaired image is now healthy.",
                 classification="code_bug",
@@ -2261,7 +2668,9 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
             None,
             None,
             None,
+            None,
             provider_native_patch,
+            None,
             None,
             None,
         ],
@@ -2341,11 +2750,12 @@ def test_run_turnkey_refuses_healthy_finalize_before_green_check(
         board_id="nrf52833dk",
         task="Verify this reference firmware is healthy and explain why.",
         model="gpt-test",
-        max_iters=4,
+        max_iters=6,
         serial_read_seconds=1.0,
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -2364,6 +2774,13 @@ def test_run_turnkey_refuses_healthy_finalize_before_green_check(
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Run the canonical green check now.",
+                    "classification": "healthy",
+                    "action": {"kind": "run_green_check"},
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "The green-check contract is visible; run it now.",
                     "classification": "healthy",
                     "action": {"kind": "run_green_check"},
                 }
@@ -2423,7 +2840,7 @@ def test_run_turnkey_refuses_healthy_finalize_before_green_check(
 
     assert execution.result.final_status == "healthy_confirmed"
     assert execution.result.verification.green_check_ok is True
-    assert require_str(execution.brain_trace[1]["result_text"]).startswith(
+    assert require_str(execution.brain_trace[2]["result_text"]).startswith(
         "Refused [brain/finalize-without-green-check]"
     )
 
@@ -2435,11 +2852,12 @@ def test_run_turnkey_refuses_redundant_connect() -> None:
         board_id="nrf52833dk",
         task="Verify this reference firmware is healthy and explain why.",
         model="gpt-test",
-        max_iters=3,
+        max_iters=4,
         serial_read_seconds=1.0,
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -2483,7 +2901,7 @@ def test_run_turnkey_refuses_redundant_connect() -> None:
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert require_str(execution.brain_trace[1]["result_text"]).startswith(
+    assert require_str(execution.brain_trace[2]["result_text"]).startswith(
         "Refused [brain/redundant-connect]"
     )
 
@@ -2497,7 +2915,7 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
         board_id="nucleo_l476rg",
         task="Repair the missing application UART output and verify the board is healthy again.",
         model="gpt-test",
-        max_iters=4,
+        max_iters=6,
         serial_read_seconds=1.0,
         case_id="nucleo_l476rg__b003_silent_uart",
         case_kind="injected_bug",
@@ -2510,6 +2928,7 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="code_bug",
@@ -2518,6 +2937,13 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
             TurnDecision.model_validate(
                 {
                     "observation_summary": "Run the canonical verifier now that the board is connected.",
+                    "classification": "code_bug",
+                    "action": {"kind": "run_green_check"},
+                }
+            ),
+            TurnDecision.model_validate(
+                {
+                    "observation_summary": "The green-check contract is visible; run it now.",
                     "classification": "code_bug",
                     "action": {"kind": "run_green_check"},
                 }
@@ -2585,7 +3011,7 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
 
     assert execution.result.final_status == "diagnosed_only"
     assert execution.state.session_ids_seen == ["20260620T000000Z-greenfail"]
-    assert require_str(execution.brain_trace[2]["result_text"]).startswith(
+    assert require_str(execution.brain_trace[4]["result_text"]).startswith(
         "Refused [brain/redundant-connect]"
     )
 
@@ -2597,11 +3023,12 @@ def test_run_turnkey_normalizes_integer_read_memory_address() -> None:
         board_id="nucleo_l476rg",
         task="Inspect runtime state without modifying code.",
         model="gpt-test",
-        max_iters=3,
+        max_iters=4,
         serial_read_seconds=1.0,
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "read_memory"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="observability_fault",
@@ -2661,7 +3088,7 @@ def test_run_turnkey_normalizes_relative_flash_path_against_workspace_root(
         board_id="nrf52833dk",
         task="Flash the prepared benchmark artifact.",
         model="gpt-test",
-        max_iters=3,
+        max_iters=4,
         serial_read_seconds=1.0,
         workspace_root=workspace_root,
         build_command='python -c "pass"',
@@ -2670,6 +3097,7 @@ def test_run_turnkey_normalizes_relative_flash_path_against_workspace_root(
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "flash_firmware"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",
@@ -2737,7 +3165,7 @@ def test_run_turnkey_defaults_benchmark_read_serial_to_expected_text_and_reset()
         board_id="nucleo_l476rg",
         task="Validate the healthy benchmark baseline.",
         model="gpt-test",
-        max_iters=3,
+        max_iters=4,
         serial_read_seconds=1.0,
         case_id="nucleo_l476rg__k001_reference_green",
         case_kind="known_good",
@@ -2745,6 +3173,7 @@ def test_run_turnkey_defaults_benchmark_read_serial_to_expected_text_and_reset()
     )
     provider = FakeProvider(
         [
+            load_tool_details_decision("connect", "read_serial"),
             TurnDecision(
                 observation_summary="Need to connect first.",
                 classification="healthy",

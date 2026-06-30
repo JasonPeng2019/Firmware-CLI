@@ -50,8 +50,9 @@ In scope:
 - Events/artifacts for map creation, map injection, skipped updates, applied
   updates, map hashes, changed files, and replayed/changed decisions.
 - Tests that this scaffolding works even before project-level user skills exist.
-  Branch B already added `load_skills`; Wave 2 uses that scaffolding without
-  requiring shipped custom workflow skills.
+  Branch B already added `load_skills`; Wave 2 uses the hardened scaffold from
+  `r12-context-scaffold-hardening_spec.md` without requiring shipped custom
+  workflow skills.
 
 Out of scope:
 
@@ -75,6 +76,11 @@ Out of scope:
 - Current code: Branch B already removed governed host file/build actions and
   added model-native `load_skills(skill_ids=[...])`, per-skill runtime folders,
   compact governed-tool index rendering, and provider memory sync plumbing.
+  The follow-up scaffold-hardening spec now requires product/client-owned skill
+  roots, runtime-copy-only recovery, structured skill failures, tool-detail
+  loading, loaded-detail guardrails before governed execution, invalid-call
+  auto-details, and prompt ordering/dedupe before Wave 2 codebase-map work
+  depends on that substrate.
   `ProviderPromptBundle` already separates tool schema text, provider memory,
   turn context, and the decision schema. `ProviderMemoryEntry` already has
   `changed_files` and `codebase_summary` fields that can be used by the new map
@@ -118,7 +124,7 @@ Each file entry should use a stable shape:
 - purpose: ...
 - defines: ClassName, function_name, CLI command, data schema, ...
 - code dependencies: path/to/other.py, pyproject.toml, tests/test_x.py, ...
-- logical/process dependencies: markdowns/R12_P_SPLIT.md, .codex/skills/..., ...
+- logical/process dependencies: markdowns/R12_P_SPLIT.md, skills/model_native/..., ...
 - layer/tags: brain-loop, provider-adapter, board-gate, docs, tests, ...
 - provenance: sha256=..., last_map_update_turn=..., source=model|scanner
 ```
@@ -314,6 +320,9 @@ Map entries and map-update events must include enough provenance to distinguish:
 - The provider prompt includes skill index, available governed-tool index,
   codebase-map rule/path/hash/summary every turn, and compact memory on the
   configured cadence, defaulting to 10 provider turns.
+- The codebase map does not satisfy governed execution detail flags. Wave 2 must
+  still rely on the hardened scaffold's loaded-detail guardrail before governed
+  tools, governed client scripts, or brain-owned compound actions execute.
 - The full `codebase_map.md` is injected once, and only once, for each provider
   turn that receives model-native workflow skill context.
 - Multiple skill calls/loads in one turn do not duplicate the map body.

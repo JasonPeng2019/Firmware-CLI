@@ -46,14 +46,18 @@ Adversarial audit correction, 2026-06-30: the Branch B model-native skill loader
 now preflights init scripts before subprocess execution. Init scripts that
 directly import known probe/serial stacks or invoke known board/probe commands
 are rejected before they can bypass governed server tools, and skill manifests
-must declare the same `skill_id` as the requested skill folder. The repeated
-Codex-verifiable audit found no remaining valid code/product criticisms beyond
-Claude quota and exact official-board proof. Fresh validation after this audit:
-Python-change gate green with Pyright `0` and full pytest `350 passed`; suite
-preset green; Codex host-native workspace smoke green at
-`runs/turnkey-20260630T090753Z-02dee333`; Codex `load_skills` smoke green at
-`runs/turnkey-20260630T090914Z-044ef516`; Codex compact tool-index smoke green
-at `runs/turnkey-20260630T090947Z-703de0e5`.
+must declare the same `skill_id` as the requested skill folder. A later
+scaffold-hardening pass then closed the broader context-boundary gaps: product
+skill roots no longer default to `.codex/skills`, skill packages are copied to
+runtime before init/context, skill-load failures are structured, compact indexes
+are discovery-only, `load_tool_details` can load full schemas, and governed
+tools, governed client actions/scripts, and `run_green_check` require
+brain-owned loaded-detail flags before execution. A missing-detail call blocks,
+auto-loads focused details, records the guardrail, and asks for a fresh provider
+decision. Final validation for that pass: Python-change gate green with Pyright
+`0` and full pytest green; suite preset green; real MCP smoke green; Codex
+host-native/load-details/live multi-turn smokes green; attached-board checks
+green on `nucleo_l476rg` and `nrf52840dk`.
 
 Wave 2 planning update, 2026-06-30: client-side codebase-map scaffolding is now
 specified in `markdowns/curr/wave2-codebase-map_spec.md` and assigned to Module
@@ -61,6 +65,20 @@ G static-context work. It is not implemented. The spec requires first-boot
 `codebase_map.md` creation, per-turn map rule/path/hash/summary, full map
 injection once for workflow skill turns, and a bounded map-maintenance subturn
 after provider-native file changes before the next governed action is trusted.
+
+Scaffold-hardening implementation update, 2026-06-30: the current Branch B
+model-native skill/tool prompt scaffold now implements the product-boundary work
+required before Wave 2 builds on it. The active contract is
+`markdowns/curr/r12-context-scaffold-hardening_spec.md`: product/client-owned
+model-native skill root instead of `.codex/skills`, read-only installed skills,
+runtime-copy-only provider repair, structured skill-load failures and recovery
+prompts, `load_tool_details`, invalid-tool-call auto-details, strict
+loaded-detail guardrails before governed tool/script or brain-owned
+compound-action execution, canonical prompt ordering/dedupe for existing context
+surfaces, provider/adapter failure classification, and prompt bundle alias
+cleanup. Remaining scaffold proof gaps are external: Claude login/quota,
+API-provider credentials, exact official `nrf52833dk` proof, and fresh-machine
+deployment.
 
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,

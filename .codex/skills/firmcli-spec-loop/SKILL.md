@@ -1,13 +1,14 @@
 ---
 name: firmcli-spec-loop
-description: Run the full Firmware-CLI spec-build-review loop end to end, feeding review findings back into new build passes until the agent-verifiable surface is clean. Use when the user wants the Claude `/spec-loop` behavior replicated in Codex for a feature, bug, roadmap item, or validation task.
+description: Run the full Firmware-CLI spec-build-review loop end to end, feeding review findings back into new build passes until the agent-verifiable surface is clean. Use when the user wants the FirmCLI spec-loop behavior in Codex for a feature, bug, roadmap item, or validation task.
 ---
 
 # FirmCLI Spec Loop
 
 If you have not already loaded `.codex/skills/firmcli-workflow-core/SKILL.md`, read it first.
 
-Use this skill to mirror `.claude/commands/spec-loop.md`.
+This skill is self-contained. Do not read legacy slash-command files; any
+legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 
 ## Workflow
 

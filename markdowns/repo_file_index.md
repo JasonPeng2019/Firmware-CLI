@@ -188,7 +188,7 @@ a glance before relying on detail.
 |---|---|
 | `README` order | Read order is `README.md` → `ROADMAP.md` → `current-progress.md`. |
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
-| `R12_P_SPLIT.md` | Conflict-safe R12 prototype scheduling note. It now records that Branch B is incomplete and that the old D/E/F/G/H git branches were deleted; Wave 2 remains hard-bar module work. |
+| `R12_P_SPLIT.md` | Conflict-safe R12 prototype scheduling note. It now records that Branch B and the R12 scaffold hardening are implemented, the old D/E/F/G/H git branches were deleted, and Wave 2 remains hard-bar module work. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype. Its Prototype Priority list is the hard acceptance bar. |
 | `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
@@ -201,6 +201,7 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
+| `r12-context-scaffold-hardening_spec.md` | Active R12 scaffold-hardening contract and verification record for product/client-owned model-native skills, runtime-copy recovery, tool-detail loading, strict details-before-execution guardrails, prompt ordering/dedupe, and future bug-reporting docs. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
 

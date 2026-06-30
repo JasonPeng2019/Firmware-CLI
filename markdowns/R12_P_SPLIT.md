@@ -15,8 +15,10 @@ has a new hard-bar correction: the old governed host-action compatibility layer
 must be removed, not merely schema-hidden or refused. `read_file`,
 `replace_file`, and `run_build` are no longer valid `TurnDecision` actions in
 any branch/module. The model-native `load_skills` context-expansion decision is
-now part of the current prototype scope. Full closure still requires Claude CLI
-code-writing proof after quota resets and exact official `nrf52833dk` proof.
+now part of the current prototype scope, and the R12 scaffold hardening has
+landed so compact indexes are discovery-only until details are loaded. Full
+closure still requires Claude/API proof, exact official `nrf52833dk` proof,
+fresh-machine proof, and the remaining Wave 2 modules.
 
 The goal is not to make the code unusual. Each branch should use normal,
 concrete Python modules, dataclasses/Pydantic models only where they fit, and
@@ -78,7 +80,15 @@ attached-board evidence, but it does not replace the blocked Claude CLI rerun,
 exact official `nrf52833dk`, API-provider parity, or fresh-machine proof.
 Wave 2 Module G now also includes the codebase-map specification in
 `markdowns/curr/wave2-codebase-map_spec.md`; that feature is planning-only until
-implemented and validated on a rebuilt Wave 2 branch/module pass.
+implemented and validated on a rebuilt Wave 2 branch/module pass. The
+prerequisite scaffold hardening at
+`markdowns/curr/r12-context-scaffold-hardening_spec.md` has landed:
+product/client-owned model-native skills rather than `.codex/skills`,
+runtime-copy-only skill repair, structured skill-load failures,
+`load_tool_details`, strict loaded-detail guardrails before governed
+tool/script or brain-owned compound-action execution, invalid-tool-call
+auto-details, canonical ordering/dedupe for existing prompt surfaces, failure
+classification, and prompt bundle alias cleanup.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -305,6 +315,16 @@ Cross-branch dependency:
   boundary: host file/edit/build actions must be structurally absent, and
   `load_skills(skill_ids=[...])` is the only brain-mediated model-native
   context expansion action in this pass.
+- The scaffold-hardening follow-up specified in
+  `markdowns/curr/r12-context-scaffold-hardening_spec.md` is implemented and is
+  the substrate Wave 2 Module G should consume. It fixes the product skill root,
+  runtime-copy-only recovery, structured skill-load failures,
+  `load_tool_details`, strict loaded-detail guardrails before governed
+  tool/script or brain-owned compound-action execution, invalid-tool-call
+  auto-details, current prompt ordering/dedupe, provider/adapter failure
+  classification, and prompt bundle alias cleanup. It does not implement
+  codebase-map generation, map maintenance, actual product skills, or global bug
+  reporting.
 
 Should not own:
 
@@ -313,6 +333,8 @@ Should not own:
 - timeout default/clamp rules
 - broad MCP-server host execution
 - raw hardware access from client scripts
+- future codebase-map generation and maintenance turns
+- global bug-report registry/backend telemetry
 
 ### Branch C - Event Spine + Timeout Policy
 
@@ -485,6 +507,13 @@ Module G owns skill-index rendering, on-demand skill bodies, model-native skill
 loading, client-side codebase-map context, and cache-assisted setup reuse because
 those all touch prompt/static-context assembly. It must not spread cache,
 skill-rendering, or codebase-map policy into D/E/F-owned modules during Wave 2.
+It consumes the scaffold hardened by
+`markdowns/curr/r12-context-scaffold-hardening_spec.md`; it should not rediscover
+the product skill root, runtime-copy recovery, tool-detail loading, or prompt
+ordering rules. It also inherits the detail-required execution guardrail:
+index-only governed tool calls, governed client scripts, and brain-owned
+compound actions must block, auto-load focused details, and require a fresh
+provider decision before execution.
 
 Serial order inside Module G:
 
@@ -493,11 +522,13 @@ Serial order inside Module G:
    - render one selected skill body on demand
    - keep safety lines always present; only diagnostic bodies are pullable
    - validate requested skill IDs against the already-selected set
-   - implement `load_skills(skill_ids=[...])` as a turn-closing context
-     expansion decision, with recursive dependency closure, dependency-first
-     post-order init scripts, de-duping, clear cycle errors, session-state
-     tracking, prompt injection on the next provider turn, and per-skill
-     provider-runtime folders for usable scripts/assets
+   - build on the already-hardened `load_skills(skill_ids=[...])` context
+     expansion substrate; do not reintroduce `.codex` as the product skill
+     root, source-skill mutation, opaque skill-load crashes, or broad prompt
+     rewrites
+   - preserve the loaded-detail guardrail; Module G may add codebase-map context
+     but must not let map/skill/index text substitute for the specific detail
+     flag required before governed execution
 2. `codebase_map.py` client-side map scaffolding
    - create `codebase_map.md` on first workspace boot from a deterministic
      inventory skeleton plus provider-authored descriptions
@@ -729,12 +760,14 @@ into the other branch, or into final integration.
   host-only file/shell/script work stays model-native/free, `read_file`,
   `replace_file`, and `run_build` are structurally impossible as governed
   decisions, and each provider turn still closes with one governed
-  board/client/terminal or `load_skills` context-expansion decision. Codex CLI
+  board/client/terminal or context-expansion decision. The scaffold-hardening
+  implementation now requires guarded tool/script and brain-owned compound
+  actions to block until their detail flags are loaded. Codex CLI
   `b001_wrong_boot_text` proof is green on `nucleo_l476rg + nrf52840dk`, and a
   Codex CLI no-hardware `load_skills` smoke is green at
-  `runs/turnkey-20260630T084055Z-0a0377bc`. Claude CLI is blocked by quota
-  until the morning reset, and exact official `nrf52833dk` proof remains
-  pending.
+  `runs/turnkey-20260630T084055Z-0a0377bc`. Later scaffold-hardening Codex
+  live smokes and attached-board checks are also green. Claude/API proof, exact
+  official `nrf52833dk` proof, and fresh-machine proof remain pending.
 - Branch C behavior is acceptable for the Wave 1 C slice in the current
   merge-back
   candidate through session/client-scoped timeout state, brain-only server

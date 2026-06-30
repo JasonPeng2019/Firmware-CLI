@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+import hashlib
 import inspect
 from pathlib import Path
 import shutil
@@ -26,6 +27,7 @@ from pyocd_debug_mcp.brain.actions import (
     decision_schema_text,
     FinalizeAction,
     LoadSkillsAction,
+    LoadToolDetailsAction,
     RunGreenCheckAction,
     RunScriptAction,
     ServerToolAction,
@@ -83,7 +85,12 @@ from pyocd_debug_mcp.brain.timeout_runtime import (
     apply_turn_timeout_policy,
     sync_pending_server_timeouts,
 )
-from pyocd_debug_mcp.brain.tool_schemas import ToolSchemaBundle, build_tool_schema_bundle
+from pyocd_debug_mcp.brain.tool_schemas import (
+    ToolSchemaBundle,
+    build_tool_schema_bundle,
+    load_tool_details,
+    render_tool_detail_entries,
+)
 from pyocd_debug_mcp.brain.workspace import (
     WorkspaceError,
     WorkspaceSession,
@@ -99,7 +106,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
-MODEL_NATIVE_SKILL_ROOT = REPO_ROOT / ".codex" / "skills"
+MODEL_NATIVE_SKILL_ROOT = REPO_ROOT / "skills" / "model_native"
+GREEN_CHECK_CONTRACT_NAME = "run_green_check"
+GREEN_CHECK_CONTRACT_TEXT = (
+    "Brain-owned compound action `run_green_check`: builds the workspace when a "
+    "build command is configured, flashes the resolved firmware artifact, reads "
+    "the program counter, resolves the configured symbol when present, reads UART "
+    "for the expected text, updates verification state, and succeeds only when "
+    "the final flash/UART/symbol checks meet the invocation contract."
+)
+GREEN_CHECK_CONTRACT_HASH = hashlib.sha256(GREEN_CHECK_CONTRACT_TEXT.encode("utf-8")).hexdigest()
 
 
 class TurnkeyLoopError(RuntimeError):
@@ -113,6 +129,14 @@ class TurnkeyRefusal(TurnkeyLoopError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+@dataclass(frozen=True)
+class _DetailsRequiredBlock(Exception):
+    result_text: str
+    object_kind: str
+    object_name: str
+    detail_loaded: bool
 
 
 @dataclass(frozen=True)
@@ -258,11 +282,48 @@ def _build_instructions(invocation: TurnkeyInvocation) -> str:
         "- Use unlock_recover only when the symptoms justify it and the task policy allows it.\n"
         "- When code edits are allowed, use your provider-native host tools to inspect, edit, and build the workspace directly before returning a governed or terminal decision.\n"
         "- Use load_skills when you need additional model-native workflow skill context on the next provider turn.\n"
+        "- Use load_tool_details when you need full MCP input schemas for specific governed tools on the next provider turn.\n"
+        "- Load details before using any governed tool, governed client action, or brain-owned compound action; index-only knowledge is not enough for execution.\n"
         "- Keep host edits inside allowed edit roots and prefer whole-file replacements when changing source files.\n"
         "- Use run_green_check when you believe the target is healthy again.\n"
         "- Do not return final_status=healthy_confirmed or final_status=fixed until run_green_check has succeeded in this client.\n"
         f"- {benchmark_note}\n"
     )
+
+
+def _render_loaded_tool_details(state: BrainState) -> str:
+    if not state.loaded_tool_details:
+        return "No governed tool details loaded."
+    blocks = [
+        "Loaded governed tool details are provider-visible full MCP schemas.",
+        f"schema_hash={state.loaded_tool_detail_schema_hash or '(unknown)'}",
+    ]
+    for tool_name, detail_text in sorted(state.loaded_tool_details.items()):
+        blocks.append("")
+        blocks.append(detail_text.strip())
+    return "\n".join(blocks)
+
+
+def _render_loaded_client_action_details(state: BrainState) -> str:
+    if not state.loaded_client_action_details:
+        return "No governed client-action details loaded."
+    blocks = ["Loaded governed client-action/tool-script details:"]
+    for name, detail_text in sorted(state.loaded_client_action_details.items()):
+        blocks.append("")
+        blocks.append(f"## {name}")
+        blocks.append(detail_text.strip())
+    return "\n".join(blocks)
+
+
+def _render_loaded_compound_action_details(state: BrainState) -> str:
+    if not state.loaded_compound_action_details:
+        return "No brain-owned compound-action details loaded."
+    blocks = ["Loaded brain-owned compound-action details:"]
+    for name, detail_text in sorted(state.loaded_compound_action_details.items()):
+        blocks.append("")
+        blocks.append(f"## {name}")
+        blocks.append(detail_text.strip())
+    return "\n".join(blocks)
 
 
 def _build_turn_prompt(
@@ -311,6 +372,12 @@ def _build_turn_prompt(
         f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
         "Selected skills:\n"
         f"{skills_text}\n\n"
+        "Loaded governed tool details:\n"
+        f"{_render_loaded_tool_details(state)}\n\n"
+        "Loaded governed client-action/tool-script details:\n"
+        f"{_render_loaded_client_action_details(state)}\n\n"
+        "Loaded brain-owned compound-action details:\n"
+        f"{_render_loaded_compound_action_details(state)}\n\n"
         "Model-native workflow skill context:\n"
         f"{render_model_native_skill_context(state.model_native_skills)}\n\n"
         f"{render_client_action_prompt_section(client_actions or InMemoryClientActionStore())}\n\n"
@@ -318,6 +385,7 @@ def _build_turn_prompt(
         f"- server_tool: {', '.join(sorted(SERVER_NATIVE_ACTIONS))}\n"
         "- model-native host work: inspect/edit/build the workspace directly with your provider host tools before returning a governed/terminal decision\n"
         "- load_skills(skill_ids): load model-native workflow skill context for the next provider turn\n"
+        "- load_tool_details(tool_names): load full MCP schemas for specific governed tools on the next provider turn\n"
         "- run_green_check\n"
         "- wait(seconds)\n"
         "- run_script(name, inputs)\n"
@@ -447,6 +515,8 @@ def _action_from_call(call: ActionCall) -> ActionUnion:
         return RunGreenCheckAction.model_validate({"kind": "run_green_check", **args})
     if action_type == "load_skills":
         return LoadSkillsAction.model_validate({"kind": "load_skills", **args})
+    if action_type == "load_tool_details":
+        return LoadToolDetailsAction.model_validate({"kind": "load_tool_details", **args})
     raise TurnkeyRefusal(
         "brain/unsupported-batch-action", f"Unsupported batched action: {action_type}"
     )
@@ -1313,13 +1383,138 @@ def _execute_load_skills(action: LoadSkillsAction, state: BrainState) -> str:
             timeout_seconds=state.effective_timeout_config.external_command_seconds,
         )
     except ModelNativeSkillError as exc:
-        state.model_native_skills = state.model_native_skills.with_failure(str(exc))
-        raise
+        failure = exc.to_failure(requested_skill_ids=tuple(action.skill_ids))
+        state.model_native_skills = state.model_native_skills.with_failure_record(failure)
+        state.refused_action_families.add("load_skills")
+        state.actions_taken.append("load_skills:" + ",".join(action.skill_ids))
+        state.last_action_summary = "load_skills(" + ",".join(action.skill_ids) + ")"
+        state.last_result_text = failure.render_result_text()
+        return state.last_result_text
     state.model_native_skills = result.state
     state.actions_taken.append("load_skills:" + ",".join(action.skill_ids))
     state.last_action_summary = "load_skills(" + ",".join(action.skill_ids) + ")"
     state.last_result_text = result.render_result_text()
     return state.last_result_text
+
+
+def _execute_load_tool_details(
+    action: LoadToolDetailsAction,
+    state: BrainState,
+    tool_schema_bundle: ToolSchemaBundle,
+) -> str:
+    tool_names = tuple(
+        tool_name for tool_name in action.tool_names if tool_name != GREEN_CHECK_CONTRACT_NAME
+    )
+    requested_compound_names = tuple(
+        tool_name for tool_name in action.tool_names if tool_name == GREEN_CHECK_CONTRACT_NAME
+    )
+    result = load_tool_details(tool_schema_bundle, tool_names) if tool_names else None
+    loaded_tool_names = result.loaded_tool_names if result is not None else ()
+    missing_tool_names = result.missing_tool_names if result is not None else ()
+    for tool_name in loaded_tool_names:
+        entry = tool_schema_bundle.entry_by_name(tool_name)
+        if entry is None:
+            continue
+        state.loaded_tool_details[tool_name] = render_tool_detail_entries(
+            (entry,), schema_hash=tool_schema_bundle.schema_hash
+        )
+    if requested_compound_names:
+        _load_green_check_detail(state)
+    if loaded_tool_names:
+        state.loaded_tool_detail_schema_hash = tool_schema_bundle.schema_hash
+    requested_names = tuple(action.tool_names)
+    loaded_names = (*loaded_tool_names, *requested_compound_names)
+    state.actions_taken.append("load_tool_details:" + ",".join(requested_names))
+    state.last_action_summary = "load_tool_details(" + ",".join(requested_names) + ")"
+    if missing_tool_names:
+        state.refused_action_families.add("load_tool_details")
+        state.last_result_text = (
+            "Failed to load governed tool details.\n"
+            "category=unknown_tool\n"
+            f"requested={list(requested_names)}\n"
+            f"missing={list(missing_tool_names)}\n"
+            f"loaded={list(loaded_names)}\n"
+            f"schema_hash={tool_schema_bundle.schema_hash}"
+        )
+        return state.last_result_text
+    if result is not None and not requested_compound_names:
+        state.last_result_text = result.render_result_text()
+        return state.last_result_text
+    loaded = ", ".join(loaded_names) or "(none)"
+    state.last_result_text = (
+        "Loaded governed details.\n"
+        f"requested={list(requested_names)}\n"
+        f"loaded={loaded}\n"
+        "missing=(none)\n"
+        f"schema_hash={tool_schema_bundle.schema_hash}"
+    )
+    return state.last_result_text
+
+
+def _load_tool_detail_if_available(
+    tool_name: str,
+    state: BrainState,
+    tool_schema_bundle: ToolSchemaBundle,
+) -> bool:
+    entry = tool_schema_bundle.entry_by_name(tool_name)
+    if entry is None:
+        return False
+    state.loaded_tool_details[tool_name] = render_tool_detail_entries(
+        (entry,), schema_hash=tool_schema_bundle.schema_hash
+    )
+    state.loaded_tool_detail_schema_hash = tool_schema_bundle.schema_hash
+    return True
+
+
+def _render_client_action_detail(snapshot: ClientActionSnapshot) -> str:
+    description = snapshot.description or "(none)"
+    return "\n".join(
+        [
+            f"name={snapshot.name}",
+            f"path={snapshot.relative_path}",
+            f"sha256={snapshot.content_sha256}",
+            f"description={description}",
+            "input_contract=Python run(inputs, server)",
+            "server_access=may call governed server tools only through the injected brain gate",
+        ]
+    )
+
+
+def _load_client_action_detail(state: BrainState, snapshot: ClientActionSnapshot) -> None:
+    state.loaded_client_action_details[snapshot.name] = _render_client_action_detail(snapshot)
+
+
+def _load_green_check_detail(state: BrainState) -> None:
+    state.loaded_compound_action_details[GREEN_CHECK_CONTRACT_NAME] = "\n".join(
+        [
+            f"name={GREEN_CHECK_CONTRACT_NAME}",
+            f"contract_hash={GREEN_CHECK_CONTRACT_HASH}",
+            GREEN_CHECK_CONTRACT_TEXT,
+        ]
+    )
+
+
+def _details_required_result(
+    *,
+    state: BrainState,
+    object_kind: str,
+    object_name: str,
+    detail_loaded: bool,
+) -> str:
+    state.blocked_action_families.add("brain/details-required")
+    state.last_action_summary = f"details_required({object_kind}:{object_name})"
+    loaded_text = "Details are now loaded" if detail_loaded else "Details could not be loaded"
+    state.last_result_text = (
+        f"Blocked [brain/details-required]: {object_name} was requested before "
+        f"its details were loaded. {loaded_text}; choose the next decision."
+    )
+    return state.last_result_text
+
+
+def _result_implies_invalid_arguments(result: ToolTextResult) -> bool:
+    code = result.refusal_code or result.blocked_code or ""
+    text = f"{code}\n{result.text}".lower()
+    return any(token in text for token in ("invalid", "schema", "argument", "missing"))
 
 
 async def _execute_wait(action: WaitAction, state: BrainState) -> str:
@@ -1337,6 +1532,7 @@ async def _execute_run_script(
     client: LocalMCPClient,
     action: RunScriptAction,
     state: BrainState,
+    tool_schema_bundle: ToolSchemaBundle,
 ) -> str:
     snapshot = client_actions.snapshot_action(action.name)
     if snapshot is None:
@@ -1346,6 +1542,20 @@ async def _execute_run_script(
         )
 
     async def call_governed_tool(tool_name: str, arguments: dict[str, object]) -> ToolTextResult:
+        if tool_name not in state.loaded_tool_details:
+            loaded = _load_tool_detail_if_available(tool_name, state, tool_schema_bundle)
+            result_text = _details_required_result(
+                state=state,
+                object_kind="governed_tool",
+                object_name=tool_name,
+                detail_loaded=loaded,
+            )
+            raise _DetailsRequiredBlock(
+                result_text=result_text,
+                object_kind="governed_tool",
+                object_name=tool_name,
+                detail_loaded=loaded,
+            )
         return await _execute_server_tool(
             invocation,
             board,
@@ -1385,6 +1595,7 @@ async def _execute_batched_actions(
     board: BoardConfig,
     state: BrainState,
     client: LocalMCPClient,
+    tool_schema_bundle: ToolSchemaBundle,
     workspace: WorkspaceSession | None,
     client_actions: ClientActionStore,
     decision: TurnDecision,
@@ -1408,6 +1619,8 @@ async def _execute_batched_actions(
                 )
             result = _final_result_from_action(state, action, workspace)
             raw_result_text = result.summary
+            state.last_action_summary = f"finalize({action.final_status})"
+            state.last_result_text = result.summary
             await _record_brain_event(
                 sink=event_sink,
                 records=brain_events,
@@ -1434,71 +1647,166 @@ async def _execute_batched_actions(
         refused_before = set(state.refused_action_families)
         blocked_before = set(state.blocked_action_families)
         if isinstance(action, ServerToolAction):
-            if action.tool_name == "connect" and state.pending_server_timeout_sync is not None:
-                await sync_pending_server_timeouts(
+            if action.tool_name not in state.loaded_tool_details:
+                loaded = _load_tool_detail_if_available(action.tool_name, state, tool_schema_bundle)
+                result_text = _details_required_result(
+                    state=state,
+                    object_kind="governed_tool",
+                    object_name=action.tool_name,
+                    detail_loaded=loaded,
+                )
+                event_details = {
+                    "batch_index": index,
+                    "result_text": result_text,
+                    "details_required": True,
+                    "object_kind": "governed_tool",
+                    "object_name": action.tool_name,
+                    "detail_loaded": loaded,
+                    "loaded_tool_details": sorted(state.loaded_tool_details),
+                }
+                await _record_brain_event(
                     sink=event_sink,
                     records=brain_events,
                     invocation=invocation,
                     state=state,
-                    client=client,
-                    reason="before-connect",
+                    event_kind="details_required",
+                    message=result_text,
+                    details=event_details,
                 )
-            action_result = await _execute_server_tool(invocation, board, state, client, action)
-            result_text = action_result.text
-            if state.session_id is not None:
-                run_root = _promote_run_root(run_root, state.session_id)
-            if action.tool_name == "disconnect" and state.pending_server_timeout_sync is not None:
-                await sync_pending_server_timeouts(
-                    sink=event_sink,
-                    records=brain_events,
-                    invocation=invocation,
-                    state=state,
-                    client=client,
-                    reason="after-disconnect",
-                )
-            if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
-                result = _blocked_result(
-                    state,
-                    classification=decision.classification or "observability_fault",
-                    code="benchmark/reconnect-not-allowed",
-                    message="The turnkey client opened more than one MCP session during a benchmark case.",
-                )
-                result_text = result.summary
-            if action.tool_name == "flash_firmware" and action_result.text.startswith("Flashed "):
-                await _record_verification_event(
-                    sink=event_sink,
-                    records=brain_events,
-                    invocation=invocation,
-                    state=state,
-                    reason="flash succeeded",
-                )
-            if action.tool_name == "read_serial":
-                await _record_verification_event(
-                    sink=event_sink,
-                    records=brain_events,
-                    invocation=invocation,
-                    state=state,
-                    reason="UART verification attempt completed",
-                )
-            event_details: dict[str, object] = {
-                "batch_index": index,
-                "tool_name": action.tool_name,
-                "arguments": action.arguments,
-                "normalized_action_summary": state.last_action_summary,
-                "result_text": action_result.text,
-                "refusal_code": action_result.refusal_code,
-                "blocked_code": action_result.blocked_code,
-                "probe_uid": action_result.probe_uid,
-                "route_used": action_result.route_used,
-            }
+            else:
+                if action.tool_name == "connect" and state.pending_server_timeout_sync is not None:
+                    await sync_pending_server_timeouts(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        client=client,
+                        reason="before-connect",
+                    )
+                action_result = await _execute_server_tool(invocation, board, state, client, action)
+                if _result_implies_invalid_arguments(action_result):
+                    _load_tool_detail_if_available(action.tool_name, state, tool_schema_bundle)
+                result_text = action_result.text
+                if state.session_id is not None:
+                    run_root = _promote_run_root(run_root, state.session_id)
+                if (
+                    action.tool_name == "disconnect"
+                    and state.pending_server_timeout_sync is not None
+                ):
+                    await sync_pending_server_timeouts(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        client=client,
+                        reason="after-disconnect",
+                    )
+                if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
+                    result = _blocked_result(
+                        state,
+                        classification=decision.classification or "observability_fault",
+                        code="benchmark/reconnect-not-allowed",
+                        message="The turnkey client opened more than one MCP session during a benchmark case.",
+                    )
+                    result_text = result.summary
+                if action.tool_name == "flash_firmware" and action_result.text.startswith(
+                    "Flashed "
+                ):
+                    await _record_verification_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        reason="flash succeeded",
+                    )
+                if action.tool_name == "read_serial":
+                    await _record_verification_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        reason="UART verification attempt completed",
+                    )
+                event_details = {
+                    "batch_index": index,
+                    "tool_name": action.tool_name,
+                    "arguments": action.arguments,
+                    "normalized_action_summary": state.last_action_summary,
+                    "result_text": action_result.text,
+                    "refusal_code": action_result.refusal_code,
+                    "blocked_code": action_result.blocked_code,
+                    "probe_uid": action_result.probe_uid,
+                    "route_used": action_result.route_used,
+                    "auto_loaded_tool_detail": _result_implies_invalid_arguments(action_result),
+                }
         elif isinstance(action, WaitAction):
             result_text = await _execute_wait(action, state)
             event_details = {"batch_index": index, "result_text": result_text}
         elif isinstance(action, RunScriptAction):
-            result_text = await _execute_run_script(
-                invocation, board, client_actions, client, action, state
-            )
-            event_details = {"batch_index": index, "result_text": result_text}
+            snapshot = client_actions.snapshot_action(action.name)
+            if snapshot is None:
+                raise TurnkeyRefusal(
+                    "brain/client-action-not-found",
+                    f"No session-scoped client action named {action.name!r}.",
+                )
+            if action.name not in state.loaded_client_action_details:
+                _load_client_action_detail(state, snapshot)
+                result_text = _details_required_result(
+                    state=state,
+                    object_kind="client_action",
+                    object_name=action.name,
+                    detail_loaded=True,
+                )
+                event_details = {
+                    "batch_index": index,
+                    "result_text": result_text,
+                    "details_required": True,
+                    "object_kind": "client_action",
+                    "object_name": action.name,
+                    "detail_loaded": True,
+                }
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="details_required",
+                    message=result_text,
+                    details=event_details,
+                )
+            else:
+                try:
+                    result_text = await _execute_run_script(
+                        invocation,
+                        board,
+                        client_actions,
+                        client,
+                        action,
+                        state,
+                        tool_schema_bundle,
+                    )
+                    event_details = {"batch_index": index, "result_text": result_text}
+                except _DetailsRequiredBlock as block:
+                    result_text = block.result_text
+                    event_details = {
+                        "batch_index": index,
+                        "result_text": result_text,
+                        "details_required": True,
+                        "object_kind": block.object_kind,
+                        "object_name": block.object_name,
+                        "detail_loaded": block.detail_loaded,
+                        "via_client_action": action.name,
+                        "loaded_tool_details": sorted(state.loaded_tool_details),
+                    }
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="details_required",
+                        message=result_text,
+                        details=event_details,
+                    )
         elif isinstance(action, LoadSkillsAction):
             result_text = _execute_load_skills(action, state)
             event_details = {
@@ -1506,20 +1814,55 @@ async def _execute_batched_actions(
                 "result_text": result_text,
                 "model_native_skills": state.model_native_skills.to_record(),
             }
-        elif isinstance(action, RunGreenCheckAction):
-            result_text = await _execute_green_check(invocation, board, state, client, workspace)
-            await _record_verification_event(
-                sink=event_sink,
-                records=brain_events,
-                invocation=invocation,
-                state=state,
-                reason="green check completed",
-            )
+        elif isinstance(action, LoadToolDetailsAction):
+            result_text = _execute_load_tool_details(action, state, tool_schema_bundle)
             event_details = {
                 "batch_index": index,
                 "result_text": result_text,
-                "verification": state.verification.model_dump(mode="json"),
+                "loaded_tool_details": sorted(state.loaded_tool_details),
             }
+        elif isinstance(action, RunGreenCheckAction):
+            if GREEN_CHECK_CONTRACT_NAME not in state.loaded_compound_action_details:
+                _load_green_check_detail(state)
+                result_text = _details_required_result(
+                    state=state,
+                    object_kind="compound_action",
+                    object_name=GREEN_CHECK_CONTRACT_NAME,
+                    detail_loaded=True,
+                )
+                event_details = {
+                    "batch_index": index,
+                    "result_text": result_text,
+                    "details_required": True,
+                    "object_kind": "compound_action",
+                    "object_name": GREEN_CHECK_CONTRACT_NAME,
+                    "detail_loaded": True,
+                }
+                await _record_brain_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    event_kind="details_required",
+                    message=result_text,
+                    details=event_details,
+                )
+            else:
+                result_text = await _execute_green_check(
+                    invocation, board, state, client, workspace
+                )
+                await _record_verification_event(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    reason="green check completed",
+                )
+                event_details = {
+                    "batch_index": index,
+                    "result_text": result_text,
+                    "verification": state.verification.model_dump(mode="json"),
+                }
         else:
             raise TurnkeyLoopError(f"Unhandled action kind: {action.kind}")
 
@@ -2286,6 +2629,7 @@ async def run_turnkey(
                         board=board,
                         state=state,
                         client=client,
+                        tool_schema_bundle=tool_schema_bundle,
                         workspace=workspace,
                         client_actions=client_action_store,
                         decision=decision,

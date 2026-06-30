@@ -13,10 +13,16 @@
 > not complete. Branch A is acceptable for provider-session/schema work,
 > Branch C is acceptable for event/timeout policy, and Branch B's free
 > host-side model work plus final governed board/terminal decision boundary has
-> been tightened: old governed host actions are deleted structurally and
-> `load_skills` provides model-native skill/context loading. Full closure still
-> requires Claude CLI code-writing proof after quota resets,
-> exact official `nrf52833dk` proof, and the remaining Wave 2
+> been tightened: old governed host actions are deleted structurally,
+> `load_skills` provides model-native skill/context loading, and the
+> scaffold-hardening pass has landed. That scaffold now uses a
+> product/client-owned skill root, runtime-copy-only recovery, structured
+> skill-load failures, `load_tool_details`, strict loaded-detail guardrails
+> before governed tool/script or brain-owned compound-action execution,
+> invalid-tool-call auto-details, prompt ordering/dedupe, provider/adapter
+> failure classification, and prompt bundle alias cleanup. Full closure still
+> requires Claude/API proof, exact official `nrf52833dk` proof, fresh-machine
+> proof, and the remaining Wave 2
 > prototype-required modules. See
 > `current-progress.md` and `things-to-change.md`.
 >
@@ -1179,6 +1185,13 @@ This item builds the premium product tier on top of the proven substrate.
 - add static-context efficiency: selected-skill index, always-on safety lines,
   on-demand skill bodies, and cache-assisted reuse of deterministic setup/static
   artifacts
+- harden the context scaffold before Wave 2 consumes it: product/client-owned
+  model-native skill roots instead of `.codex/skills`, read-only installed
+  skills, runtime-copy-only skill recovery, structured skill-load failures,
+  on-demand full tool details, strict loaded-detail guardrails before governed
+  tool/script or brain-owned compound-action execution, invalid-tool-call
+  auto-details, canonical prompt ordering/dedupe, and accurate
+  provider/adapter failure classification
 - add client-side codebase-map scaffolding for Wave 2: first-boot
   `codebase_map.md`, per-turn map rule/path/hash/summary, full map injection
   once for workflow skill turns, and bounded map-maintenance turns after
@@ -1201,6 +1214,9 @@ This item builds the premium product tier on top of the proven substrate.
   policy
 - skill-index/on-demand body renderer and cache-assisted setup/static artifact
   reuse records
+- context-scaffold hardening records for product skill root, runtime skill
+  copies, structured failures, loaded tool details, details-required guardrail
+  blocks, prompt ordering, and failure categories
 - `codebase_map.md` creation, injection, freshness, and maintenance-turn
   records
 - product #2 benchmark results
@@ -1474,7 +1490,12 @@ Corrected schedule:
     governed-decision behavior is Codex-tested on the attached pair, the old
     `read_file`/`replace_file`/`run_build` action models are removed, and
     `load_skills` now provides model-native workflow context, with
-    Claude/exact-board proof still pending
+    Claude/API/exact-board/fresh-machine proof still pending. The serial
+    scaffold-hardening pass from
+    `markdowns/curr/r12-context-scaffold-hardening_spec.md` has landed, so Wave
+    2 Module G should consume the skill/tool prompt substrate where index-only
+    governed tool/script and brain-owned compound-action calls block and request
+    a fresh decision.
   - Branch C: event spine + timeout policy; acceptable Wave 1 slice, with
     enforceable cleanup still owned by the prototype cleanup module
 - serial merge-back: A, corrected B, and C merge into Wave 0 one at a time

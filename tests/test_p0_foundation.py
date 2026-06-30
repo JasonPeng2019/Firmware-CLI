@@ -195,6 +195,7 @@ def test_action_policy_classifies_branch_b_boundaries() -> None:
     with pytest.raises(ValueError, match="Unsupported action type: run_build"):
         classify_action("run_build")
     assert classify_action("load_skills") == "context_expansion"
+    assert classify_action("load_tool_details") == "context_expansion"
     assert classify_action("wait") == "brain_local"
     assert classify_action("run_script") == "client_action"
     assert classify_action("run_green_check") == "server_native"
@@ -209,6 +210,7 @@ def test_turn_decision_schema_excludes_model_native_host_actions() -> None:
     assert "'const': 'replace_file'" not in rendered
     assert "'const': 'run_build'" not in rendered
     assert "'const': 'load_skills'" in rendered
+    assert "'const': 'load_tool_details'" in rendered
     assert "'const': 'run_green_check'" in rendered
 
 
@@ -239,6 +241,19 @@ def test_turn_decision_accepts_load_skills_action() -> None:
 
     assert decision.action is not None
     assert decision.action.kind == "load_skills"
+
+
+def test_turn_decision_accepts_load_tool_details_action() -> None:
+    decision = TurnDecision.model_validate(
+        {
+            "observation_summary": "Need full tool schema before using a governed tool.",
+            "classification": None,
+            "action": {"kind": "load_tool_details", "tool_names": ["connect"]},
+        }
+    )
+
+    assert decision.action is not None
+    assert decision.action.kind == "load_tool_details"
 
 
 def test_turn_decision_accepts_action_batch_and_wait_action() -> None:

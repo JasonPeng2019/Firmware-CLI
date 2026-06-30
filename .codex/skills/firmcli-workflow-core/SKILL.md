@@ -1,13 +1,13 @@
 ---
 name: firmcli-workflow-core
-description: Load the Firmware-CLI repo's authority order, repo-specific safety rules, and helper scripts for the Claude-style workflow. Use when Codex needs to work under the `superpowers` playbooks, scaffold spec/review/process artifacts, run the non-hardware validation ladder, or self-test the local `.codex` skill suite.
+description: Load the Firmware-CLI repo's authority order, repo-specific safety rules, and helper scripts for the Codex FirmCLI workflow. Use when Codex needs to work under the `superpowers` playbooks, scaffold spec/review/process artifacts, run the non-hardware validation ladder, or self-test the local `.codex` skill suite.
 ---
 
 # FirmCLI Workflow Core
 
 Read this skill before using the other `firmcli-*` workflow skills or when you need the repo's shared operating rules.
 
-Resolve the project repo root before reading or running anything. Use the directory that contains both `.claude/commands` and `superpowers`. In this workspace, if the skills are mirrored into the outer `FirmCLI` folder, the project root is usually `FirmCLI/Firmware-CLI`.
+Resolve the project repo root before reading or running anything. Use the directory that contains both `.codex/skills` and `superpowers`. In this workspace, if the skills are copied into the outer `FirmCLI` folder, the project root is usually `FirmCLI/Firmware-CLI`.
 
 ## Load Order
 
@@ -21,7 +21,7 @@ Read these repo documents in this order before writing:
    - `superpowers/agent_doc_sync_playbook.md` whenever code or governing docs move
    - `superpowers/agent_portability_playbook.md` for setup, config, install, dependency, or first-run work
    - `superpowers/agent_script_doc_playbook.md` for MCP docstrings or shell/operator scripts
-   - `superpowers/spec_build_review_loop_playbook.md` when mirroring the Claude workflow
+   - `superpowers/spec_build_review_loop_playbook.md` when running the spec/build/review loop
 5. The current state of every file you will touch or depend on, in full
 
 Respect the repo's authority order:
@@ -69,7 +69,7 @@ give the exact process/session audit command to run next.
 
 ## Shared Helpers
 
-Use these scripts from the folder that contains this mirrored `.codex` tree. They auto-resolve the real Firmware-CLI repo root:
+Use these scripts from the folder that contains this `.codex` tree. They auto-resolve the real Firmware-CLI repo root:
 
 - `.codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py`
   - Create `markdowns/curr/slug_spec.md`, `slug_review.md`, or `slug_process.md` with repo-aligned section templates.
@@ -78,7 +78,7 @@ Use these scripts from the folder that contains this mirrored `.codex` tree. The
 - `.codex/skills/firmcli-workflow-core/scripts/self_test_skills.py`
   - Validate the local skill suite, required source files, and skill metadata.
 
-Read [references/source-map.md](references/source-map.md) when you need the mapping from the original Claude commands to the Codex skills.
+Read [references/source-map.md](references/source-map.md) when you need the mapping from FirmCLI workflow phases to Codex skills. That reference is historical/contextual; Codex skills must remain self-contained and must not require reading legacy slash-command files.
 
 ## Python Code Changes
 

@@ -24,9 +24,26 @@
 > per-skill provider-runtime folders, and prompt injection on the next provider
 > turn. The MCP tool prompt injection is now compact: the brain renders a
 > curated tool index with short descriptions and required/optional argument
-> hints, not repeated full MCP JSON schema bodies. Current proof is focused
-> tests, full Python-change gate, and a no-hardware Codex CLI smoke;
-> Claude/live-board reproof remains a handoff item.
+> hints, not repeated full MCP JSON schema bodies. Current proof includes
+> focused tests, full Python-change gate, suite ladder, Codex live smokes, real
+> MCP smoke, and attached-board proof on `nucleo_l476rg + nrf52840dk`;
+> Claude/API/exact-official-board/fresh-machine proof remains a handoff item.
+
+> **R12 scaffold-hardening amendment (2026-06-30, implemented and
+> validated):** before Wave 2 codebase-map/static-context work or real
+> product skills build on the Branch B scaffold, model-native skills must load
+> from a product/client-owned root instead of `.codex/skills`; installed skills
+> are read-only client assets; provider repair happens only in per-run runtime
+> copies; skill-load failures return structured provider-visible recovery
+> results; compact tool indexes gain `load_tool_details(tool_names=[...])` and
+> invalid-tool-call auto-details; governed tools, governed client
+> scripts/tool-scripts, and brain-owned compound actions require brain-owned
+> loaded-detail flags before execution; a missing-detail call blocks, auto-loads
+> focused details, and asks the provider for a fresh decision rather than
+> executing the original call; existing prompt surfaces get canonical
+> ordering/dedupe; provider/adapter failures are classified accurately; prompt
+> bundle compatibility aliases are removed. Global client-owned bug reporting is
+> a later remote/backend feature, not a current prototype implementation item.
 
 > **Scope of this document.** This is the *design + implementation plan* — what to build, in what
 > order, and the design decision behind each step. It deliberately stops short of writing the code
@@ -813,7 +830,13 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
 3. **Forward real tool metadata compactly.** The turnkey prompt includes a curated compact index
    sourced from live MCP tool descriptions and input schemas: one-line descriptions,
    required/optional argument hints, and stable response/refusal semantics. Do not
-   reprint full MCP JSON schema bodies into provider prompts.
+   reprint full MCP JSON schema bodies into provider prompts. The compact index
+   is discovery-only, not execution authorization: governed tools, governed
+   client scripts/tool-scripts, and brain-owned compound actions require a
+   brain-owned loaded-detail flag before execution. If the provider attempts a
+   guarded action before details are loaded, the brain blocks the action,
+   auto-loads the focused details, records the guardrail, and asks for a fresh
+   provider decision; it does not execute the original action in the same step.
 4. **Support batched board decisions.** A decision may contain an ordered batch of actions. Add `wait`
    and UART write to the basic action surface. Keep write-memory/register and breakpoint mutation out of
    this prototype unless a later spec explicitly adds them.
@@ -847,8 +870,9 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
     bodies, and other large static prompt blocks should not be reprinted every
     turn. Render a compact governed-tool index plus selected-skill index and
     safety lines in the cached prefix, let the model pull large bodies on
-    demand where applicable, and use content hashes for rendered tool/skill
-    blocks and deterministic setup artifacts.
+    demand where applicable, require those bodies before governed execution, and
+    use content hashes for rendered tool/skill blocks and deterministic setup
+    artifacts.
 12. **Add the client-side codebase map for Wave 2 model-native code work.** On
     first workspace boot, create `codebase_map.md` from deterministic inventory
     plus provider-authored descriptions. Prompt every provider turn with the
@@ -868,15 +892,16 @@ static context with on-demand detail and codebase-map scaffolding, free host-sid
 bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
 Shipped-product polish and broad UI completeness are explicitly later work.
 
-Current status correction, 2026-06-30: the Wave 1 Branch B subset has now been
-corrected in code for the Stage 5 prototype bar: host-side file/shell/build work
-stays model-native/free, stale host-action decisions are refused, and every
-provider turn still closes with exactly one governed board/client/terminal
-decision. Codex CLI proof is green on the attached
-`nucleo_l476rg + nrf52840dk` pair, but Claude CLI code-writing proof is blocked
-by provider quota until the morning reset and exact official `nrf52833dk` proof
-remains pending. Wave 2 visibility/proof/static-context/checkpoint/cleanup
-items remain prototype requirements, not optional polish.
+Current status correction, 2026-06-30: the Wave 1 Branch B subset and the R12
+scaffold-hardening follow-up have now been corrected in code for the Stage 5
+prototype bar: host-side file/shell/build work stays model-native/free, stale
+host-action decisions are refused, every provider turn still closes with exactly
+one governed board/client/terminal/context-expansion decision, and compact
+indexes are discovery-only until the brain-owned loaded-detail flag is set.
+Codex CLI proof is green on the attached `nucleo_l476rg + nrf52840dk` pair, but
+Claude/API proof, exact official `nrf52833dk` proof, and fresh-machine proof
+remain pending. Wave 2 visibility/proof/static-context/checkpoint/cleanup items
+remain prototype requirements, not optional polish.
 
 ---
 

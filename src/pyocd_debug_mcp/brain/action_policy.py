@@ -6,7 +6,7 @@ from typing import Literal
 
 ActionClass = Literal["context_expansion", "brain_local", "client_action", "server_native"]
 
-CONTEXT_EXPANSION_ACTIONS = frozenset({"load_skills"})
+CONTEXT_EXPANSION_ACTIONS = frozenset({"load_skills", "load_tool_details"})
 BRAIN_LOCAL_ACTIONS = frozenset({"wait"})
 CLIENT_ACTIONS = frozenset({"run_script"})
 SERVER_NATIVE_ACTIONS = frozenset(

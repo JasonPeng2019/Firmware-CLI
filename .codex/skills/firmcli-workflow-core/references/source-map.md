@@ -1,21 +1,32 @@
 # Source Map
 
-This skill suite mirrors the Claude command set under `.claude/commands/` and the repo rules under `superpowers/`.
+This Codex skill suite is the self-contained workflow surface for Firmware-CLI.
+Historical slash-command files may exist in the repository, but Codex skills
+must not require reading them. If a legacy command contains an important rule,
+copy that rule into the relevant Codex `SKILL.md`.
 
-| Claude command | Codex skill | Primary source files |
+| Workflow phase | Codex skill | Canonical repo inputs |
 | --- | --- | --- |
-| `/specs` | `firmcli-specs` | `.claude/commands/specs.md`, `superpowers/agent_consistency_playbook.md`, `superpowers/spec_build_review_loop_playbook.md` |
-| `/build` | `firmcli-build` | `.claude/commands/build.md`, `superpowers/agent_coding_playbook.md`, `superpowers/agent_doc_sync_playbook.md` |
-| `/review` | `firmcli-review` | `.claude/commands/review.md`, `superpowers/agent_script_doc_playbook.md`, `superpowers/agent_portability_playbook.md` |
-| `/spec-loop` | `firmcli-spec-loop` | `.claude/commands/spec-loop.md`, `superpowers/spec_build_review_loop_playbook.md` |
-| `/fix-bug` | `firmcli-fix-bug` | `.claude/commands/fix-bug.md`, `.claude/commands/build.md`, `.claude/commands/review.md` |
-| `/test-suite` | `firmcli-test-suite` | `.claude/commands/test-suite.md`, `markdowns/current-progress.md` |
-| `/write-process` | `firmcli-write-process` | `.claude/commands/write-process.md`, `.claude/commands/spec-loop.md` |
+| Spec | `firmcli-specs` | `superpowers/agent_consistency_playbook.md`, `superpowers/spec_build_review_loop_playbook.md`, `markdowns/ROADMAP.md`, `markdowns/current-progress.md`, touched files |
+| Build | `firmcli-build` | `superpowers/agent_coding_playbook.md`, `superpowers/agent_doc_sync_playbook.md`, `superpowers/agent_portability_playbook.md`, spec/review files, touched files |
+| Review | `firmcli-review` | spec, changed code/docs, all relevant `superpowers` playbooks, build plan |
+| Spec loop | `firmcli-spec-loop` | `firmcli-specs`, `firmcli-build`, `firmcli-review`, and `firmcli-fix-bug` as needed |
+| Fix bug | `firmcli-fix-bug` | repro evidence, authority docs, implicated files, optional focused spec |
+| Test suite | `firmcli-test-suite` | build plan, `README.md`, `markdowns/ROADMAP.md`, `markdowns/current-progress.md`, concrete suite checks |
+| Write process | `firmcli-write-process` | `firmcli-spec-loop`, `firmcli-fix-bug`, `firmcli-test-suite`, and a live process ledger |
 
 Shared helper scripts:
 
-- `scripts/scaffold_workflow_doc.py` creates spec, review, and process ledgers with the repo's expected headings.
-- `scripts/run_check_ladder.py` runs the non-hardware validation ladder and records the real output.
-- `scripts/self_test_skills.py` validates the local skill suite and checks the mirrored source files still exist.
+- `scripts/scaffold_workflow_doc.py` creates spec, review, and process ledgers
+  with the repo's expected headings.
+- `scripts/run_check_ladder.py` runs the non-hardware validation ladder and
+  records real output.
+- `scripts/self_test_skills.py` validates the local Codex skill suite and its
+  required repo authority files.
 
-When the Claude command files or `superpowers` playbooks change, update the matching Codex skill and rerun `python .codex/skills/firmcli-workflow-core/scripts/self_test_skills.py`.
+When a workflow rule changes, update the relevant Codex `SKILL.md` directly and
+rerun:
+
+```powershell
+python .codex/skills/firmcli-workflow-core/scripts/self_test_skills.py --skip-quick-validate
+```

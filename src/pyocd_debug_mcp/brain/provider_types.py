@@ -490,13 +490,6 @@ class ProviderPromptBundle:
             correction_note,
         )
 
-    # Compatibility aliases kept while the rest of the runtime and tests are updated.
-    def render_native_delta_text(self) -> str:
-        return self.render_remote_delta_text()
-
-    def render_native_sync_text(self, *, include_memory: bool = True) -> str:
-        return self.render_remote_sync_text(include_memory=include_memory)
-
     def user_prompt_text(self, *, include_memory: bool = True) -> str:
         return self.render_bootstrap_text(include_memory=include_memory)
 

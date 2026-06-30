@@ -177,6 +177,48 @@ def test_model_native_skill_manifest_id_must_match_requested_folder(tmp_path: Pa
         registry.load_manifest("actual")
 
 
+def test_model_native_skill_failed_load_can_be_repaired_in_runtime_copy(
+    tmp_path: Path,
+) -> None:
+    skill_root = tmp_path / "skills"
+    _write_skill(skill_root, "repairable")
+    manifest = skill_root / "repairable" / "skill.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "context_files: [SKILL.md]", "context_files: [missing.md]"
+        ),
+        encoding="utf-8",
+    )
+    registry = ModelNativeSkillRegistry(skill_root)
+    runtime_root = tmp_path / "runtime"
+
+    with pytest.raises(ModelNativeSkillError) as exc_info:
+        registry.load_skills(
+            skill_ids=("repairable",),
+            session_state=ModelNativeSkillSessionState(),
+            runtime_root=runtime_root,
+            repo_root=tmp_path,
+        )
+
+    failure = exc_info.value.to_failure(requested_skill_ids=("repairable",))
+    assert failure.category == "missing_context_file"
+    runtime_skill = runtime_root / "skills" / "repairable"
+    assert runtime_skill.exists()
+    (runtime_skill / "missing.md").write_text("runtime repair body\n", encoding="utf-8")
+    assert not (skill_root / "repairable" / "missing.md").exists()
+
+    result = registry.load_skills(
+        skill_ids=("repairable",),
+        session_state=ModelNativeSkillSessionState(),
+        runtime_root=runtime_root,
+        repo_root=tmp_path,
+    )
+
+    context = render_model_native_skill_context(result.state)
+    assert "runtime repair body" in context
+    assert result.state.loaded_skills["repairable"].source_path == str(skill_root / "repairable")
+
+
 def test_model_native_skill_init_rejects_direct_hardware_imports(tmp_path: Path) -> None:
     skill_root = tmp_path / "skills"
     _write_skill(skill_root, "bad-init", init=False)

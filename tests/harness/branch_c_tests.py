@@ -143,8 +143,10 @@ def check_stage0_bringup(args: argparse.Namespace) -> CheckResult:
 
 def _live_provider_task() -> str:
     return (
-        "Connect to the board with connect(board_id=...), call get_board_info, "
-        "then finalize with final_status=unresolved, classification=tooling_failure, "
+        "First load governed tool details for connect and get_board_info. "
+        "On a later provider turn, connect to the board with connect(board_id=...), "
+        "call get_board_info, then finalize with final_status=unresolved, "
+        "classification=tooling_failure, "
         "root_cause='dry run', summary='Branch C validation run.' "
         "Do not flash, edit files, or run a build."
     )
@@ -560,7 +562,7 @@ async def _live_provider_run_check(
         provider=provider,
         model=_provider_model(args, provider),
         port=args.port,
-        max_iters=4,
+        max_iters=6,
         timeout_proposal=TimeoutProposal(connect_seconds=99999.0, flash_seconds=1.0),
         iteration_estimate=IterationEstimate(requested_max_iterations=999),
     )

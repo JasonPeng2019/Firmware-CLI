@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import cast, get_args
 
@@ -64,6 +65,40 @@ class ToolSchemaBundle:
             "schema_hash": self.schema_hash,
         }
 
+    def entry_by_name(self, tool_name: str) -> ToolSchemaEntry | None:
+        for entry in self.entries:
+            if entry.name == tool_name:
+                return entry
+        return None
+
+
+@dataclass(frozen=True)
+class ToolDetailLoadResult:
+    requested_tool_names: tuple[str, ...]
+    loaded_tool_names: tuple[str, ...]
+    missing_tool_names: tuple[str, ...]
+    detail_text: str
+    schema_hash: str
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "requested_tool_names": list(self.requested_tool_names),
+            "loaded_tool_names": list(self.loaded_tool_names),
+            "missing_tool_names": list(self.missing_tool_names),
+            "schema_hash": self.schema_hash,
+        }
+
+    def render_result_text(self) -> str:
+        loaded = ", ".join(self.loaded_tool_names) or "(none)"
+        missing = ", ".join(self.missing_tool_names) or "(none)"
+        return (
+            "Loaded governed tool details.\n"
+            f"requested={list(self.requested_tool_names)}\n"
+            f"loaded={loaded}\n"
+            f"missing={missing}\n"
+            f"schema_hash={self.schema_hash}"
+        )
+
 
 def build_tool_schema_bundle(tool_descriptors: tuple[ToolDescriptor, ...]) -> ToolSchemaBundle:
     descriptor_by_name = {descriptor.name: descriptor for descriptor in tool_descriptors}
@@ -87,11 +122,61 @@ def build_tool_schema_bundle(tool_descriptors: tuple[ToolDescriptor, ...]) -> To
     )
 
 
+def load_tool_details(
+    bundle: ToolSchemaBundle, tool_names: tuple[str, ...]
+) -> ToolDetailLoadResult:
+    requested = _normalize_tool_names(tool_names)
+    loaded_entries: list[ToolSchemaEntry] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for tool_name in requested:
+        if tool_name in seen:
+            continue
+        seen.add(tool_name)
+        entry = bundle.entry_by_name(tool_name)
+        if entry is None:
+            missing.append(tool_name)
+            continue
+        loaded_entries.append(entry)
+    return ToolDetailLoadResult(
+        requested_tool_names=tuple(requested),
+        loaded_tool_names=tuple(entry.name for entry in loaded_entries),
+        missing_tool_names=tuple(missing),
+        detail_text=render_tool_detail_entries(
+            tuple(loaded_entries), schema_hash=bundle.schema_hash
+        ),
+        schema_hash=bundle.schema_hash,
+    )
+
+
+def render_tool_detail_entries(entries: tuple[ToolSchemaEntry, ...], *, schema_hash: str) -> str:
+    if not entries:
+        return "Loaded governed tool details:\n(no matching governed tools)"
+    lines = [f"Loaded governed tool details (full; schema_hash={schema_hash}):"]
+    for entry in entries:
+        lines.append("")
+        lines.append(f"## {entry.name}")
+        lines.append(f"description: {entry.description}")
+        lines.append("input_schema:")
+        lines.append(json.dumps(entry.input_schema, indent=2, sort_keys=True))
+        response_semantics = (*_COMMON_RESPONSE_SEMANTICS, *entry.response_semantics)
+        lines.append("response_semantics:")
+        lines.extend(f"- {line}" for line in response_semantics)
+    return "\n".join(lines)
+
+
 def _normalize_description(tool_name: str, description: str) -> str:
     text = description.strip()
     if text:
         return text
     return f"No server description was provided for `{tool_name}`. Use the input schema and tool name carefully."
+
+
+def _normalize_tool_names(tool_names: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(tool_name.strip() for tool_name in tool_names)
+    if not normalized or any(not tool_name for tool_name in normalized):
+        raise ValueError("tool_names must contain at least one non-empty tool name")
+    return normalized
 
 
 def _normalize_input_schema(input_schema: dict[str, object]) -> dict[str, object]:

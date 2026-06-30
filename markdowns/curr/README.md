@@ -10,13 +10,20 @@ active current-step truth, not historical process ledgers or branch proof notes.
   and the hard prototype bar in `markdowns/things-to-change.md`.
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
+- `r12-context-scaffold-hardening_spec.md` - active R12 scaffold-hardening spec
+  and verification record for product/client-owned model-native skills,
+  runtime-copy-only recovery, structured skill-load failures,
+  `load_tool_details`, invalid-call auto-details, strict loaded-detail
+  guardrails before governed tool/script or brain-owned compound-action
+  execution, prompt ordering/dedupe, and future bug-reporting docs.
 
 Canonical current status now lives in:
 
 - `markdowns/things-to-change.md` - hard prototype acceptance bar.
 - `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
-  free-host/governed-decision code boundary is implemented, but Claude
-  live-provider proof and exact official-board proof remain pending.
+  free-host/governed-decision code boundary and the R12 scaffold-hardening
+  follow-up are implemented, while Claude/exact official-board/API/fresh-machine
+  proof and Wave 2 modules remain pending.
 - `markdowns/current-progress.md` - current implementation/proof status.
 
 ## Archive
@@ -26,6 +33,13 @@ from the final June 30 pass were moved to:
 
 ```text
 markdowns/tmp/curr-archive-20260630-wave1-final/
+```
+
+Completed R12 scaffold-hardening process/audit ledgers and the consumed June 30
+handoff were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260630-r12-scaffold-final/
 ```
 
 The previous Branch A/B/C status, merge-validation, audit, pyright, cleanup, and
@@ -52,17 +66,22 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 
 ## Verified
 
-- `markdowns/curr/` now contains only this index, the active R12 contract, and
-  the active Wave 2 codebase-map spec.
+- `markdowns/curr/` now contains only this index, the active R12 contract, the
+  active R12 scaffold-hardening spec/verification record, and the active Wave 2
+  codebase-map spec.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
+- R12 scaffold hardening is implemented and validated by the final Python-change
+  gate, suite ladder, Codex live smokes, and attached-board hardware runs
+  recorded in the archived process ledgers.
 
 ## Pending Verification
 
-- Branch B's free-host-work / governed-decision boundary is implemented and
-  Codex-smoked, but Claude CLI code-writing proof is blocked by quota until the
-  2026-06-30 morning reset.
+- Branch B's free-host-work / governed-decision boundary and the R12 scaffold
+  hardening are implemented and Codex/hardware-smoked.
+- Remaining proof gaps are external: Claude login/quota, API credentials, exact
+  official-board proof, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.
 - Wave 2 progress/inspector, checkpoints, scoped green approval, static
   context/cache reuse, codebase-map scaffolding, and cleanup guard work remains

@@ -1,22 +1,22 @@
 ---
 name: firmcli-write-process
-description: Deliver a whole Firmware-CLI process through firmcli-spec-loop execution, iterative firmcli-fix-bug repair, and a deployment-grade firmcli-test-suite final gate while keeping a live process ledger. Use when the user wants the Claude `/write-process` behavior for a multi-step feature, roadmap item, rollout, or long-running implementation tracked in a `markdowns/curr/slug_process.md` file.
+description: Deliver a whole Firmware-CLI process through firmcli-spec-loop execution, iterative firmcli-fix-bug repair, and a deployment-grade firmcli-test-suite final gate while keeping a live process ledger. Use when the user wants the FirmCLI write-process workflow for a multi-step feature, roadmap item, rollout, or long-running implementation tracked in a `markdowns/curr/slug_process.md` file.
 ---
 
 # FirmCLI Write Process
 
 If you have not already loaded `.codex/skills/firmcli-workflow-core/SKILL.md`, read it first.
 
-Use this skill to mirror `.claude/commands/write-process.md`.
+This skill is self-contained. Do not read legacy slash-command files; any
+legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 
 ## Workflow
 
-1. Read `.claude/commands/write-process.md`.
-2. Treat `firmcli-spec-loop` as the execution backbone. For the whole process and for every meaningful sub-step, drive work through the same spec-build-review loop instead of hand-rolling build/review steps.
-3. Run the spec phase first with `firmcli-specs` or the spec phase inside `firmcli-spec-loop`. Create or update the spec before the first build pass and again whenever the process scope, acceptance surface, deployment scenario, or design constraints materially change.
-4. Create or update the process ledger:
+1. Treat `firmcli-spec-loop` as the execution backbone. For the whole process and for every meaningful sub-step, drive work through the same spec-build-review loop instead of hand-rolling build/review steps.
+2. Run the spec phase first with `firmcli-specs` or the spec phase inside `firmcli-spec-loop`. Create or update the spec before the first build pass and again whenever the process scope, acceptance surface, deployment scenario, or design constraints materially change.
+3. Create or update the process ledger:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py process process-slug --task "process summary"`
-5. Keep the ledger current after every meaningful step. It must track:
+4. Keep the ledger current after every meaningful step. It must track:
    - goal and roadmap anchor
    - done
    - in progress
@@ -25,7 +25,7 @@ Use this skill to mirror `.claude/commands/write-process.md`.
    - hardware hand-off
    - open decisions and surfaced issues
    - verified and pending verification
-6. Implement the process in small, reversible sub-steps. Each meaningful sub-step must run through `firmcli-spec-loop`:
+5. Implement the process in small, reversible sub-steps. Each meaningful sub-step must run through `firmcli-spec-loop`:
    - confirm the spec and ledger still match the intended change
    - run `firmcli-spec-loop` for the scoped change or existing `*_spec.md`
    - if the sub-step changes Python code or Python-facing project config, use `.codex/skills/python-change/SKILL.md` and run its validation gate after the final Python edit for that sub-step
@@ -34,10 +34,10 @@ Use this skill to mirror `.claude/commands/write-process.md`.
      filtering is no longer a success condition
    - if the loop, review, or smoke checks expose a real bug or must-fix finding, route that issue through `firmcli-fix-bug` instead of making ad hoc follow-up edits
    - after the fix, rerun `firmcli-spec-loop` for that same sub-step before moving on
-7. After each meaningful sub-step, run the non-hardware ladder as an extra smoke gate when the targeted spec loop did not already cover the needed checks:
+6. After each meaningful sub-step, run the non-hardware ladder as an extra smoke gate when the targeted spec loop did not already cover the needed checks:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add targeted `--command` entries as needed
-8. Do not advance to the next sub-step until the current sub-step is spec-loop-clean or blocked only on explicit hardware proof or a human decision.
+7. Do not advance to the next sub-step until the current sub-step is spec-loop-clean or blocked only on explicit hardware proof or a human decision.
 
 ## Final test gate
 

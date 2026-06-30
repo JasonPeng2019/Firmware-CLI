@@ -49,6 +49,7 @@ class EventKinds:
     PROVIDER_RESUME_RECOVERY_CHOICE: EventKind = "provider_resume_recovery_choice"
     BATCH_ACTION_START: EventKind = "batch_action_start"
     BATCH_ACTION_COMPLETE: EventKind = "batch_action_complete"
+    DETAILS_REQUIRED: EventKind = "details_required"
 
 
 EVENT_KINDS: tuple[EventKind, ...] = (
@@ -86,6 +87,7 @@ EVENT_KINDS: tuple[EventKind, ...] = (
     EventKinds.PROVIDER_RESUME_RECOVERY_CHOICE,
     EventKinds.BATCH_ACTION_START,
     EventKinds.BATCH_ACTION_COMPLETE,
+    EventKinds.DETAILS_REQUIRED,
 )
 
 STATUS_START_EVENT_KINDS: tuple[EventKind, ...] = (

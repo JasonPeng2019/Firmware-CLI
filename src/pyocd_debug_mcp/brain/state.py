@@ -41,6 +41,10 @@ class BrainState:
     provider_session_state: ProviderSessionState | None = None
     provider_capabilities: ProviderCapabilities | None = None
     tool_schema_summary: dict[str, object] | None = None
+    loaded_tool_details: dict[str, str] = field(default_factory=dict)
+    loaded_tool_detail_schema_hash: str | None = None
+    loaded_client_action_details: dict[str, str] = field(default_factory=dict)
+    loaded_compound_action_details: dict[str, str] = field(default_factory=dict)
     probe_uid: str | None = None
     route_used: str | None = None
     board_info: str | None = None
@@ -135,6 +139,19 @@ class BrainState:
                 else None
             ),
             "tool_schema_summary": dict(self.tool_schema_summary or {}),
+            "loaded_tool_details": {
+                name: {"body_length": len(body)}
+                for name, body in sorted(self.loaded_tool_details.items())
+            },
+            "loaded_tool_detail_schema_hash": self.loaded_tool_detail_schema_hash,
+            "loaded_client_action_details": {
+                name: {"body_length": len(body)}
+                for name, body in sorted(self.loaded_client_action_details.items())
+            },
+            "loaded_compound_action_details": {
+                name: {"body_length": len(body)}
+                for name, body in sorted(self.loaded_compound_action_details.items())
+            },
             "probe_uid": self.probe_uid,
             "route_used": self.route_used,
             "board_info": self.board_info,
