@@ -1449,8 +1449,8 @@ Simple branch schedule:
     `markdowns/tmp/curr-archive-20260628/`
 - serial next: `P0` foundation shared shapes and hook points
   - completed on the merged trunk via:
-    - `markdowns/curr/p0_foundation_spec.md`
-    - `markdowns/curr/p0_foundation_process.md`
+    - `markdowns/tmp/curr-archive-20260628/p0_foundation_spec.md`
+    - `markdowns/tmp/curr-archive-20260628/p0_foundation_process.md`
   - deliverables:
     - `brain/decision_types.py`
     - expanded `brain/provider_types.py`

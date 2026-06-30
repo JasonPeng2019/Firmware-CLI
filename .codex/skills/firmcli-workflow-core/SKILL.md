@@ -46,6 +46,18 @@ Use these scripts from the folder that contains this mirrored `.codex` tree. The
 
 Read [references/source-map.md](references/source-map.md) when you need the mapping from the original Claude commands to the Codex skills.
 
+## Python Code Changes
+
+For any Python code change under this repo, use
+`.codex/skills/python-change/SKILL.md` in addition to this core skill. That
+skill owns the Python-specific edit discipline and validation gate:
+
+- identify the smallest relevant files
+- run Ruff autofix and format
+- run `uv run pyright --outputjson`
+- run `uv run pytest -q`
+- report files changed, verification commands, and remaining risks
+
 ## Reporting Contract
 
 Every workflow closeout must separate:

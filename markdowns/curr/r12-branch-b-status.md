@@ -40,7 +40,7 @@ The current code supports:
 - deterministic client-action validation and loading;
 - prompt rendering of registered action name, path, description, and SHA-256;
 - per-run `ClientActionStore` threading through CLI -> app -> provider loop;
-- `run-metadata/client_actions.json` audit output;
+- `runs/<session_id>/run-metadata/client_actions.json` audit output;
 - execution of script-owned server calls only through the gated server API.
 
 This does not implement Branch A provider-session persistence, provider-native

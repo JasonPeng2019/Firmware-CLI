@@ -1,0 +1,4 @@
+interface:
+  display_name: "FirmCLI Markdown Audit"
+  short_description: "Map and verify markdowns against code and runs"
+  default_prompt: "Use $firmcli-markdown-audit to audit Firmware-CLI markdowns against code and runs."

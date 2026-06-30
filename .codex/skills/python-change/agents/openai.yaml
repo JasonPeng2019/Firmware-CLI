@@ -1,0 +1,4 @@
+interface:
+  display_name: "Python Change"
+  short_description: "Verify Python edits with Ruff, Pyright, pytest"
+  default_prompt: "Use $python-change when making a Python code change in this repo."

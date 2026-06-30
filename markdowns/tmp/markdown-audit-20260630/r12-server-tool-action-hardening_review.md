@@ -15,9 +15,11 @@ CLEAN FOR NO-CREDIT SCOPE
 ## Hardware hand-off status
 
 No new hardware run was required for this parser/policy hardening pass. The
-change is covered by unit/regression tests and real Codex adapter smokes. Full
-Claude/hardware/provider matrix remains under the existing Branch A live
-provider handoff and should be rerun only after Claude usage refresh.
+change is covered by unit/regression tests and real Codex adapter smokes. The
+later Branch A live-provider ledger records Claude CLI proof after usage
+refresh for the attached `nucleo_l476rg + nrf52840dk` pair. Paid
+OpenAI/Anthropic API-provider smokes and exact official `nrf52833dk` proof
+remain pending.
 
 ## What's genuinely good
 

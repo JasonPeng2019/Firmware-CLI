@@ -3,13 +3,15 @@
 > **STATUS (2026-06): Stages 0–4 through roadmap `R11` are IMPLEMENTED and
 > live-proven on the scoped pair (`nrf52833dk` + `nucleo_l476rg`). `R12` is now
 > implemented in code, and the Codex-backed turnkey path has already cleared the
-> full frozen 12-case corpus on the scoped pair.** This is the original design /
+> full frozen 12-case corpus on the scoped pair. Claude CLI has also cleared the
+> live attached-board A/B repair matrix on `nucleo_l476rg + nrf52840dk`, but that
+> retained Nordic board is not the official `nrf52833dk`.** This is the original design /
 > decision record. Steps that describe building the substrate, the MCP server,
 > the guardrails, or the benchmark layer — including **Step 1.0d** (the API
 > de-risk and service-layer migration) — are **done**; read them as the
 > rationale behind the shipped code, not as pending work. The remaining active
-> proof work is `R12` closure: the second-provider requirement and the broader
-> fresh-machine portability proof. Live status: `current-progress.md`; file map:
+> proof work is exact official-pair `nrf52833dk + nucleo_l476rg` closure,
+> API-provider parity, and the broader fresh-machine portability proof. Live status: `current-progress.md`; file map:
 > `repo_file_index.md`.
 
 > **Scope of this document.** This is the *design + implementation plan* — what to build, in what
@@ -1044,11 +1046,15 @@ Verified:
 
 Pending verification:
 
-- `nrf52840dk` remains a retained alternate Nordic profile and still needs live
-  proof if future support for that board becomes a project goal.
-- The Codex-backed R12 turnkey path is now live-proven on the scoped pair
-  through the full frozen 12-case corpus.
-- R12 is still not closed because the required second-provider proof remains
-  open on this host:
-  `claude-cli --model sonnet` currently fails before any board action with a
-  provider-side model 404.
+- Exact official-pair `nrf52833dk + nucleo_l476rg` R12 closure on the current
+  branch state remains pending until an actual `nrf52833dk` is attached again.
+- `nrf52840dk` is a retained alternate Nordic profile. It now has live attached
+  proof in later R12 runs, but that proof does not replace the official
+  `nrf52833dk` gate.
+- The Codex-backed R12 turnkey path is live-proven on the scoped pair through
+  the full frozen 12-case corpus.
+- The Claude CLI provider is no longer globally blocked by the old macOS
+  `claude-cli --model sonnet` provider-side 404. Later Windows/attached-board
+  proof exists for `nucleo_l476rg + nrf52840dk`; API-provider parity
+  (`openai-api`, `anthropic-api`) and exact official-pair second-provider proof
+  remain pending.

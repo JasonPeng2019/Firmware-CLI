@@ -1,19 +1,21 @@
-> STATUS: DEFERRED TEST PLAN - run later when Claude usage refreshes and paid API credits are available.
-> Budget note: size the Claude CLI portion for a basic Claude Pro subscription
-> window. The green bar is intentionally lower than the prior exhaustive live
-> matrix, but it must still validate multiple top-level user prompts in one
-> continued session. Keep each prompt small enough to run back to back without
-> exhausting the five-hour usage window.
+> STATUS: SUPERSEDED EXECUTION PLAN - Claude CLI refresh proof was later run
+> under `markdowns/curr/branch-a-live-provider-hardware-suite_process.md`.
+> The API-provider portion remains pending until paid OpenAI/Anthropic credits
+> are available. The run IDs recorded in that process ledger are historical
+> local runtime outputs; this checkout does not currently contain the
+> `runs/20260629T03...` / `04...` / `17...` / `18...` artifact directories
+> for reinspection.
 
 # r12 claude refresh hardening test plan
 
 ## Goal in plain English
 
-When Claude usage and paid API credits are available again, validate that the
-server-tool action hardening behaves correctly in the real provider surfaces,
-not only in local parser/unit smoke tests. Prefer a short, high-signal
-multi-user-prompt Claude proof over a broad live matrix that risks consuming the
-whole Claude Pro usage window.
+This file records the deferred test intent that existed before the later live
+provider refresh. Claude CLI usage later refreshed and the attached-board
+Claude/Codex validation moved to
+`markdowns/curr/branch-a-live-provider-hardware-suite_process.md`. Keep this
+file only as the API-provider and exact-test-intent record; do not read it as
+the latest Claude CLI status.
 
 Roadmap anchor: R12.
 
@@ -44,15 +46,15 @@ Out of scope:
 
 ## Reconciliation summary
 
-- Current blocked fact: Claude CLI usage was exhausted during the live
-  Branch A/B proof; additional real Claude work should wait for refresh.
-- The prior Claude live pass ran out of available compute/context too quickly,
-  so the next Claude proof must reduce prompt size, loop count, and redundant
-  verification.
+- Historical fact: Claude CLI usage was exhausted during the live Branch A/B
+  proof, which is why this plan was written.
+- Follow-up fact: Claude quota refreshed on 2026-06-29, and the later
+  Branch A live-provider suite records successful attached-board Claude CLI
+  health and code-writing repair proof on `nucleo_l476rg + nrf52840dk`.
 - Current blocked fact: Anthropic/OpenAI API provider runs require paid credits
   that are not currently available.
-- This plan exists so the next live-provider pass can start immediately without
-  rebuilding the test intent from memory.
+- This plan now exists so the remaining paid API-provider pass can start
+  without rebuilding the test intent from memory.
 
 ## Design
 
@@ -153,9 +155,18 @@ board facts into source code.
 
 ## Verified
 
-Not run in this pass.
+- Superseded for Claude CLI by
+  `markdowns/curr/branch-a-live-provider-hardware-suite_process.md`.
+- That process ledger records post-refresh Claude CLI health smokes and
+  code-writing repair benchmark proof on the attached
+  `nucleo_l476rg + nrf52840dk` pair.
+- Current workspace audit: the historical Branch A `20260629T03...` /
+  `04...` / `17...` / `18...` run IDs named by that process ledger are not
+  present under local `runs/`, so this checkout cannot reinspect those specific
+  artifacts without restoring the untracked run folders.
 
 ## Pending verification
 
-- Claude CLI after usage refresh.
 - Anthropic/OpenAI API providers after paid credits are available.
+- Exact official `nrf52833dk` proof for any claim that requires the official
+  scoped Nordic board.

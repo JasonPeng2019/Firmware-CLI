@@ -201,10 +201,10 @@ a glance before relying on detail.
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
+| `r12-branch-a-live-provider-status.md` | Compact Branch A / merged A+B live-provider proof handoff, replacing the completed Branch A spec/process/review cluster now archived. |
 | `r12-branch-b-status.md` | Compact Branch B implementation/proof handoff, replacing the overlapping Branch B spec/process/review/test-report files now archived. |
 | `r12-branch-b-official-portability-closure_spec.md` | Remaining stricter proof spec for exact official `nrf52833dk` and fresh-machine Branch B closure claims. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype, ordered from prototype priority to later nice-to-have items. |
-| `uxlayer_gap_checklist.md` | Current-state Pass 1 vs Pass 2 checklist for the operator shell implementation. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 
@@ -222,6 +222,7 @@ a glance before relying on detail.
 | `R12JasonBenMerge.md` | Historical merge rationale for the Ben/Jason R12 reconciliation; retained for history only. |
 | `curr-archive-2026-06-25/` | Archived docs moved out of `markdowns/curr/` before P0.0 planning: old R10/R11/R12 specs and completed or superseded process/spec notes. |
 | `curr-archive-20260628/` | Archived docs moved out of `markdowns/curr/` after Branch B deployment cleanup: completed P0, portability, Branch B, and CLI robustness specs/process/reviews/reports. |
+| `markdown-audit-20260630/` | Archived docs moved out of active scope by the final markdown audit: duplicate R12 explanation copy, completed Branch A live-provider cluster, completed server-tool hardening cluster, and superseded Claude-refresh plan. |
 
 ## `superpowers/` — internal authoring playbooks
 
@@ -244,9 +245,12 @@ a glance before relying on detail.
 ## Verified
 
 - This index now reflects the reduced `markdowns/curr/` folder after the
-  Branch B documentation cleanup.
+  final markdown audit cleanup.
 - Completed P0, portability, Branch B, and CLI robustness artifacts are listed
   as archived under `markdowns/tmp/curr-archive-20260628/`.
+- Completed Branch A live-provider, server-tool hardening, and duplicate R12
+  explanation artifacts are listed as archived under
+  `markdowns/tmp/markdown-audit-20260630/`.
 
 ## Pending Verification
 

@@ -23,6 +23,7 @@ Use this skill to mirror `.claude/commands/test-suite.md`.
 7. During each suite-driven repair pass, keep the workflow disciplined:
    - update or create the narrowest spec needed for the fix
    - build the fix
+   - if the fix changes Python code, use `.codex/skills/python-change/SKILL.md` and run its validation gate after the final Python edit
    - review the fix
    - rerun the targeted failing checks
    - rerun the full suite before reporting green

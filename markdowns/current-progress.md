@@ -17,6 +17,12 @@ Use this file after `README.md` and `ROADMAP.md`.
 This document intentionally uses plain-English status descriptions rather than
 roadmap checkpoint shorthand.
 
+Run IDs in this file are historical evidence pointers. The `runs/` tree is
+gitignored runtime output, so older run directories may be absent from a fresh
+or cleaned checkout; absence of a referenced run folder means the artifact
+cannot be reinspected locally, not that the status line has been re-proven in
+the current session.
+
 ## Current Position
 
 In roadmap terms, all scoped work through `R11` is implemented for the
@@ -99,15 +105,20 @@ missing before this merge pass:
 - generic alternate-suite acceptance logic so retained-board turnkey suites no
   longer fail only because the suite is not the scoped pair
 
-What is still missing for broad turnkey closure is full official-pair
-second-provider proof and fresh-machine portability proof.
+What is still missing for broad turnkey closure is exact official-pair
+second-provider proof on an actual `nrf52833dk + nucleo_l476rg` pair,
+API-provider parity proof, and fresh-machine portability proof. Claude CLI is
+no longer globally blocked: later Branch A/B ledger evidence records
+post-refresh attached-board Claude proof on `nucleo_l476rg + nrf52840dk`.
 
 What is still missing for true user-computer deployment is broader than the
 current prototype gate:
 
 - fresh Windows and macOS host proof;
 - multiple top-level prompts in one operator CLI session, each with its own
-  bounded provider/tool loop and isolated run artifacts;
+  bounded provider/tool loop and isolated run artifacts; sequential
+  `pyocd-debug-brain run` prompts have attached-board proof, but one-shell
+  interactive `pyocd-debug` proof remains pending;
 - strict provider-session handling, including fail-closed behavior when a
   promised remote handle cannot resume;
 - real code-writing repair proof on the bug-repair cases, with build/flash/green
@@ -155,8 +166,12 @@ Latest Branch A/B live-provider refresh proof on 2026-06-29:
 - a live provider-shape gap found during that smoke was fixed: legacy
   `server_tool` batch calls with nested `arguments.arguments` are now unwrapped
   before MCP invocation, and conflicting duplicate arguments fail closed
-- representative artifacts show provider remote resume handles and no
-  recovery-created replacement provider sessions
+- the process ledger records representative artifacts showing provider remote
+  resume handles and no recovery-created replacement provider sessions
+- current workspace audit note: the Branch A `20260629T03...`, `04...`,
+  `17...`, and `18...` run directories named above are not present in local
+  `runs/`; these run IDs are retained as historical ledger evidence, but the
+  specific artifacts cannot be reinspected from this checkout until restored
 
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:
@@ -170,13 +185,13 @@ It does not replace the historical scoped-pair truth for `nrf52833dk`; it is
 the current merged-branch proof for the hardware that was attached in that
 session.
 
-For the current prototype branch plan, those items are intentionally deferred.
-The active execution boundary is narrower:
+For the current prototype branch plan, the active execution boundary is
+narrower:
 
-- treated as the current required baseline: Codex-backed turnkey proof on the
-  currently validated host and scoped pair
-- treated as deferred, unverified prototype risk: second-provider full reproof
-  and true fresh-machine Windows/macOS portability proof
+- treated as current attached-board proof: Codex CLI and Claude CLI on
+  `nucleo_l476rg + nrf52840dk`, with exact `nrf52833dk` still pending
+- treated as deferred, unverified prototype risk: API-provider parity and true
+  fresh-machine Windows/macOS portability proof
 
 They should not be claimed as working, but they also are not immediate blockers
 for Wave 0 / `P0.0` unless the team explicitly restores them as hard gates.
@@ -1110,8 +1125,7 @@ Important live issues that were exposed and fixed during this pass:
 
 ### Latest Live Claude CLI Evidence
 
-The second-provider path is no longer globally blocked. The latest live status
-is:
+The second-provider path is no longer globally blocked. Current status is:
 
 - historical pre-upgrade macOS `--model sonnet` attempts failed before board
   action
@@ -1122,10 +1136,14 @@ is:
   - `pyocd-debug-brain run --provider codex-cli --board-id nrf52833dk`
   - `pyocd-debug-brain benchmark --provider claude-cli --model sonnet --case-id nucleo_l476rg__k001_reference_green`
   - `pyocd-debug-brain benchmark --provider codex-cli --case-id nrf52833dk__k001_reference_green`
-- current Windows STM32 Claude runs are now green on the attached
-  `nucleo_l476rg`
-- the remaining gap is full official-pair closure, not basic provider
-  usability
+- current Branch A/B ledger evidence records Claude CLI attached-board proof on
+  `nucleo_l476rg + nrf52840dk`, including code-writing repair prompts after
+  the 2026-06-29 quota refresh
+- the remaining gaps are exact official-pair closure, paid API-provider parity,
+  and fresh-machine portability, not basic Claude CLI provider usability
+- local audit caveat: the Branch A `20260629T03...` / `04...` / `17...` /
+  `18...` run folders cited by the active Branch A/B process ledger are not
+  present in this checkout's `runs/` directory
 
 Historical macOS attempted commands:
 
@@ -1163,11 +1181,10 @@ Why this matters:
   Stage 1 / MCP substrate failure
 - the newer Windows proof shows the Claude provider seam itself is viable in
   the merged product
-- the Claude six-case pilot and full 12-case official-pair suite are still
-  intentionally pending until the scoped Nordic board is attached for a real
-  closure pass
-- the turnkey layer therefore remains open until a real second-provider ladder
-  completes successfully
+- the Claude attached-board repair matrix is recorded as complete for
+  `nucleo_l476rg + nrf52840dk`
+- the turnkey layer remains open for exact official-pair closure and paid
+  API-provider parity
 
 ### Turnkey Commands
 
@@ -1316,10 +1333,11 @@ now been shown to:
 The following proof work is still required before the turnkey product layer
 should be treated as complete:
 
-- extend the now-working Claude CLI path from the attached STM32 proof to the
-  official scoped pair closure ladder:
-  - healthy freeform verification on both scoped boards
-  - six-case pilot-equivalent coverage for the attached board(s)
+- extend the now-working Claude CLI path from the attached
+  `nucleo_l476rg + nrf52840dk` proof to the exact official scoped pair closure
+  ladder:
+  - healthy freeform verification on `nrf52833dk + nucleo_l476rg`
+  - repair/diagnosis coverage on the official pair
   - full `pilot_v1_plus_b003_b004` suite once the official pair is attached
 - if Claude is not the intended second-provider path after all, explicitly
   freeze a replacement provider/model path and rerun the same ladder rather
@@ -1395,8 +1413,8 @@ work is all in the turnkey product layer.
 
 1. Re-run the official scoped Nordic `R12` live chain in the latest merged
    benchmark state on `nrf52833dk`, not just historically.
-2. Extend the second-provider ladder from the newly proven STM32 Claude runs to
-   the full official scoped pair:
+2. Extend the second-provider ladder from the newly recorded attached-board
+   Claude runs to the full official scoped pair:
    - freeform healthy run on both boards
    - six-case pilot-equivalent coverage for the attached board(s)
    - full `pilot_v1_plus_b003_b004` suite when the pair is attached together

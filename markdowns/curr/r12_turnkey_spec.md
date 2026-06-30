@@ -90,17 +90,27 @@ The current implemented prototype increment adds or tightens:
   hand-maintained server-tool prompt text
 - persisted provider/session metadata in turnkey state, events, and model-turn
   artifacts, including coarse provider progress checkpoints
+- Branch B's governed action boundary:
+  - model-native host work remains outside the MCP server
+  - board/server-native work routes through the brain gate
+  - ordered `action_batch` decisions execute in order and stop on the first
+    failure/refusal
+  - bounded brain-local `wait`
+  - UART `write_serial` as real hardware I/O through the server surface
+  - session-scoped client actions pre-registered with `--client-action
+    NAME=PATH`, snapshotted by hash, audited in `client_actions.json`, and run
+    through `run_script(name, inputs)` with a gated server API
 
 Later prototype waves remain open for:
 
 - Wave 2 Branch G: selected-skill index plus on-demand skill body loading
 - Wave 2 Branch G: cache-assisted reuse for deterministic setup/static
   artifacts
-- model-composed action batches
-- `wait`
-- UART write capability
+- dynamic model-authored client-action registration during an already-running
+  provider turn
 - additional timeout policy/clamp work
-- client-action registration/execution
+- progress UI and developer inspector completion
+- scoped green approval
 - chunked long-running progress checkpoints beyond the current event stream
 
 ## Architecture
@@ -388,6 +398,7 @@ The model-facing action surface is smaller than the full server surface.
 - `read_memory`
 - `flash_firmware`
 - `read_serial`
+- `write_serial`
 - `unlock_recover`
 
 ### Model-native host actions
@@ -406,11 +417,22 @@ friction than board operations.
 - diff against the original workspace snapshot
 - run final green verification
 
-### Deferred prototype work
+### Branch B action-boundary surface
 
-The current implementation does not yet include model-authored client actions,
-action batches, `wait`, or UART-write support. Those remain later prototype
-wave work and are intentionally outside the current Branch A scope.
+The current implementation includes Branch B's additive action surface:
+
+- ordered `action_batch` decisions using `action_type` plus arguments
+- bounded `wait(seconds)` as a brain-local delay
+- UART `write_serial` through the MCP server and shared UART service
+- session-scoped client actions registered before a run with
+  `--client-action NAME=PATH`
+- governed `run_script(name, inputs)` execution for registered scripts that
+  call server-native tools through the same brain gate as direct tool actions
+
+This does not implement dynamic model-authored action registration during an
+already-running provider turn, provider-native tool-call conversion, a general
+host execution MCP tool, or broad timeout policy ownership. Those remain later
+prototype or final-integration work.
 
 ### Actions intentionally withheld in v1
 
@@ -551,13 +573,13 @@ with `session_id=null` and a turnkey result that uses:
 
 The turnkey layer must add these artifacts:
 
-- `run-metadata/turnkey_request.json`
-- `run-metadata/turnkey_result.json`
-- `run-metadata/turnkey_state.json`
+- `runs/<session_id>/run-metadata/turnkey_request.json`
+- `runs/<session_id>/run-metadata/turnkey_result.json`
+- `runs/<session_id>/run-metadata/turnkey_state.json`
 - `logs/brain_events.jsonl`
 - `logs/brain_trace.jsonl`
 - `logs/model_turns.jsonl`
-- `logs/prompt.txt`
+- `runs/<session_id>/logs/prompt.txt`
 - `applied-patches/turnkey.diff`
 
 The state artifact must include the typed evidence trail:
@@ -579,10 +601,10 @@ The state artifact must include the typed evidence trail:
 
 In benchmark mode, also persist:
 
-- `run-metadata/benchmark_case.json`
-- `run-metadata/benchmark_result.json`
-- `run-metadata/score.json`
-- `run-metadata/firmware_identity.json`
+- `runs/<session_id>/run-metadata/benchmark_case.json`
+- `runs/<session_id>/run-metadata/benchmark_result.json`
+- `runs/<session_id>/run-metadata/score.json`
+- `runs/<session_id>/run-metadata/firmware_identity.json`
 
 Frozen benchmark session rule for `R12`:
 

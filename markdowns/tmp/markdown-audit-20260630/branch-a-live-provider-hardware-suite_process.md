@@ -239,6 +239,12 @@ Roadmap anchor: `R12` / `G7`.
     session `20260629T042514Z-de752672`.
   - `nrf52840dk__b002_wrong_known_value`: `FULL_SUCCESS`, score 100,
     session `20260629T042822Z-17b76990`.
+- Current workspace audit on 2026-06-30: the Branch A run directories named
+  above under `runs/20260629T03...`, `runs/20260629T04...`,
+  `runs/20260629T17...`, and `runs/20260629T18...` are not present in this
+  checkout's local `runs/` tree. The process ledger preserves the historical
+  run IDs and observed verdicts, but those specific untracked artifacts cannot
+  be reinspected locally until the run folders are restored.
 
 ## In progress
 
@@ -260,6 +266,9 @@ Roadmap anchor: `R12` / `G7`.
   the failure comes from this repo's adapter code.
 - Official scoped-pair closure remains pending because the attached Nordic
   board identifies as `0x52840`, not `0x52833`.
+- The Branch A/B run IDs are recorded in this ledger, but the corresponding
+  `20260629T03...` / `04...` / `17...` / `18...` local run directories are
+  absent in the current checkout.
 
 ## Hardware hand-off
 
@@ -277,9 +286,15 @@ hardware commands directly.
 - Branch `P-Wave-A` was clean before this doc/spec work started.
 - The verification spec is anchored to the actual `pyocd-debug-brain` CLI,
   benchmark runner, and configured suites in the current repo.
+- Local `runs/` currently contains the Branch B `20260628` deployment artifacts
+  and later dry-run `20260629T20...` / `20260630...` folders, but not the
+  Branch A/B `20260629T03...` / `04...` / `17...` / `18...` folders named by
+  this ledger.
 
 ## Pending verification
 
 - Official `nrf52833dk` second-provider closure with an actually attached
   `nrf52833dk`.
 - Anthropic/OpenAI API provider smoke when paid API credits are available.
+- Restoration or rerun of the missing Branch A/B artifact folders if local
+  reinspection of those specific run outputs is required.

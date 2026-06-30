@@ -260,12 +260,12 @@ uv run pyocd-debug-brain run --provider codex-cli --board-id <board-id> --worksp
 
 Required artifact checks for every Branch B deployment run:
 
-- `run-metadata/turnkey_result.json` records `final_status=diagnosed_only` or
+- `runs/<session_id>/run-metadata/turnkey_result.json` records `final_status=diagnosed_only` or
   an explicitly successful status and `classification=healthy`;
 - `actions_taken` includes the ordered Branch B board sequence;
 - coding prompts include `read_file`, `replace_file`, and `run_build`;
 - `mcp_tools_used` includes `connect`, `write_serial`, and `read_serial`;
-- `run-metadata/client_actions.json` records `uart_write.executed=true` and a
+- `runs/<session_id>/run-metadata/client_actions.json` records `uart_write.executed=true` and a
   content SHA-256;
 - `logs/model_turns.jsonl` contains multiple model turns for the coding prompt;
 - no command used a hardcoded serial port or probe UID.

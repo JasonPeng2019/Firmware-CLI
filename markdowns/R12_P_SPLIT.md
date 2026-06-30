@@ -69,16 +69,16 @@ For this prototype, Wave 0 uses a narrower proof boundary:
 
 - required now: current validated host + Codex-backed turnkey baseline on the
   scoped pair;
-- deferred accepted risk: second-provider full reproof and true fresh-machine
-  portability proof.
+- deferred accepted risk: exact official-pair second-provider reproof,
+  API-provider parity, and true fresh-machine portability proof.
 
 Wave 0 owns:
 
 0. `P0.0` layered validation
-   - use `markdowns/curr/p0_0_layered_validation_plan.md` as the execution
-     checklist for Wave 0 cleanup and proof
+   - use `markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md`
+     as the archived execution checklist for Wave 0 cleanup and proof
    - write the resulting pass/fail matrix to
-     `markdowns/curr/p0_0_validation_report.md`
+     `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`
 1. Current dirty-code cleanup
    - reconcile existing uncommitted/code changes against the build plan and docs
    - fix known broken tests or runtime regressions before adding new prototype
@@ -97,8 +97,9 @@ Wave 0 owns:
      (`nrf52833dk`)
    - record exact commands, outputs, and remaining hardware caveats
 4. Deferred-proof bookkeeping
-   - explicitly record second-provider and fresh-machine portability as
-     unverified accepted prototype risk
+   - explicitly record exact official-pair second-provider proof,
+     API-provider parity, and fresh-machine portability as unverified accepted
+     prototype risk
    - do not block `P0` on those deferred items unless the team later chooses to
      restore them as hard gates
 
@@ -106,14 +107,15 @@ Wave 0 exit criteria:
 
 - the worktree baseline for prototype work is intentionally clean or has only
   documented, non-blocking changes
-- `markdowns/curr/p0_0_validation_report.md` exists and records the executed
-  layers, elapsed times, artifacts, and remaining risks
+- `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md` records the
+  executed layers, elapsed times, artifacts, and remaining risks
 - non-hardware checks have been run and recorded
 - real STM32 and Nordic board checks have been run by a human/operator and
   recorded, or the missing hardware proof is explicitly marked as blocking
 - the team agrees this is the branch all later prototype branches start from
-- deferred second-provider and fresh-machine portability items are recorded as
-  unverified accepted prototype risk, not silently assumed working
+- deferred official-pair second-provider, API-provider, and fresh-machine
+  portability items are recorded as unverified accepted prototype risk, not
+  silently assumed working
 
 Wave 0 is not a feature branch. It is the baseline that later branches merge
 back into.
@@ -156,10 +158,10 @@ Modules:
 P0 should not implement the full features. It should preserve current behavior
 and add tests for parsing/serialization and no-op hooks.
 
-Active implementation docs for this step:
+Archived implementation docs for this step:
 
-- `markdowns/curr/p0_foundation_spec.md`
-- `markdowns/curr/p0_foundation_process.md`
+- `markdowns/tmp/curr-archive-20260628/p0_foundation_spec.md`
+- `markdowns/tmp/curr-archive-20260628/p0_foundation_process.md`
 
 ## Wave 1 - Three Parallel Branches
 
@@ -600,14 +602,15 @@ into the other branch, or into final integration.
 
 ## Pending Verification
 
-- Wave 0 now has an executed `P0.0` validation report in
-  `markdowns/curr/p0_0_validation_report.md`, including real proof on the
+- Wave 0 now has an executed `P0.0` validation report archived at
+  `markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md`, including real proof on the
   attached `nrf52840dk + nucleo_l476rg` pair and the merged `P-Wave-0` branch.
 - If the team wants the prototype gate tied back to the exact official scoped
   pair, a fresh `nrf52833dk + nucleo_l476rg` re-proof remains a separate
   follow-on evidence task.
-- Second-provider and fresh-machine portability proof remain intentionally
-  deferred outside the Wave 0 gate and must not be claimed as verified.
+- Exact official-pair second-provider, API-provider parity, and fresh-machine
+  portability proof remain intentionally deferred outside the Wave 0 gate and
+  must not be claimed as verified.
 - The exact module names should be checked against implementation reality when
   `P0` starts.
 - No code behavior has been changed by this document.

@@ -1,4 +1,4 @@
-# Things To Change
+﻿# Things To Change
 
 This backlog is ordered by implementation priority: earliest prototype-enabling
 changes first, later MVP/product polish last. The old entry numbers are preserved
@@ -45,17 +45,17 @@ Defer until after the prototype proves the core loop:
 board (through the brain)* or *returns without it*.** Three consequences the rest of
 this doc elaborates:
 
-1. **The model can do anything on the host** — files, shell, local scripts — bounded
+1. **The model can do anything on the host** â€” files, shell, local scripts â€” bounded
    only by the provider sandbox (`danger-full-access`), **not** by the brain. The
    brain governs the *board*, never the host (entry #11; see the accepted stance).
-2. **The board is reachable only through the brain — structurally, not by rule.**
+2. **The board is reachable only through the brain â€” structurally, not by rule.**
    The server (hardware) tools are locked behind the brain: the brain owns the MCP
    session and the gated client API exists only inside a governed decision, so there
    is no other sanctioned path to the board. (A model reaching *raw* hardware around
    the brain is the accepted soft-guardrails residual.)
 3. **Every turn closes with one governed decision**, which is binary in spirit:
-   *perform a board action* (a server-native decision — `run_script`, `flash`,
-   `read_memory`, …) **or** *return* (a terminal/communication decision —
+   *perform a board action* (a server-native decision â€” `run_script`, `flash`,
+   `read_memory`, â€¦) **or** *return* (a terminal/communication decision â€”
    `done` / no-op, `respond_to_user`, `needs_clarification`, `infeasible`). A
    decision always closes the turn (keeping the brain's `BrainState`/convergence
    boundary), but "return" means the turn touched no board.
@@ -195,9 +195,9 @@ Two caveats specific to this product, true for every entry:
 
 - **Provider caching is TTL-bound and our turns are slow.** API "KV cache" is
   provider prompt caching, which expires (Anthropic ~5 min default, 1 hr opt-in;
-  OpenAI prefix cache minutes). Hardware ops are long —
+  OpenAI prefix cache minutes). Hardware ops are long â€”
   `FLASH_TIMEOUT_SECONDS=240`, `RECOVER_TIMEOUT_SECONDS=180`
-  ([loop.py:49](../src/pyocd_debug_mcp/brain/loop.py#L49)) — so a flash/recover
+  ([loop.py:49](../../src/pyocd_debug_mcp/brain/loop.py#L49)) â€” so a flash/recover
   turn can outlast the cache window and evict the prefix. Prefer Anthropic's
   1-hour cache and do not assume cache hits across slow turns.
 - **Raw API re-owns compaction.** The CLIs give auto-compaction for free; over
@@ -211,7 +211,7 @@ governed/terminal decision; history accumulates as ordinary conversation turns
 (the model's JSON reply becomes the assistant message, the next governed result is
 appended as the user message), and tool descriptions + skills live as **cached
 text in the session prefix**. The append-only shape is what preserves the KV cache
-— a JSON object in an assistant message caches exactly as well as a native tool
+â€” a JSON object in an assistant message caches exactly as well as a native tool
 call would. Switching the output format to the provider's native `tools` parameter
 and `tool_result` blocks is a **separate, optional** change (entry #4), not required
 for memory or caching.
@@ -221,23 +221,23 @@ for memory or caching.
 ## Accepted design stance: direct hardware access is not sandboxed
 
 **Decision (accepted):** on the CLI providers the model already runs with full
-code execution — codex is invoked `-a never -s danger-full-access`
-([provider_codex_cli.py:87](../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L87))
-— so it can in principle bypass the brain and drive the probe / serial port
+code execution â€” codex is invoked `-a never -s danger-full-access`
+([provider_codex_cli.py:87](../../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L87))
+â€” so it can in principle bypass the brain and drive the probe / serial port
 directly (enumerate USB, run `pyocd`, open the serial port), around the flash gate
 and convergence watcher. We **accept** this rather than sandboxing the provider.
 
-**Scope of the softness — read this carefully.** The *only* thing being conceded
+**Scope of the softness â€” read this carefully.** The *only* thing being conceded
 is that **direct hardware access is not physically prevented**. This is **not** a
-statement that the brain's gates are weak or advisory. On the normal path — the
-model acting *through* the brain, which is what the providers do today — the flash
+statement that the brain's gates are weak or advisory. On the normal path â€” the
+model acting *through* the brain, which is what the providers do today â€” the flash
 gate, the convergence watcher, and the entry #8 verdict gates are **fully
 enforced**: the brain refuses the operation unless its checks pass. The single
 ceiling we accept is that no brain-side gate is absolute against a model that
 *deliberately goes around the brain entirely* via direct hardware access; we take
 that ceiling instead of sandboxing, and we still design every gate as a real,
 enforced check on the cooperative path. In particular, this stance does **not**
-soften the early-termination gates in entry #8 — those stay hard.
+soften the early-termination gates in entry #8 â€” those stay hard.
 
 **Mitigation (incentive-level, proportionate to the cooperative-model threat).**
 We do not sandbox the bypass; we make it never the rational move, with defense in
@@ -245,24 +245,24 @@ depth:
 
 - **Capability gap.** The MCP server brings SWD, drivers preloaded at setup,
   resolved board facts (target/baud/addresses), session state, and helpers like
-  connect-by-board-id. The raw sandbox has none of it — going direct is strictly
+  connect-by-board-id. The raw sandbox has none of it â€” going direct is strictly
   more work and less capable. The sanctioned path is the path of least resistance.
 - **Structural friction.** The brain holds the *only* live probe handle; the
   provider subprocess is spawned separately in a temp dir with no session handle
   and no probe reference. To bypass, the model would have to independently
   enumerate USB and stand up `pyocd`/serial from scratch.
 - **Per-prompt reminder (legibility).** A standing instruction to prefer the MCP
-  server's tools and not drive the probe directly — because the server has the
+  server's tools and not drive the probe directly â€” because the server has the
   drivers, board config, and SWD the model needs. This also covers entry #9
   session tools (use gated reads, never touch hardware directly).
 - **Gate -> hand-off, not brute-force.** A standing instruction that a *genuine
-  dead-end* — persistent gating with no legitimate path, a convergence block, or
-  any situation whose only "way forward" is going around the brain — means
+  dead-end* â€” persistent gating with no legitimate path, a convergence block, or
+  any situation whose only "way forward" is going around the brain â€” means
   **terminate and hand off to the human** (route through entry #8
   `needs_intervention` / `infeasible`), as a first-priority response rather than
   brute-forcing or bypassing. This removes the motivation in the one window where
   it was highest (a stuck/blocked model). **Distinguish** this from a *corrective
-  refusal* (e.g. "use `board_id`", "reuse the session", "recover forbidden") — those
+  refusal* (e.g. "use `board_id`", "reuse the session", "recover forbidden") â€” those
   are guidance to apply and continue, not cues to terminate.
 - **Deterministic backstop.** The convergence watcher still force-terminates the
   loop on a hard block, so brute-force continuation inside the brain is bounded
@@ -293,7 +293,7 @@ good enough for the current prototype bridge, but they are not the final robust
 provider integration.
 
 Consequence: the deterministic convergence watcher
-(`_check_local_convergence`, [loop.py:835](../src/pyocd_debug_mcp/brain/loop.py#L835))
+(`_check_local_convergence`, [loop.py:835](../../src/pyocd_debug_mcp/brain/loop.py#L835))
 can detect and *stop* thrashing, but nothing in the prompt **points the model in
 a non-thrashing direction**. Anti-thrash is a floor, not guidance. The model
 re-derives its understanding from a thin snapshot every turn and can re-walk
@@ -304,21 +304,21 @@ investigation paths it already exhausted.
 Stop conflating two different concerns the current design merges into
 `BrainState`:
 
-1. **Deterministic safety-state** — "have I thrashed, am I allowed to flash, is
+1. **Deterministic safety-state** â€” "have I thrashed, am I allowed to flash, is
    it verified green?" Stays in Python, hash-based, gates the loop. `BrainState`
    is correct for this; keep it.
-2. **Model reasoning-context** — "what is my evolving theory, what have I ruled
+2. **Model reasoning-context** â€” "what is my evolving theory, what have I ruled
    out, what did each experiment return?" This should be real, accumulating
    model memory, not a per-turn scalar snapshot.
 
 For the goal of **one most-accurate / most-efficient agent** (explicitly not
 optimizing for cross-provider comparison or provider symmetry), the recommended
 shape is to **give the model a persistent, append-only session while keeping the
-turnkey brain exactly where it is** — as the executor and gate for governed
+turnkey brain exactly where it is** â€” as the executor and gate for governed
 boundaries. Note this is one axis only (session/memory) and is independent of the
 output-format axis: **we keep the `TurnDecision` JSON return for the final
 governed/terminal decision of a turn.** (Switching to native tool calls is a
-separate, optional change — entry #4.) Keeping JSON here must not be read as
+separate, optional change â€” entry #4.) Keeping JSON here must not be read as
 keeping old per-local-action mediation; entries #9, #11, and #12 supersede that
 for model-native host work.
 
@@ -343,18 +343,18 @@ for model-native host work.
   returned governed decision, dispatches the selected server-native/client-action/
   terminal action, applies the existing checks (argument normalization, refusals,
   flash gate, convergence blocks in `_execute_server_tool`
-  [loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)), runs the tool against
+  [loop.py:513](../../src/pyocd_debug_mcp/brain/loop.py#L513)), runs the tool against
   the MCP server when needed, observes workspace/tool-store diffs at the boundary,
   and appends the result into the session as the next user turn.
 - `BrainState` still exists, derived from observed tool results exactly as now,
-  and still drives convergence refusals — but it is the safety spine, no longer
+  and still drives convergence refusals â€” but it is the safety spine, no longer
   the model's memory.
 
 This is both more accurate (full reasoning continuity, including the model's own
 prior `TurnDecision` reasoning fields, which now persist in the conversation) and
 more efficient (append-only conversation is KV-cache friendly: stable cached
 prefix + only the newest tool-result computed). The KV-cache win comes from the
-append-only **session**, not from any change to the output format — a JSON object
+append-only **session**, not from any change to the output format â€” a JSON object
 in an assistant message caches as well as a native tool call. The current
 re-serialization approach is actively cache-hostile because the mutating
 "Current state" block invalidates the cache mid-prompt every turn.
@@ -372,11 +372,11 @@ products.
 
 Whichever execution mode is active, maintain and inject a compact, deterministic,
 **ground-truth** action ledger (derived from observed results, like `BrainState`
-— never the model's self-report). It is cheap (one line per action) and directly
+â€” never the model's self-report). It is cheap (one line per action) and directly
 supplies direction, not just thrash-detection.
 
 Crucially it must carry the **result value of each action, not a binary ok/fail**
-— the value is the signal (`read_core_register pc=0x08000af2`, `read_memory
+â€” the value is the signal (`read_core_register pc=0x08000af2`, `read_memory
 0x20000000 -> 0xDEADBEEF`, `read_serial SILENT excerpt="\x00"`, `run_build FAILED
 exit=1 "undefined reference to uart_init"`). A checkmark throws away exactly the
 datum that points the model somewhere.
@@ -385,7 +385,7 @@ Tier by recency, but **every tier keeps the actual result**, never collapsing to
 a checkmark:
 
 - **Tier 1 (last ~3-5 turns):** full result text verbatim.
-- **Tier 2 (older):** one-line distilled result — extracted salient
+- **Tier 2 (older):** one-line distilled result â€” extracted salient
   value/verdict plus a short capped excerpt (<=120 chars). Keeps the fact,
   drops the bulk.
 - **Tier 3 (only if still overflowing):** collapse oldest to
@@ -394,10 +394,10 @@ a checkmark:
 Distillation should be a small per-tool "salient result extractor" with a generic
 truncation fallback. Half of it already exists: `ToolTextResult` parses
 `session_id` / `probe_uid` / `refusal_code` / `blocked_code`
-([mcp_client.py:66](../src/pyocd_debug_mcp/brain/mcp_client.py#L66)) and the loop
+([mcp_client.py:66](../../src/pyocd_debug_mcp/brain/mcp_client.py#L66)) and the loop
 already extracts `pc` and the UART excerpt
-([loop.py:449](../src/pyocd_debug_mcp/brain/loop.py#L449),
-[loop.py:457](../src/pyocd_debug_mcp/brain/loop.py#L457)).
+([loop.py:449](../../src/pyocd_debug_mcp/brain/loop.py#L449),
+[loop.py:457](../../src/pyocd_debug_mcp/brain/loop.py#L457)).
 
 In the native-session design this ledger has a second, sharper justification: it
 is the **compaction-proof anchor**. Provider auto-compaction is lossy and may
@@ -431,14 +431,14 @@ resumable session handle.
    - final Claude adapter: Claude Agent SDK session API;
    - API adapters: OpenAI Responses handle and Anthropic client-owned history.
    No native tool-calling is required for this change; that remains entry #4.
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — split `run_turnkey` into:
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” split `run_turnkey` into:
    - a persistent-session executor that lets the provider perform model-native
      host work inside its own session, appends each governed result as the next
      user turn, parses the returned turn-closing `TurnDecision`, and dispatches
      only the governed action through the brain gate; and
    - the existing re-serializing loop, retained as the deterministic mode.
    Add `_format_action_ledger(state)` and inject it in both modes.
-3. **`src/pyocd_debug_mcp/brain/state.py`** — extend the records behind
+3. **`src/pyocd_debug_mcp/brain/state.py`** â€” extend the records behind
    `actions_taken` / `mcp_tools_used` to store the distilled result per action
    (today they store only names), so the ledger renderer has ground-truth result
    data to draw from.
@@ -446,7 +446,7 @@ resumable session handle.
    `src/pyocd_debug_mcp/brain/config.py`** - keep native memory-sync cadence as
    a single configurable setting shared by CLI, API, shell, env, and run
    artifacts.
-5. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — extend the per-tool salient
+5. **`src/pyocd_debug_mcp/brain/mcp_client.py`** â€” extend the per-tool salient
    result extraction beyond the current fields.
 
 ### Wave placement
@@ -479,7 +479,7 @@ layer plus the configurable native safety-sync cadence.
   conversation paths; on a hand-rolled raw message array (e.g. Anthropic
   Messages) it requires explicit `cache_control` breakpoints.
 - **Whitelist coupling.** The native loop must still expose only
-  `AllowedServerToolName` ([actions.py:10](../src/pyocd_debug_mcp/brain/actions.py#L10)),
+  `AllowedServerToolName` ([actions.py:10](../../src/pyocd_debug_mcp/brain/actions.py#L10)),
   not the server's full tool set. Pairs naturally with change #1 (forward tool
   descriptions for exactly those tools).
 - **Doc-sync + verify.** Update the README turnkey section / R12 turnkey spec in
@@ -489,7 +489,7 @@ layer plus the configurable native safety-sync cadence.
 
 On API credits the session is the conversation itself, so the reasoning-context
 (prior tool calls, results, the model's own `tool_use` turns) is carried by the
-provider — OpenAI server-side via `previous_response_id`, Anthropic by our resent
+provider â€” OpenAI server-side via `previous_response_id`, Anthropic by our resent
 message array. The brain-owned action ledger is still injected, but its job
 shifts: it is the **deterministic, compaction-proof** restatement of ground-truth
 results that must survive any summarization we add when a raw-API session
@@ -532,7 +532,7 @@ Claude API-specific work:
 
 ### Problem / current behavior
 
-Today every model action is a `TurnDecision` the brain mediates — even inert local
+Today every model action is a `TurnDecision` the brain mediates â€” even inert local
 work. Design 2 (entry #9) showed authoring is inert and should not be gated, and the
 two-class discussion generalizes it: the brain should govern only what touches the
 board or feeds its safety/convergence/bounding, and leave inert local work free.
@@ -542,18 +542,18 @@ Without a stated rule, each op is classified ad hoc.
 
 Define two classes of capability in the client:
 
-- **Model-native tools** — purely local, inert, reversible, and irrelevant to
+- **Model-native tools** â€” purely local, inert, reversible, and irrelevant to
   hardware/convergence/bounding: read/list/write files, shell utilities
   (`cd`/`ls`/`mkdir`/`grep`/`cat`), authoring + running *pure-local* scripts, local
   computation over already-gathered data. The model runs these **freely in its
-  sandbox**, in its native flow, **not** as decisions — the brain does not gate them.
-- **Server-native tools** — reach hardware or governed effects: `flash`,
+  sandbox**, in its native flow, **not** as decisions â€” the brain does not gate them.
+- **Server-native tools** â€” reach hardware or governed effects: `flash`,
   `read_memory`/`read_serial`, `write_memory`, `recover`, UART write; running a
   hardware-touching script; and brain-tracked ops (`run_build`, firmware-*source*
   edits) that feed convergence or are the repair deliverable. Invoked **only via a
   governed decision** the brain dispatches, gates, and bounds.
 
-### The dividing line — governance, not destructiveness
+### The dividing line â€” governance, not destructiveness
 
 The brain governs an op iff **any** of these holds:
 
@@ -581,11 +581,11 @@ native script has no hardware client handle, so it *structurally cannot* reach a
 server-native tool through the sanctioned channel. If a script wants hardware it
 must go through `run_script` (the only context where the brain injects the API).
 (A script reaching *raw* hardware around the API is the accepted soft-guardrails
-bypass — possible, disincentivized, not the sanctioned path.)
+bypass â€” possible, disincentivized, not the sanctioned path.)
 
 ### Scope: the brain governs the board, not the host
 
-"Model-native runs free" means the brain does not gate it — **host-machine safety
+"Model-native runs free" means the brain does not gate it â€” **host-machine safety
 (filesystem, disk, network) is the provider sandbox's job, not the brain's.** Under
 the [accepted stance](#accepted-design-stance-direct-hardware-access-is-not-sandboxed)
 the model already has full host access (`danger-full-access`), so this grants
@@ -594,8 +594,8 @@ sandbox's concern (which we have accepted is soft).
 
 ### Gate vs observe
 
-Model-native does **not** mean invisible. The brain still **observes** effects —
-snapshots the tool store / diffs the workspace at the decision boundary — so the
+Model-native does **not** mean invisible. The brain still **observes** effects â€”
+snapshots the tool store / diffs the workspace at the decision boundary â€” so the
 free phase is auditable. The distinction is **gate vs. observe**, not see vs. not.
 
 ### Reclassifies the current action set
@@ -606,18 +606,18 @@ free phase is auditable. The distinction is **gate vs. observe**, not see vs. no
 
 ### Where it belongs
 
-1. **`actions.py`** — the action union is the set of **server-native** actions only
+1. **`actions.py`** â€” the action union is the set of **server-native** actions only
    (`server_tool`, `run_script`, `run_build`, firmware-edit, plus the terminal /
    communication decisions of entry #12). Model-native ops are not actions.
-2. **brain runner** — provide the gated client API only inside `run_script`; run
+2. **brain runner** â€” provide the gated client API only inside `run_script`; run
    free scripts in the sandbox without it.
-3. **audit** — snapshot the tool store / diff the workspace at the decision boundary.
+3. **audit** â€” snapshot the tool store / diff the workspace at the decision boundary.
 
 ### Constraints / watch-outs
 
 - **Enforcement is capability-scoping** (API only in `run_script`), not model
   self-labeling.
-- **Board vs host scope** — host safety is the sandbox's (accepted soft), not the
+- **Board vs host scope** â€” host safety is the sandbox's (accepted soft), not the
   brain's.
 - **Observe, don't gate** model-native ops, for audit.
 - **Doc-sync + verify.** This reclassifies the action set; update the README / R12
@@ -636,7 +636,7 @@ Design 2 (entry #9), batches (entry #5), and the turn structure (entry #12).
 ### Problem / current behavior
 
 Today every turn forces a `TurnDecision` through the brain even when the model is
-doing inert local work — throttling it and conflating "thinking / local work" with
+doing inert local work â€” throttling it and conflating "thinking / local work" with
 "interacting with the board." Entry #11 splits the tool classes; this entry states
 the **output contract** that falls out of that split.
 
@@ -644,13 +644,13 @@ the **output contract** that falls out of that split.
 
 Invert the default: by default the model has **free reign on the user's computer**
 (model-native tools, entry #11), and it produces a **decision to the brain only to
-interact with the board — or to terminate / communicate.** The final output of a
+interact with the board â€” or to terminate / communicate.** The final output of a
 turn is *always* a decision, but the decision may be:
 
-- **a board interaction** — a server-native action (`run_script` / `flash` /
-  `read_memory` / …); or
-- **"do nothing with the board"** — because the model did not need it: a terminal /
-  communication decision — `respond_to_user(text)`, `needs_clarification`
+- **a board interaction** â€” a server-native action (`run_script` / `flash` /
+  `read_memory` / â€¦); or
+- **"do nothing with the board"** â€” because the model did not need it: a terminal /
+  communication decision â€” `respond_to_user(text)`, `needs_clarification`
   (-> entry #8 `needs_intervention`), `infeasible` (-> entry #8), or `done` / no-op.
 
 So: the model can do whatever it wants locally, *regardless*; the **decision** is
@@ -663,34 +663,34 @@ governed decision." "I don't -> here is my text / terminal output."
 - **terminal / communication**: `respond_to_user(text)`, `needs_clarification`,
   `infeasible`, `done` / no-op.
 
-Local model-native work is **not** in this union — it is not a decision at all.
+Local model-native work is **not** in this union â€” it is not a decision at all.
 
 ### Why
 
 - Removes the throttle: inert local work no longer round-trips the brain.
-- The brain's loop governs exactly the thing that matters — board interaction —
+- The brain's loop governs exactly the thing that matters â€” board interaction â€”
   and nothing else.
 - Cleanly supports **text-only turns** (answer / ask / explain) with no hardware
   action, which the current "every turn is a hardware-shaped decision" cannot.
 
 ### Where it belongs
 
-1. **`actions.py`** — the decision union adds `respond_to_user(text)` and
+1. **`actions.py`** â€” the decision union adds `respond_to_user(text)` and
    `done` / no-op alongside the server-native actions and the entry #8 verdicts.
-2. **`loop.py`** — a turn = free model-native phase, then **exactly one** governed
+2. **`loop.py`** â€” a turn = free model-native phase, then **exactly one** governed
    decision that closes it; `done` / `respond_to_user` end the turn without any
    board interaction.
 
 ### What it is supposed to do
 
 - Make "needs the board" the *only* reason to produce a governed decision, while the
-  model works freely otherwise — the principled turn loop behind entries #9 and #11.
+  model works freely otherwise â€” the principled turn loop behind entries #9 and #11.
 
 ### Constraints / watch-outs
 
 - **A decision still closes every turn** (even `done` / `respond_to_user`), so the
   brain always has a defined turn boundary for `BrainState` / convergence.
-- **The board is always gated**, regardless of how free the local phase is — board
+- **The board is always gated**, regardless of how free the local phase is â€” board
   interaction happens *only* through the decision.
 - **One governed decision per turn** is sufficient because a single `run_script`
   can orchestrate many gated calls (entries #5/#9); "one decision" bounds the
@@ -715,19 +715,19 @@ is used as a pure text -> `TurnDecision` JSON function and never speaks MCP, so
 the only things it learns about the tools are:
 
 - a bare list of tool **names** in the turn prompt's "Available action kinds"
-  section (`_build_turn_prompt`, [src/pyocd_debug_mcp/brain/loop.py:238](../src/pyocd_debug_mcp/brain/loop.py#L238)),
+  section (`_build_turn_prompt`, [src/pyocd_debug_mcp/brain/loop.py:238](../../src/pyocd_debug_mcp/brain/loop.py#L238)),
 - a freeform `arguments` bag in the decision schema
-  (`turn_decision_output_schema`, [src/pyocd_debug_mcp/brain/actions.py:141](../src/pyocd_debug_mcp/brain/actions.py#L141)) —
+  (`turn_decision_output_schema`, [src/pyocd_debug_mcp/brain/actions.py:141](../../src/pyocd_debug_mcp/brain/actions.py#L141)) â€”
   `{"type": "object", "additionalProperties": true}`, i.e. no per-tool argument
   shape at all,
 - a handful of hand-written usage rules in the static instructions
-  (`_build_instructions`, [src/pyocd_debug_mcp/brain/loop.py:176](../src/pyocd_debug_mcp/brain/loop.py#L176)) —
+  (`_build_instructions`, [src/pyocd_debug_mcp/brain/loop.py:176](../../src/pyocd_debug_mcp/brain/loop.py#L176)) â€”
   e.g. "connect with board_id", "read_memory takes a hex string", "no cortex_m".
 
 Meanwhile the MCP server already carries rich, canonical tool docstrings
 (the README calls these the source of truth that "the MCP client reads over the
 protocol"). The turnkey client **discards** them: `StdioToolClient.list_tool_names`
-([src/pyocd_debug_mcp/brain/mcp_client.py:160](../src/pyocd_debug_mcp/brain/mcp_client.py#L160))
+([src/pyocd_debug_mcp/brain/mcp_client.py:160](../../src/pyocd_debug_mcp/brain/mcp_client.py#L160))
 keeps only `tool.name` and throws away `tool.description` and `tool.inputSchema`.
 
 Net effect: a BYO-agent (the user's own Claude Code) connecting directly gets
@@ -744,36 +744,36 @@ prompt so the decision model sees, per allowed tool:
 - the human-readable description (the existing docstring),
 - the argument names, types, and which are required.
 
-This keeps the docstring as the single source of truth (no sidecar tool docs —
+This keeps the docstring as the single source of truth (no sidecar tool docs â€”
 consistent with the `superpowers-tool-docs` rule) and simply stops dropping it
 on the floor in the turnkey path.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — stop discarding metadata.
+1. **`src/pyocd_debug_mcp/brain/mcp_client.py`** â€” stop discarding metadata.
    - `ToolClientProtocol` / `StdioToolClient`: add a method (e.g.
      `list_tools()` returning name + description + inputSchema) alongside the
      existing `list_tool_names`, or widen the existing call to return full
      `types.Tool` objects.
-   - `LocalMCPClient.start` ([mcp_client.py:208](../src/pyocd_debug_mcp/brain/mcp_client.py#L208))
+   - `LocalMCPClient.start` ([mcp_client.py:208](../../src/pyocd_debug_mcp/brain/mcp_client.py#L208))
      currently stores only `available_tools: tuple[str, ...]`. Add a parallel
      `tool_specs` mapping `name -> (description, input_schema)` populated at
      startup.
 
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — render and inject.
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” render and inject.
    - Add a helper (e.g. `_format_tool_catalog(client, allowed_names)`) that
      renders only the **whitelisted** tools (`AllowedServerToolName`,
-     [actions.py:10](../src/pyocd_debug_mcp/brain/actions.py#L10)) — do not leak
+     [actions.py:10](../../src/pyocd_debug_mcp/brain/actions.py#L10)) â€” do not leak
      the tools the brain deliberately does not expose (step, write_memory,
      breakpoints, etc.).
    - Splice that catalog into `_build_turn_prompt`
-     ([loop.py:196](../src/pyocd_debug_mcp/brain/loop.py#L196)), replacing or
+     ([loop.py:196](../../src/pyocd_debug_mcp/brain/loop.py#L196)), replacing or
      augmenting the bare-name "Available action kinds" list. The client is
-     created inside `run_turnkey` ([loop.py:998](../src/pyocd_debug_mcp/brain/loop.py#L998)),
+     created inside `run_turnkey` ([loop.py:998](../../src/pyocd_debug_mcp/brain/loop.py#L998)),
      so the catalog must be fetched after `client.start()` and threaded into the
      per-turn prompt build.
 
-3. **(Optional, stronger) `src/pyocd_debug_mcp/brain/actions.py`** — the
+3. **(Optional, stronger) `src/pyocd_debug_mcp/brain/actions.py`** â€” the
    `server_tool.arguments` schema stays freeform, but the rendered catalog gives
    the model the per-tool argument shape in prose. Tightening the actual schema
    per tool is a larger, separate change and should stay out of scope here.
@@ -787,7 +787,7 @@ on the floor in the turnkey path.
 - Reduce malformed/!misused tool calls and the wasted retry turns they cost
   (today the only correction signal is the next-turn `last_result` text).
 - Stay within the brain's deliberately narrow surface: only whitelisted tools
-  are described, so this does not widen what the model can do — only what it
+  are described, so this does not widen what the model can do â€” only what it
   understands about what it is already allowed to do.
 
 ### Constraints / watch-outs
@@ -800,7 +800,7 @@ on the floor in the turnkey path.
   not by the server's full tool set, or it will advertise tools the loop will
   reject. This is the same *curated-allowlist* discipline as entry #3's
   `load_skill` scoping (the model may only name items from a brain-curated set,
-  never something outside it) and entry #5's per-step batch gating — one principle,
+  never something outside it) and entry #5's per-step batch gating â€” one principle,
   applied to tools, skills, and batch steps alike.
 - **Doc-sync.** This changes how the turnkey brain is documented to the model.
   Per `superpowers-doc-sync`, the canonical doc (README turnkey section and/or
@@ -813,7 +813,7 @@ on the floor in the turnkey path.
 ### Native-session (API) note
 
 In the default persistent session (entry #2, `TurnDecision` JSON return), deliver
-this metadata as a **cached text block in the session prefix** — rendered once
+this metadata as a **cached text block in the session prefix** â€” rendered once
 from each whitelisted tool's MCP `description` + `inputSchema` and never rebuilt,
 so it stays in the cached prefix for the whole run at zero per-turn cost. The
 re-serialization / CLI one-shot mode includes the same rendered catalog in its
@@ -1048,18 +1048,18 @@ layer is active.
 ### Problem / current behavior
 
 The terminal vocabulary is `fixed`, `healthy_confirmed`, `diagnosed_only`,
-`unresolved`, `blocked` ([actions.py:25](../src/pyocd_debug_mcp/brain/actions.py#L25)).
+`unresolved`, `blocked` ([actions.py:25](../../src/pyocd_debug_mcp/brain/actions.py#L25)).
 There is no clean way for the model to say either of two distinct things:
 
-1. **"This task cannot be completed in the current physical setup"** — the board
+1. **"This task cannot be completed in the current physical setup"** â€” the board
    is miswired, a component is missing, a rail is dead. Today this only
    approximates as `diagnosed_only` / `unresolved` + `classification=physical_fault`,
    which does not signal *human bench action required* and is muddled with "the
    agent gave up."
-2. **"I could continue, but a human should decide first"** — e.g. the next test
+2. **"I could continue, but a human should decide first"** â€” e.g. the next test
    would take 14 hours, or the next action is destructive/irreversible, or the
    task is genuinely ambiguous. Today the model either barrels on, grinds to
-   `max_iters`, or is brain-`blocked` — none of which is "pause and ask the
+   `max_iters`, or is brain-`blocked` â€” none of which is "pause and ask the
    human."
 
 Both differ from `blocked`, which is **brain-imposed** (convergence / refusal /
@@ -1068,20 +1068,20 @@ max-iters), not a model-reached judgment.
 ### What the change is
 
 Add three model-judged terminal verdicts to `FinalStatus`. Crucially they are **not
-hard-verified by the brain** — the brain cannot pre-enumerate every way a task can be
+hard-verified by the brain** â€” the brain cannot pre-enumerate every way a task can be
 infeasible or need intervention ("board dead", "X disconnected", and the infinite
 tail), so there is no fixed brain test for each case. Instead the gate is **forced
 externalization**: the model must turn its claim into a **runnable artifact the brain
 executes and judges**, not a bare assertion.
 
-- **`infeasible`** — a *verdict*: task not achievable in the current physical
+- **`infeasible`** â€” a *verdict*: task not achievable in the current physical
   configuration; human hardware action required. Typically
   `classification=physical_fault`.
-- **`needs_intervention`** — a *pause-and-ask*: the model wants a human decision
-  (permission or redirection) before proceeding — the next op is too long/costly,
+- **`needs_intervention`** â€” a *pause-and-ask*: the model wants a human decision
+  (permission or redirection) before proceeding â€” the next op is too long/costly,
   destructive/irreversible, or any other reason it judges warrants a human. Not a
   failure.
-- **`ambiguous`** (= entry #12 `needs_clarification`) — the task itself is
+- **`ambiguous`** (= entry #12 `needs_clarification`) â€” the task itself is
   underspecified; the model needs the human to disambiguate.
 
 **`infeasible` and `needs_intervention` are model-made-script tested, with
@@ -1092,17 +1092,17 @@ touch the board.
 
 ### The gate: forced externalization, not brain verification
 
-The brain is **not** a hard guardrail here — it does not (cannot) ship a check for
+The brain is **not** a hard guardrail here â€” it does not (cannot) ship a check for
 every mode. What it does is **force the model to prove its claim with a runnable
 test, then run that test itself** (challenge-response, structured like the green-check
-gate [loop.py:888](../src/pyocd_debug_mcp/brain/loop.py#L888)):
+gate [loop.py:888](../../src/pyocd_debug_mcp/brain/loop.py#L888)):
 
 1. **Model declares** the verdict.
-2. **Brain challenges:** "prove it — write ground-truth test script(s) (using the
+2. **Brain challenges:** "prove it â€” write ground-truth test script(s) (using the
    gated server-tool hardware API, entry #9) into the tool folder and give me their
    names." (Plus, for `needs_intervention`, the specific human question / estimate.)
 3. **Model authors** the scripts (native, entry #9) and supplies the names.
-4. **Brain runs them** against real ground truth and **judges the observations** —
+4. **Brain runs them** against real ground truth and **judges the observations** â€”
    the model never sets the flag, and the brain reads the *facts the scripts
    produced* (applying its own sanity checks), not the model's pass/fail label.
 5. **Terminate, or bounce:** if the observations support the verdict, terminate with
@@ -1112,7 +1112,7 @@ gate [loop.py:888](../src/pyocd_debug_mcp/brain/loop.py#L888)):
 
 **Why this works (the real guardrail):** it is easy to hallucinate the *word*
 "infeasible"; it is very hard to hallucinate an entire **test that passes while the
-task is actually feasible** — because the test runs against the real board, and a
+task is actually feasible** â€” because the test runs against the real board, and a
 working board is a hostile witness to a false test. The brain isn't verifying the
 claim's *logic*; it is **raising the cost of a false verdict from ~0 (a bare
 assertion) to high (a rigged-but-passing hardware test)**, in proportion to how much
@@ -1122,27 +1122,27 @@ real ground truth backs the claim.
 
 | Verdict | What the script runs against | How hard to fake a passing test |
 | --- | --- | --- |
-| `infeasible` | real hardware (reads/probes) | Very hard — a working board contradicts a false test; you'd have to actively rig the logic |
-| `needs_intervention` | estimates / computed numbers | Easier — no ground truth to contradict a self-serving estimate |
-| `ambiguous` | nothing (no test possible) | n/a — only a specificity floor |
+| `infeasible` | real hardware (reads/probes) | Very hard â€” a working board contradicts a false test; you'd have to actively rig the logic |
+| `needs_intervention` | estimates / computed numbers | Easier â€” no ground truth to contradict a self-serving estimate |
+| `ambiguous` | nothing (no test possible) | n/a â€” only a specificity floor |
 
-- **`infeasible` — strongest.** The script *measures* real hardware (a register read
+- **`infeasible` â€” strongest.** The script *measures* real hardware (a register read
   succeeds or it doesn't), so the self-falsification catch fully bites. Example
   reasoning it externalizes: silicon responds over SWD (alive) **and** the targeted
   I/O is dead across retries **and** the software path was exercised and ruled out.
-- **`needs_intervention` — a soft guardrail.** Its reasons are open-ended and mostly
-  *estimated*, not measurable — e.g. a script that *"sums the per-unit costs, compares
+- **`needs_intervention` â€” a soft guardrail.** Its reasons are open-ended and mostly
+  *estimated*, not measurable â€” e.g. a script that *"sums the per-unit costs, compares
   to the brain-owned cap, returns yes if over"* (the long-duration case is **only one
   example**; the model writes whatever script fits the reason, since the brain can't
   enumerate them all). The brain can't verify the estimate against ground truth, so
-  the script's value is **forcing explicit, auditable reasoning** — a strong deterrent
+  the script's value is **forcing explicit, auditable reasoning** â€” a strong deterrent
   against hallucinated BS, but *not* verification. The self-falsification catch only
   partially bites (the brain can sanity-check the formula/inputs for obvious nonsense,
   not measure them).
-- **`ambiguous` — a soft specificity floor.** No ground truth exists to test ("is the
+- **`ambiguous` â€” a soft specificity floor.** No ground truth exists to test ("is the
   task unclear?" can't be probed), so the gate is only: the model must supply a
   **concrete, specific** question, not a vague "I'm unsure." No script, no
-  self-falsification catch — specificity plus cooperative trust.
+  self-falsification catch â€” specificity plus cooperative trust.
 
 ### The thin brain-owned hard floor
 
@@ -1161,58 +1161,58 @@ decision/permission required and the cost that triggered it; for `ambiguous`, th
 specific question the human must answer.
 
 True pause/resume (continue the *same* session after the human answers) is a
-larger feature — the current human interaction is bookended (task in, result
+larger feature â€” the current human interaction is bookended (task in, result
 out). For v1 these statuses terminate and the human re-invokes with permission /
 redirection (updated task input or a flag). Note in-session resume as a future
 enhancement.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/actions.py`** — extend `FinalStatus` with
+1. **`src/pyocd_debug_mcp/brain/actions.py`** â€” extend `FinalStatus` with
    `infeasible`, `needs_intervention`, and `ambiguous`. `FinalizeAction` carries
    the **names of the ground-truth test scripts** (for `infeasible` /
    `needs_intervention`), plus the human question / estimate
    (`needs_intervention`) or the specific concrete question (`ambiguous`).
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — the **challenge-response gate** in
-   `_final_result_from_action` ([loop.py:883](../src/pyocd_debug_mcp/brain/loop.py#L883)):
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” the **challenge-response gate** in
+   `_final_result_from_action` ([loop.py:883](../../src/pyocd_debug_mcp/brain/loop.py#L883)):
    refuse the finalize (a `TurnkeyRefusal`) unless the model has supplied
    test scripts; **run them** (via the entry #9 / entry #11 `run_script` path) and
    **judge the observations** (not the model's label); for `ambiguous`, require a
    concrete specific question; enforce the **thin hard floor** (min real attempts,
    the brain-owned cap, known-destructive op classes). On a self-contradicting
    test, bounce back "your own test says otherwise."
-3. **Test mechanism = entry #9** — the scripts are model-authored, gated
+3. **Test mechanism = entry #9** â€” the scripts are model-authored, gated
    server-tool scripts run by the brain (entry #11 governs that hardware-touching
    scripts go through `run_script`). No separate predicate engine.
-4. **`src/pyocd_debug_mcp/brain/cli.py`** — print the human-facing ask / verdict
+4. **`src/pyocd_debug_mcp/brain/cli.py`** â€” print the human-facing ask / verdict
    clearly in the final result.
 
 ### What it is supposed to do
 
-- Let the model end a run with a precise, actionable verdict — "the bench is
-  miswired, fix X", "approve/redirect before I spend 14 hours", or "which bank?" —
+- Let the model end a run with a precise, actionable verdict â€” "the bench is
+  miswired, fix X", "approve/redirect before I spend 14 hours", or "which bank?" â€”
   instead of silently grinding or returning a vague `unresolved`.
 - Keep the verdicts honest by **forced externalization**: the model must back a
   script-testable claim with a runnable test the brain runs and judges, so a false
-  verdict is expensive to fabricate (not merely asserted) — strongest for
+  verdict is expensive to fabricate (not merely asserted) â€” strongest for
   `infeasible`, a soft guardrail for `needs_intervention`, a specificity floor for
   `ambiguous`.
 
 ### Constraints / watch-outs
 
-- **Not a hard guardrail — a fabrication-difficulty deterrent.** The brain does not
+- **Not a hard guardrail â€” a fabrication-difficulty deterrent.** The brain does not
   (cannot) pre-enumerate the modes; it **runs the model's own test and judges the
   observations.** The guardrail is that a *passing* test which contradicts reality is
-  hard to fabricate — not that the brain verifies the claim's logic.
+  hard to fabricate â€” not that the brain verifies the claim's logic.
 - **Strength scales with ground truth.** Strong for `infeasible` (measured
-  hardware), a soft guardrail for `needs_intervention` (estimated — forced explicit
+  hardware), a soft guardrail for `needs_intervention` (estimated â€” forced explicit
   reasoning, not verification), specificity-floor-only for `ambiguous`.
 - **Self-falsification catch only fully bites on measurable claims** (`infeasible`).
   For estimates the brain can only sanity-check the formula/inputs, not measure them.
 - **Judge the facts, not the label.** The brain reads what the scripts actually
   observed and applies its own sanity checks; it does not trust the model's pass/fail
   interpretation.
-- **Thin hard floor is real** — min real attempts, the brain-owned cap, known
+- **Thin hard floor is real** â€” min real attempts, the brain-owned cap, known
   destructive op classes are deterministic and enforced.
 - **Distinct from `blocked`** (brain-imposed convergence/refusal/max-iters).
   **`needs_intervention` cost case depends on entry #7** for the budget/cap.
@@ -1220,8 +1220,8 @@ enhancement.
   hardware but short-circuits is the accepted residual (we defend against a sloppy
   cooperative model, not a malicious one); the catch handles the sloppy case.
 - **Doc-sync + verify.** Update the README / R12 turnkey spec, and exercise each
-  verdict — including a refused/contradicted attempt ("your own test says
-  otherwise") — before claiming it works.
+  verdict â€” including a refused/contradicted attempt ("your own test says
+  otherwise") â€” before claiming it works.
 
 ### Status
 
@@ -1289,46 +1289,46 @@ the safety bound.
   error before the client gives up and leaves a late response / lock cascade.
 
 The brain has per-tool *client-side* give-up timeouts (entry #7 context), but several
-blocking calls on the **server** and across the **brain↔server seam** have **no
+blocking calls on the **server** and across the **brainâ†”server seam** have **no
 timeout at all.** When one of those outlasts the client's give-up timeout, the client
-reports an error to the model while the **server stays stuck holding `_lock`** — so
+reports an error to the model while the **server stays stuck holding `_lock`** â€” so
 the next call queues behind it and *also* times out, cascading into an effectively
 wedged server while the model waits for responses that never come. An audit of the
 server/seam code found the specific gaps below.
 
-### Findings — unbounded blocking calls (each needs a timeout)
+### Findings â€” unbounded blocking calls (each needs a timeout)
 
-1. **UART port `open()`** — `serial.Serial(device, baudrate, timeout=...)`
-   ([uart_pyserial.py:17](../src/pyocd_debug_mcp/adapters/uart_pyserial.py#L17)). The
+1. **UART port `open()`** â€” `serial.Serial(device, baudrate, timeout=...)`
+   ([uart_pyserial.py:17](../../src/pyocd_debug_mcp/adapters/uart_pyserial.py#L17)). The
    `timeout` is the **read** timeout; the **open is unbounded**, and no `write_timeout`
    is set. A contended/vanished USB-CDC port hangs the open, exceeding `read_seconds`
-   *and* the client's `read_seconds + 12` ceiling — the exact server-outlasts-client
+   *and* the client's `read_seconds + 12` ceiling â€” the exact server-outlasts-client
    case. **(The originally-requested fix.)**
-2. **External-CLI probe discovery** — `_run_cmd`: `subprocess.run(cmd, capture_output=
+2. **External-CLI probe discovery** â€” `_run_cmd`: `subprocess.run(cmd, capture_output=
    True, text=True)` with **no `timeout=`**, in both
-   [server.py:213](../src/pyocd_debug_mcp/server.py#L213) and
-   [swd_pyocd.py:37](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L37). `nrfjprog` /
+   [server.py:213](../../src/pyocd_debug_mcp/server.py#L213) and
+   [swd_pyocd.py:37](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L37). `nrfjprog` /
    `STM32_Programmer_CLI` / `pyocd list` can hang during connect/discovery and block
    the server indefinitely.
-3. **pyOCD session/probe open** — `session.open()`
-   ([swd_pyocd.py:200,209](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L200)): no
+3. **pyOCD session/probe open** â€” `session.open()`
+   ([swd_pyocd.py:200,209](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L200)): no
    timeout; USB enumeration / probe attach can hang (and pyOCD open is not cleanly
-   cancellable — see constraints).
-4. **Model provider call** — `subprocess.run(...)` with no `timeout=` in
-   [provider_codex_cli.py:36](../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L36)
-   and [provider_claude_cli.py:33](../src/pyocd_debug_mcp/brain/provider_claude_cli.py#L33).
+   cancellable â€” see constraints).
+4. **Model provider call** â€” `subprocess.run(...)` with no `timeout=` in
+   [provider_codex_cli.py:36](../../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L36)
+   and [provider_claude_cli.py:33](../../src/pyocd_debug_mcp/brain/provider_claude_cli.py#L33).
    A wedged model hangs the whole run. (Also called out in entry #7.)
-5. **Brain↔server MCP startup** — `session.initialize()` / `list_tools()` in the
-   client's `__aenter__` / `start` ([mcp_client.py](../src/pyocd_debug_mcp/brain/mcp_client.py))
+5. **Brainâ†”server MCP startup** â€” `session.initialize()` / `list_tools()` in the
+   client's `__aenter__` / `start` ([mcp_client.py](../../src/pyocd_debug_mcp/brain/mcp_client.py))
    have no timeout; if the server hangs on startup the brain blocks *before* any
    per-tool timeout can apply.
 
-### Findings — hardware ops with no configured op-level ceiling
+### Findings â€” hardware ops with no configured op-level ceiling
 
-SWD ops (`read_memory`, …) rely on pyOCD/USB transfer timeouts that **are not
+SWD ops (`read_memory`, â€¦) rely on pyOCD/USB transfer timeouts that **are not
 configured in this repo**; `flash` (`FileProgrammer.program`) and `recover`
 (`FlashEraser` mass-erase) have **no pyOCD session-option timeout** set. Set pyOCD's
-built-in timeouts (flash especially) where available — the self-cleaning in-library
+built-in timeouts (flash especially) where available â€” the self-cleaning in-library
 bound from the entry #7 layering.
 
 Current repo note (2026-06): the code now sets pyOCD session-option ceilings for
@@ -1379,29 +1379,29 @@ not live-mutable on an already-open session.
   tools run standalone without the brain/server pair. They may have CLI/env options,
   but they are outside runtime MCP syncing.
 
-### Findings — error handling (graceful vs. masking)
+### Findings â€” error handling (graceful vs. masking)
 
 Positives to keep (already aligned):
 
 - `workspace` build subprocess has `timeout=` + `TimeoutExpired -> WorkspaceError`
-  ([workspace.py:178](../src/pyocd_debug_mcp/brain/workspace.py#L178)).
+  ([workspace.py:178](../../src/pyocd_debug_mcp/brain/workspace.py#L178)).
 - SWD ops map backend exceptions to **typed** domain errors
   (`_typed_backend_error -> LockedTargetError / TargetConnectionError`) and propagate
-  cleanly ([swd_pyocd.py:85](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L85)).
+  cleanly ([swd_pyocd.py:85](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L85)).
 - The J-Link retry-without-uid is a **single bounded** retry, not a loop
-  ([swd_pyocd.py:203](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L203)); the
+  ([swd_pyocd.py:203](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L203)); the
   `zephyr_build` subprocess has a timeout.
 
 Watch (potential masking):
 
 - `flash` **swallows `TransferError` on the final reset** when `halt_after_reset` is
-  false ([swd_pyocd.py:335](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L335)) —
+  false ([swd_pyocd.py:335](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L335)) â€”
   intentional (`pyocd load` tolerates a transient drop), but keep the swallow narrow
   so it can't mask a real flash failure.
 
 ### The systemic misalignment to fix
 
-Client per-call timeouts assume the server completes within budget — but the
+Client per-call timeouts assume the server completes within budget â€” but the
 unbounded server sections above can **outlast** the client timeout. The fix is to
 **bound every blocking call so the server can never outlast its client budget**, and
 **align** them (each server op's effective bound < its client timeout) so a timeout
@@ -1409,17 +1409,17 @@ is always a **clean error**, never a silent wedge or a cascade.
 
 ### What to do
 
-1. **Bound the UART open** — wrap `serial.Serial(...)` open in a timeout (thread+join
+1. **Bound the UART open** â€” wrap `serial.Serial(...)` open in a timeout (thread+join
    or platform open-with-timeout / fail-fast) and set `write_timeout`; cap so
    server-side `read_serial` can never exceed `read_seconds`.
-2. **Bound `_run_cmd`** — add `timeout=` to the external-CLI `subprocess.run` (both
+2. **Bound `_run_cmd`** â€” add `timeout=` to the external-CLI `subprocess.run` (both
    sites) and map `TimeoutExpired` to a typed error.
-3. **Bound `session.open()`** — a connect-timeout via a worker (kill, since pyOCD open
-   isn't cancellable — ties to the killable-worker idea); at minimum a thread-join
+3. **Bound `session.open()`** â€” a connect-timeout via a worker (kill, since pyOCD open
+   isn't cancellable â€” ties to the killable-worker idea); at minimum a thread-join
    that reports a clean error even if the worker lingers.
-4. **Bound the provider call** — add `timeout=` to the codex/claude `subprocess.run`
+4. **Bound the provider call** â€” add `timeout=` to the codex/claude `subprocess.run`
    (entry #7).
-5. **Bound MCP startup** — timeout `initialize()` / `list_tools()` so a hung server
+5. **Bound MCP startup** â€” timeout `initialize()` / `list_tools()` so a hung server
    start fails fast.
 6. **Set pyOCD session-option timeouts** (flash etc.) where available.
 7. **Align server bound < client timeout** everywhere, and make a timeout a
@@ -1430,11 +1430,11 @@ is always a **clean error**, never a silent wedge or a cascade.
 ### Constraints / watch-outs
 
 - **Opens aren't cleanly cancellable** (pyOCD/serial): a thread-join timeout reports a
-  clean error but the worker may linger — true cancellation needs process isolation
+  clean error but the worker may linger â€” true cancellation needs process isolation
   (the killable-worker; ties to entry #7 and the timeout-cleanup discussion).
 - **Align bounds** (server < client) to prevent orphan/cascade and the wedged-`_lock`
   state.
-- **Don't over-tighten** — legitimately slow flash / slow enumeration must still
+- **Don't over-tighten** â€” legitimately slow flash / slow enumeration must still
   succeed; set generous-but-finite ceilings.
 - **Doc-sync + verify on real hardware**, including a forced open-hang (unplug the
   device mid-op) to confirm the bound fires and the session recovers.
@@ -1454,7 +1454,7 @@ enforceability, killable hardware worker cleanup, and forced-hang hardware proof
 
 Entries #7 (the enforcement-layer design) and #14 (a *partial* server/seam
 blocking-call audit) cover the spots found so far. But a complete, **repo-wide**
-audit has not been done — hang / stuck-wait / stuck-cycle risks may exist anywhere
+audit has not been done â€” hang / stuck-wait / stuck-cycle risks may exist anywhere
 in the system (brain, server, services, adapters, providers, CLI, build, packs, the
 MCP seam). This entry tracks doing that full audit properly.
 
@@ -1489,10 +1489,10 @@ MCP seam). This entry tracks doing that full audit properly.
 - **Proper error handling on every call that can hang**, so it never waits on a
   response that will never come, nor keeps listening after an error is thrown.
 - **Classify, don't blanket-fix.** For each blocking/cycling call, decide whether the
-  wait/cycle is **intended** (bounded, expected — e.g. the `read_serial` deadline
+  wait/cycle is **intended** (bounded, expected â€” e.g. the `read_serial` deadline
   loop) or **unwanted** (unbounded / hang). Don't "fix" intentional bounded waits.
 
-### Scope — the ENTIRE repo, not just the hot path
+### Scope â€” the ENTIRE repo, not just the hot path
 
 - **Brain:** `loop`, `mcp_client`, the providers, `workspace`, `benchmark`, `cli`,
   `session_runtime`, `convergence_watcher`.
@@ -1502,14 +1502,14 @@ MCP seam). This entry tracks doing that full audit properly.
   `zephyr_build`, `reference_artifacts`, `serial_resolver`, `local_env`,
   `host_bootstrap`, `stage0_check`.
 - **The seam:** stdio transport, MCP `initialize` / `list_tools` / `call_tool`, and
-  **request/response matching** — what happens to a *late/unmatched* response after a
+  **request/response matching** â€” what happens to a *late/unmatched* response after a
   client read-timeout (does it leave a dangling waiter, or get dropped cleanly?).
 
-### Method — enumerate and classify every blocking point
+### Method â€” enumerate and classify every blocking point
 
-For every blocking primitive in the repo — `subprocess.run`/`Popen`, USB/serial
+For every blocking primitive in the repo â€” `subprocess.run`/`Popen`, USB/serial
 `open`+`read`+`write`, pyOCD ops, MCP requests, `time.sleep`, `while`/retry loops,
-lock acquisitions, queue/stream waits — record a matrix:
+lock acquisitions, queue/stream waits â€” record a matrix:
 
 `call -> layer -> bounded? -> on-timeout behavior -> on-error behavior -> intended vs
 unwanted -> fix`.
@@ -1543,14 +1543,14 @@ The remaining risks fall into three buckets:
 
 ### Constraints / watch-outs
 
-- **Intended vs unwanted** — preserve deliberate bounded waits (e.g. the
+- **Intended vs unwanted** â€” preserve deliberate bounded waits (e.g. the
   `read_serial` `read_seconds` loop, the single bounded J-Link retry); only fix
   unbounded ones.
-- **Late/unmatched MCP responses** — after a client timeout, ensure the eventual
+- **Late/unmatched MCP responses** â€” after a client timeout, ensure the eventual
   server response is dropped cleanly and never leaves a dangling waiter.
-- **Cross-platform** — USB/serial open and timeout behavior differ on Windows vs.
+- **Cross-platform** â€” USB/serial open and timeout behavior differ on Windows vs.
   macOS; verify both.
-- **Audit + fix + verify** — produce the matrix, land the fixes via #7/#14, and
+- **Audit + fix + verify** â€” produce the matrix, land the fixes via #7/#14, and
   verify on real hardware including **forced-hang** scenarios (unplug mid-op, wedged
   probe, killed external CLI, hung provider).
 
@@ -1567,25 +1567,25 @@ work routed through entries #7 and #14.
 ### Problem / current behavior
 
 Per-tool timeouts already exist for hardware calls: `_tool_timeout_seconds`
-([loop.py:501](../src/pyocd_debug_mcp/brain/loop.py#L501)) sets `connect=60s`,
+([loop.py:501](../../src/pyocd_debug_mcp/brain/loop.py#L501)) sets `connect=60s`,
 `flash=240s`, `recover=180s`, `read_serial=window+12s`, default `30s`, threaded
 into the MCP client's `read_timeout_seconds`
-([mcp_client.py:165](../src/pyocd_debug_mcp/brain/mcp_client.py#L165)). So a
+([mcp_client.py:165](../../src/pyocd_debug_mcp/brain/mcp_client.py#L165)). So a
 single hung hardware call will not hang the brain forever. But three gaps remain,
 and they get worse once entry #5 lets the model send a sequence per turn:
 
 1. **Timeouts are not a first-class outcome.** A timed-out call surfaces as a
    caught exception turned into an error string
-   ([loop.py:1064](../src/pyocd_debug_mcp/brain/loop.py#L1064)), not a clean
+   ([loop.py:1064](../../src/pyocd_debug_mcp/brain/loop.py#L1064)), not a clean
    "null / timed-out" result. In a batch, early-abort (entry #5) needs a
    deterministic timeout outcome to key on.
 2. **No per-batch wall-clock budget.** Even if every step is within its own
    timeout, a long sequence can run a long time. A batch needs an overall cap.
 3. **The provider call itself can hang with no timeout.** Both CLI providers call
    `subprocess.run(...)` with **no `timeout=`**
-   ([provider_codex_cli.py:36](../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L36),
-   [provider_claude_cli.py:33](../src/pyocd_debug_mcp/brain/provider_claude_cli.py#L33)).
-   A wedged `codex`/`claude` process hangs the entire run indefinitely — the worst
+   ([provider_codex_cli.py:36](../../src/pyocd_debug_mcp/brain/provider_codex_cli.py#L36),
+   [provider_claude_cli.py:33](../../src/pyocd_debug_mcp/brain/provider_claude_cli.py#L33)).
+   A wedged `codex`/`claude` process hangs the entire run indefinitely â€” the worst
    hang case, currently unguarded.
 
 There is also **no `wait` action**: the model cannot insert a deliberate delay
@@ -1600,7 +1600,7 @@ result, and give the model an explicit, bounded delay primitive.
 - **Timeout = deterministic failed/null outcome.** Convert a per-call timeout into
   a structured result (e.g. a `timeout` code on the tool result, analogous to
   `refusal_code` / `blocked_code` in `ToolTextResult`
-  [mcp_client.py:66](../src/pyocd_debug_mcp/brain/mcp_client.py#L66)) so the loop,
+  [mcp_client.py:66](../../src/pyocd_debug_mcp/brain/mcp_client.py#L66)) so the loop,
   the action ledger (entry #2), and batch early-abort (entry #5) all see "this
   step timed out" rather than a raw exception string.
 - **Per-batch wall-clock budget.** Add an overall budget for a batch turn; if the
@@ -1610,41 +1610,41 @@ result, and give the model an explicit, bounded delay primitive.
   an equivalent guard on the API providers), so a stuck model call fails the turn
   cleanly instead of hanging the run.
 - **`wait` action.** Add a `WaitAction` (`{"kind": "wait", "seconds": <float>}`)
-  to `ActionUnion` ([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)),
+  to `ActionUnion` ([actions.py:74](../../src/pyocd_debug_mcp/brain/actions.py#L74)),
   executed by the brain as a bounded sleep. Most useful as a batch step
   (write -> wait -> read), but valid standalone. It is brain-local (not an MCP
   tool), like `run_build`; it is not a reason to re-gate inert host reads.
 
-### Making timeouts *enforceable* — the layer model (corrected priority)
+### Making timeouts *enforceable* â€” the layer model (corrected priority)
 
 The client read-timeout above only makes the **brain** give up; it does **not** stop
 the **server**, which keeps running the op holding the global `_lock`, so the next
 call queues behind it and the server wedges (the cascade documented in entry #14).
-Making a timeout *enforceable* — actually ending the work and freeing the probe —
+Making a timeout *enforceable* â€” actually ending the work and freeing the probe â€”
 needs the right layering, and the priority is **not** what an earlier draft assumed
 (pyOCD options primary, worker as last resort). The entry #14 audit shows the real
 hang sites are spread across pyserial `open()`, external-CLI subprocess, connect, the
-provider, and MCP startup — **mostly not pyOCD-option-coverable, all non-cancellable,
+provider, and MCP startup â€” **mostly not pyOCD-option-coverable, all non-cancellable,
 all `_lock`-holding.** So the corrected layering, strongest-effort first:
 
-1. **Per-layer bounds on every blocking call (entry #14) — the primary fix, do
+1. **Per-layer bounds on every blocking call (entry #14) â€” the primary fix, do
    first.** Open-timeout, `subprocess timeout=`, connect-timeout, MCP-init timeout.
    Cheap, low-risk, and it covers the layers that actually hang. *This* is the main
-   defense — not pyOCD options.
-2. **Killable hardware worker — the enforceability mechanism (structural).** Because
+   defense â€” not pyOCD options.
+2. **Killable hardware worker â€” the enforceability mechanism (structural).** Because
    the dangerous ops are non-cancellable *and* hold `_lock`, a timeout is only
    *truly* enforceable if the server can **kill and restart the worker that owns the
    probe.** Double duty: it makes timeouts enforceable for the uncancellable cases,
    *and* it dissolves the lock-wedge cascade (kill -> OS releases the probe ->
    reconnect/reset/recover -> server stays alive). Promoted from "last-resort
    backstop" to **the thing that makes the guarantee real.** (True cancellation of a
-   pyOCD call is not possible — blocking, non-cancellable USB calls — so kill +
+   pyOCD call is not possible â€” blocking, non-cancellable USB calls â€” so kill +
    re-init is the only enforceable stop.)
-3. **pyOCD session-option timeouts — a graceful optimization, not primary.** Let
+3. **pyOCD session-option timeouts â€” a graceful optimization, not primary.** Let
    `flash`/connect fail cleanly in-library where pyOCD supports it, so the common
    slow-flash case need not trigger a worker-kill. Useful, but covers only a slice
    (flash) and even that can wedge if its status-polling reads stall.
-4. **Client read-timeout — the outer backstop**, now backed by a server that can
+4. **Client read-timeout â€” the outer backstop**, now backed by a server that can
    actually *act* on a timeout (kill its worker) instead of staying stuck.
 
 Root cause being addressed: **one global `_lock` + inline blocking ops +
@@ -1710,17 +1710,17 @@ is currently pending.
 
 Most timeouts now live as constants in `src/pyocd_debug_mcp/timeouts.py` (plus the
 brain's `loop.py` per-tool constants). The target is to make them **dynamic and
-synced** — runtime-mutable, with the brain as the single source of truth and the
+synced** â€” runtime-mutable, with the brain as the single source of truth and the
 server mirroring changes, rather than set-once at launch.
 
 **Mechanism:**
 
 - **Server holds a mutable `_timeouts` config** (seeded from `timeouts.py` defaults),
-  and every server-side bound reads from it — sitting next to the existing `_lock`
-  module global ([server.py:81](../src/pyocd_debug_mcp/server.py#L81)), which already
+  and every server-side bound reads from it â€” sitting next to the existing `_lock`
+  module global ([server.py:81](../../src/pyocd_debug_mcp/server.py#L81)), which already
   proves the server keeps mutable module state.
 - **A `set_timeouts(updates)` MCP tool** lets the client update that config at
-  runtime — idiomatic MCP (just another tool call over the same stdio link), no
+  runtime â€” idiomatic MCP (just another tool call over the same stdio link), no
   restart.
 - **Partial in-memory updates, not file rewrites.** `set_timeouts` accepts only the
   timeout keys the client wants to change, merges them into the server's current
@@ -1734,40 +1734,40 @@ server mirroring changes, rather than set-once at launch.
 - **Semantics:** changes apply to *subsequent* ops, not in-flight ones (an op reads
   its bound when it starts); `set_timeouts` uses a **separate lightweight lock** (not
   the hardware `_lock`), so it can retune even while a long op runs.
-- **Integrity — the server clamps.** Every update is clamped to server-owned
+- **Integrity â€” the server clamps.** Every update is clamped to server-owned
   min/max, so a timeout can be tuned within a safe window but never set to `0`
-  (breaks everything) or huge/∞ (disables the bound). Composes with the
-  model-specifiable durations above: model proposes → brain clamps to caps → pushes
-  via `set_timeouts` → **server clamps again** (defense in depth).
+  (breaks everything) or huge/âˆž (disables the bound). Composes with the
+  model-specifiable durations above: model proposes â†’ brain clamps to caps â†’ pushes
+  via `set_timeouts` â†’ **server clamps again** (defense in depth).
 
-**Covered (the bulk — flows through `_timeouts` + `set_timeouts`):** the brain
+**Covered (the bulk â€” flows through `_timeouts` + `set_timeouts`):** the brain
 per-tool timeouts (`loop.py`), the MCP read-timeout, the provider request timeout
 (`PROVIDER_REQUEST_TIMEOUT_SECONDS`), the external-command timeout
 (`DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SECONDS`, both `_run_cmd` sites), the UART read
-window, and the future killable-worker / per-batch budgets — all client-owned or
+window, and the future killable-worker / per-batch budgets â€” all client-owned or
 our-server-code.
 
-**Cannot be (fully) dynamic — audit of what stays hardcoded / per-connect:**
+**Cannot be (fully) dynamic â€” audit of what stays hardcoded / per-connect:**
 
-1. **pyOCD session-option timeouts** (`flash.timeout.*`, `reset.*`, `cpu.step.*` —
+1. **pyOCD session-option timeouts** (`flash.timeout.*`, `reset.*`, `cpu.step.*` â€”
    the `PYOCD_*` consts applied in `build_session_options`,
-   [swd_pyocd.py:163](../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L163)). The client
+   [swd_pyocd.py:163](../../src/pyocd_debug_mcp/adapters/swd_pyocd.py#L163)). The client
    *can* pass these **at connect**, but pyOCD **bakes them into the `Session` at
-   open**, so they are **not live-mutable without a reconnect**. → *configurable
+   open**, so they are **not live-mutable without a reconnect**. â†’ *configurable
    per-connect, not runtime-syncable.*
 2. **Deep pyOCD / libusb USB-transfer timeouts** (the per-transaction bound *below*
    the session-options): third-party, **not exposed** by pyOCD's API; effectively
-   fixed in libusb / the probe driver. → *not client-settable at all.*
-3. **`MCP_STARTUP_TIMEOUT_SECONDS`** ([mcp_client.py:215](../src/pyocd_debug_mcp/brain/mcp_client.py#L215)):
-   it bounds the server *coming up*, so it runs **before the server exists** —
-   there is nothing to sync to. → *client-side only; can be a client config, never
+   fixed in libusb / the probe driver. â†’ *not client-settable at all.*
+3. **`MCP_STARTUP_TIMEOUT_SECONDS`** ([mcp_client.py:215](../../src/pyocd_debug_mcp/brain/mcp_client.py#L215)):
+   it bounds the server *coming up*, so it runs **before the server exists** â€”
+   there is nothing to sync to. â†’ *client-side only; can be a client config, never
    server-synced (chicken-and-egg).*
-4. **Setup / operator / pack timeouts** — `SETUP_COMMAND_TIMEOUT_SECONDS` (host
+4. **Setup / operator / pack timeouts** â€” `SETUP_COMMAND_TIMEOUT_SECONDS` (host
    setup / `uv sync`), `pack_index_repair` httpx timeout + retries + backoff,
    `zephyr_build` subprocess timeouts: these run in **operator/setup/build tools, not
-   the live MCP loop**, so they sit outside the client↔server sync — configurable via
+   the live MCP loop**, so they sit outside the clientâ†”server sync â€” configurable via
    their own CLI args, not `set_timeouts`.
-5. **Internal polling cadences** — these are small loop pacing values used *inside*
+5. **Internal polling cadences** â€” these are small loop pacing values used *inside*
    an already-bounded operation, not the top-level operation budget. Examples:
    `uart_capture` briefly opens/polls in 0.05-0.2s chunks while the caller's
    `read_seconds` deadline remains the real bound; `reopen_delay` is the short pause
@@ -1783,16 +1783,16 @@ timeouts (out of the live loop), and internal cadences (by choice).
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/mcp_client.py`** — represent a timeout as a
+1. **`src/pyocd_debug_mcp/brain/mcp_client.py`** â€” represent a timeout as a
    structured result with a `timeout` code rather than only raising.
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — treat a timed-out step as a failed
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” treat a timed-out step as a failed
    step (feeds entry #5 early-abort and the entry #2 ledger); add the per-batch
    wall-clock budget; clamp model-supplied durations to caps.
-3. **`src/pyocd_debug_mcp/brain/actions.py`** — add `WaitAction` to `ActionUnion`
+3. **`src/pyocd_debug_mcp/brain/actions.py`** â€” add `WaitAction` to `ActionUnion`
    and the JSON schema, with a max-seconds bound.
-4. **`provider_codex_cli.py` / `provider_claude_cli.py` (+ API providers)** — add
+4. **`provider_codex_cli.py` / `provider_claude_cli.py` (+ API providers)** â€” add
    a hard timeout to the model call so a stuck provider cannot hang the run.
-5. **Server side (entry #14 + the layer model above)** — bound every blocking call
+5. **Server side (entry #14 + the layer model above)** â€” bound every blocking call
    at its own layer (open, `_run_cmd`, `session.open()`, MCP init); run hardware ops
    in a **killable worker** that owns the probe, so a timeout can kill + restart it
    and re-establish the session via the existing connect/recover services; set pyOCD
@@ -1802,9 +1802,9 @@ timeouts (out of the live loop), and internal cadences (by choice).
 ### What it is supposed to do
 
 - Guarantee forward progress: every tool call, batch, and model call is bounded,
-  and exceeding a bound is a clean failure the loop can react to — no silent
+  and exceeding a bound is a clean failure the loop can react to â€” no silent
   hangs, in addition to the existing anti-thrash protection.
-- Give the model controlled timing — bounded `wait` and capped durations — so it
+- Give the model controlled timing â€” bounded `wait` and capped durations â€” so it
   can drive realistic stimulus/observe sequences (entries #5/#6) without being
   able to remove the safety bounds.
 
@@ -1819,11 +1819,11 @@ timeouts (out of the live loop), and internal cadences (by choice).
 - **Respect slow hardware.** Hardware ops are legitimately long
   (`flash=240s`, `recover=180s`); per-batch budgets and any new caps must not be
   tighter than the existing per-call timeouts for those operations.
-- **Brain timeout ≠ enforcement.** The client read-timeout only stops the *brain*;
+- **Brain timeout â‰  enforcement.** The client read-timeout only stops the *brain*;
   without the server-side per-layer bounds + killable worker (entry #14), the
   *server* still wedges on `_lock`. Per-layer bounds are the cheap primary; the
   killable worker is what makes a timeout actually end the work. pyOCD session-options
-  are a graceful optimization, not the primary bound — corrected from an earlier
+  are a graceful optimization, not the primary bound â€” corrected from an earlier
   draft that had these priorities reversed.
 - **Doc-sync + verify.** Update the README / R12 turnkey spec, and exercise a
   timeout path and a `wait` step before claiming it works.
@@ -1839,17 +1839,17 @@ Proposal only. Not yet specced, not yet implemented.
 ### Problem / current behavior
 
 A `TurnDecision` carries exactly **one** `action`
-([actions.py:85](../src/pyocd_debug_mcp/brain/actions.py#L85)), and a
+([actions.py:85](../../src/pyocd_debug_mcp/brain/actions.py#L85)), and a
 `server_tool` action calls exactly one tool
-([actions.py:40](../src/pyocd_debug_mcp/brain/actions.py#L40)). The loop runs one
-tool per turn ([loop.py:1010](../src/pyocd_debug_mcp/brain/loop.py#L1010)). So a
-natural operator sequence — flash, read UART for 10s, send input, read UART again
-— is four full model round-trips instead of one fluent sequence.
+([actions.py:40](../../src/pyocd_debug_mcp/brain/actions.py#L40)). The loop runs one
+tool per turn ([loop.py:1010](../../src/pyocd_debug_mcp/brain/loop.py#L1010)). So a
+natural operator sequence â€” flash, read UART for 10s, send input, read UART again
+â€” is four full model round-trips instead of one fluent sequence.
 
 There is already a precedent for one action fanning out into several tool calls,
 but the brain owns it: `run_green_check` is a fixed Python macro that chains
 flash -> `read_core_register` -> `read_memory` -> `read_serial`
-([loop.py:712](../src/pyocd_debug_mcp/brain/loop.py#L712)). The model cannot
+([loop.py:712](../../src/pyocd_debug_mcp/brain/loop.py#L712)). The model cannot
 compose its own sequence.
 
 ### What the change is
@@ -1865,7 +1865,7 @@ pure-local scripts) inside the brain decision loop. Use batches only for governe
 server-native/client-action/terminal steps that genuinely need the brain boundary.
 
 Lower-risk schema: add a `BatchAction` to `ActionUnion`
-([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)):
+([actions.py:74](../../src/pyocd_debug_mcp/brain/actions.py#L74)):
 
 ```text
 { "kind": "batch", "steps": [ <action>, <action>, ... ] }
@@ -1876,23 +1876,23 @@ where each step is an existing governed single action (`server_tool`, `run_scrip
 current bridge may still carry legacy local actions for compatibility, but the
 north star is that model-native host work is not batched through the brain.
 Single-action turns keep working unchanged; batching is opt-in. (Alternative: make
-the top-level `action` a list and rename to `actions` — cleaner semantically but a
+the top-level `action` a list and rename to `actions` â€” cleaner semantically but a
 breaking change to every existing decision.)
 
 ### Execution semantics (the important part)
 
-The batch is **not** a guardrail bypass — it is sequential single-tool execution
+The batch is **not** a guardrail bypass â€” it is sequential single-tool execution
 with the same gates, just without a model round-trip between steps:
 
 - **Per-step gating.** Every step runs through the same brain dispatch/gate it
   would use alone: server tools through `_execute_server_tool`
-  ([loop.py:513](../src/pyocd_debug_mcp/brain/loop.py#L513)), client actions
+  ([loop.py:513](../../src/pyocd_debug_mcp/brain/loop.py#L513)), client actions
   through `run_script`, and terminal decisions through their terminal validators.
   Argument normalization, `TurnkeyRefusal` checks, the flash gate, the whitelist,
   and convergence accounting still apply. A batch step has no more power than the
   same call made alone. (Same curated-allowlist discipline as entries #1 and #3.)
 - **Early-abort.** Stop the batch at the first step that refuses, is blocked,
-  errors, **or times out** (a timeout is a failed step — see entry #7). Return the
+  errors, **or times out** (a timeout is a failed step â€” see entry #7). Return the
   results of completed steps plus which step aborted and why, so the model reacts
   on the next turn instead of barreling on after a failure (e.g. do not read UART
   if the flash refused).
@@ -1915,18 +1915,18 @@ with the same gates, just without a model round-trip between steps:
   preserving the append-only shape.
 - **Does not add tools.** Batching only sequences existing whitelisted tools. The
   earlier "send input to UART" example still needs a UART-*write* tool, which is
-  not in `AllowedServerToolName` today — out of scope here.
+  not in `AllowedServerToolName` today â€” out of scope here.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/actions.py`** — add `BatchAction` to
+1. **`src/pyocd_debug_mcp/brain/actions.py`** â€” add `BatchAction` to
    `ActionUnion` and to the JSON schema (`turn_decision_output_schema`), with
    `steps` as a list of the existing action variants.
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — execute a `BatchAction` by iterating
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” execute a `BatchAction` by iterating
    its steps through the existing per-action dispatch, applying early-abort and
    recording each step into the ledger/state.
 3. **Instructions** (`_build_instructions`,
-   [loop.py:168](../src/pyocd_debug_mcp/brain/loop.py#L168)) — document batching,
+   [loop.py:168](../../src/pyocd_debug_mcp/brain/loop.py#L168)) â€” document batching,
    the early-abort contract, and the terminal-step rules so the model composes
    sensible sequences.
 
@@ -1936,7 +1936,7 @@ with the same gates, just without a model round-trip between steps:
   read -> ... ) instead of one tool per round-trip, cutting model calls and
   latency for routine sequences.
 - Preserve every safety guarantee: per-step gating, early-abort on failure, and
-  full per-step convergence/ledger accounting — the batch is a convenience over
+  full per-step convergence/ledger accounting â€” the batch is a convenience over
   the same gated calls, not a new privilege.
 
 ### Constraints / watch-outs
@@ -1945,7 +1945,7 @@ with the same gates, just without a model round-trip between steps:
   made alone; the batch executor calls the same `_execute_server_tool`.
 - **Abort, don't barrel.** First refusal/block/error ends the batch and reports
   back; never continue a sequence whose precondition just failed.
-- **Reasoning trade-off.** Within a batch the model cannot react between steps —
+- **Reasoning trade-off.** Within a batch the model cannot react between steps â€”
   that is the point (it is committing to a sequence), but it means batches should
   be used for routine sequences, not for steps whose next move depends on the
   prior step's value.
@@ -1965,42 +1965,42 @@ Proposal only. Not yet specced, not yet implemented.
 ### Problem / current behavior
 
 The agent can **observe** firmware output but cannot **stimulate** it. The UART
-adapter is read-only — `open` / `close` / `reset_input_buffer` / `read`, with no
-`write` ([uart_interface.py:20](../src/pyocd_debug_mcp/adapters/uart_interface.py#L20))
-— and the only serial tool, `read_serial`, just reads/matches
-([mcp_client.py:295](../src/pyocd_debug_mcp/brain/mcp_client.py#L295)). There is
+adapter is read-only â€” `open` / `close` / `reset_input_buffer` / `read`, with no
+`write` ([uart_interface.py:20](../../src/pyocd_debug_mcp/adapters/uart_interface.py#L20))
+â€” and the only serial tool, `read_serial`, just reads/matches
+([mcp_client.py:295](../../src/pyocd_debug_mcp/brain/mcp_client.py#L295)). There is
 no serial-write tool anywhere in the MCP surface, and nothing in
-`AllowedServerToolName` ([actions.py:10](../src/pyocd_debug_mcp/brain/actions.py#L10)).
+`AllowedServerToolName` ([actions.py:10](../../src/pyocd_debug_mcp/brain/actions.py#L10)).
 
 So an entire class of operation/interaction testing is impossible today: driving
 a firmware CLI prompt, sending a command and checking the response, feeding test
 input to exercise a code path. This is exactly the gap entry #5 flagged ("send
 input to UART" needs a UART-*write* tool that does not exist). For real
-bring-up/debug, passive observation is not enough — you need stimulus.
+bring-up/debug, passive observation is not enough â€” you need stimulus.
 
 ### What the change is
 
 Add a device-input (stimulus) capability, starting with **UART write**, surfaced
 as a new MCP tool and a new brain action. Unlike entries #1/#3/#5, this is **not**
-a brain-only change — the capability is absent at every layer, so it spans the
+a brain-only change â€” the capability is absent at every layer, so it spans the
 full stack (and must follow the repo's "shared services, not wrapper-only" and
 "data-driven boards" rules):
 
-1. **Adapter contract** — add `write(handle, data: bytes)` to `UARTInterface`
-   ([uart_interface.py:20](../src/pyocd_debug_mcp/adapters/uart_interface.py#L20))
+1. **Adapter contract** â€” add `write(handle, data: bytes)` to `UARTInterface`
+   ([uart_interface.py:20](../../src/pyocd_debug_mcp/adapters/uart_interface.py#L20))
    and implement it in `uart_pyserial`.
-2. **Shared service** — a send/IO service (extend `services/uart_capture.py` or a
+2. **Shared service** â€” a send/IO service (extend `services/uart_capture.py` or a
    new `uart_io` service) so the same logic is callable by the MCP tool, Stage 0
-   flows, and the turnkey brain — not reimplemented per caller.
-3. **MCP server tool** — a `write_serial` tool in `server.py` (an action with side
+   flows, and the turnkey brain â€” not reimplemented per caller.
+3. **MCP server tool** â€” a `write_serial` tool in `server.py` (an action with side
    effects -> "tool", not a read-only "resource", per the architecture doc).
    Optionally a `send_and_read` convenience that writes then captures, though the
    composable path is `write_serial` then `read_serial` sequenced via an entry #5
    batch.
-4. **Brain** — add the tool to `AllowedServerToolName` plus a corresponding
+4. **Brain** â€” add the tool to `AllowedServerToolName` plus a corresponding
    action, and handle port/baud/line-ending resolution in `_execute_server_tool`
    the same data-driven way `read_serial` resolves them
-   ([loop.py:559](../src/pyocd_debug_mcp/brain/loop.py#L559)).
+   ([loop.py:559](../../src/pyocd_debug_mcp/brain/loop.py#L559)).
 
 ### Forward-looking: I2C / SPI stimulus
 
@@ -2016,8 +2016,8 @@ entry delivers UART write; it just leaves the door shaped for I2C/SPI.
 
 - Close the loop from passive observation to active stimulus: drive firmware with
   input and verify its response, enabling real operation/interaction testing.
-- Pair naturally with entry #5 — `write_serial` then `read_serial` in one batch is
-  the "send a command, read the reply" primitive — and resolve the UART-write gap
+- Pair naturally with entry #5 â€” `write_serial` then `read_serial` in one batch is
+  the "send a command, read the reply" primitive â€” and resolve the UART-write gap
   that entry #5 explicitly deferred.
 
 ### Constraints / watch-outs
@@ -2032,7 +2032,7 @@ entry delivers UART write; it just leaves the door shaped for I2C/SPI.
 - **Still gated.** A side-effecting tool: normalized, refusable, logged, and
   ledgered like any other (lower-risk than flash, but not ungoverned), and only
   the whitelisted tool is exposed (same curated-allowlist discipline as #1/#3/#5).
-- **I2C/SPI are explicitly out of scope here** — future work, same layering.
+- **I2C/SPI are explicitly out of scope here** â€” future work, same layering.
 - **Hardware honesty.** This adds a real hardware I/O path; do not claim it works
   until it is exercised on a real board this session. Doc-sync the README tool
   surface and the tool docstring in the same unit of work.
@@ -2052,7 +2052,7 @@ integration reduces the provider to a **one-`TurnDecision`-per-turn decision
 function** (`provider_codex_cli` pipes a prompt, reads one JSON object back),
 *discarding the model's native scripting/agentic capability*. The model is throttled
 to one declarative action per turn and cannot, for example, loop a read across 100
-addresses, branch on the result, and act — it must round-trip the brain for each
+addresses, branch on the result, and act â€” it must round-trip the brain for each
 step. The real limitation to remove is this throttle, not the absence of a gadget.
 
 ### What the change is
@@ -2061,11 +2061,11 @@ Let the model **author scripts natively** (the way codex/claude write files with
 `apply_patch` standalone) into the **named client-side tool store**, and **execute a
 hardware-touching (server-native) script only through a gated `run_script`
 decision.** (A script that calls no server-native tool is model-native and runs
-free — entry #11; this entry's gating concerns the server-native ones.) The split is
+free â€” entry #11; this entry's gating concerns the server-native ones.) The split is
 the whole design:
 
 - **Authoring is native and inert.** Writing a script touches no hardware, so it is
-  *not* a gated decision — the model writes (and edits/redrafts) the file directly,
+  *not* a gated decision â€” the model writes (and edits/redrafts) the file directly,
   in its native flow, with no format tax and no per-edit round-trip. The script
   never goes inline into a `TurnDecision` (decisions can only name existing
   actions/tools; raw script text is not a valid decision).
@@ -2074,33 +2074,33 @@ the whole design:
   `run_script(name)` action; the brain reads the named file, gates it, runs it, and
   returns the aggregated result. This is where control matters and where it stays.
 - **The brain captures what ran, at run time.** It did not witness the authoring, so
-  on `run_script` it **snapshots + hashes the file** — that hash is the identity and
+  on `run_script` it **snapshots + hashes the file** â€” that hash is the identity and
   version that actually executed. Identity, versioning, reuse counting, promotion
   (entry #10), and audit are all keyed on *what ran*, captured at execution, not on
   the model's drafting keystrokes (which are its private scratch).
 
 Why this shape (Design 2) rather than making the *write* a formal decision too:
 authoring is inert, so gating it buys nothing and only adds round-trips; native
-writing is the model's fluent, untaxed format; and the dangerous part — execution —
+writing is the model's fluent, untaxed format; and the dangerous part â€” execution â€”
 is still a formal gated decision. It is also consistent with the
 [accepted stance](#accepted-design-stance-direct-hardware-access-is-not-sandboxed):
 inert native file-writing is fine to leave native; control is reasserted at the
 gated run.
 
-**This keeps native scripting power without giving up brain control — the
+**This keeps native scripting power without giving up brain control â€” the
 difference from free code mode is *granularity*, not capability:**
 
 - *Within* a `run_script` execution: the script loops, branches, and makes many
-  gated tool calls (`for addr in ...: client.read_memory(addr)` → analyze →
-  `client.flash(...)`) in **one** model round-trip — the efficiency win of code
+  gated tool calls (`for addr in ...: client.read_memory(addr)` â†’ analyze â†’
+  `client.flash(...)`) in **one** model round-trip â€” the efficiency win of code
   mode is fully preserved.
 - *At* the turn boundary: the model still emits the `run_script` decision, and the
   brain appends the script result as the next user message. The brain keeps parsing
   each turn-closing `TurnDecision`, updating `BrainState`, running convergence, and
-  applying caps. The brain is never a bystander where it matters — execution.
+  applying caps. The brain is never a bystander where it matters â€” execution.
 
 Whether a script survives the run depends on context (ephemeral without a project, a
-retained candidate inside a project — see entry #10). The named file in the tool
+retained candidate inside a project â€” see entry #10). The named file in the tool
 store, snapshotted at run, is what gives a script the **stable identity** the rest of
 this entry and entry #10 depend on (versioning, reuse counting, promotion).
 
@@ -2108,25 +2108,25 @@ this entry and entry #10 depend on (versioning, reuse counting, promotion).
 reviewed).** For *guardrail-class* scripts (entry #9's model-authored guardrails),
 where you may want the brain to inspect/approve a script **before** it can exist or
 be installed, add a formal write/install decision as a validation checkpoint. This
-is the exception, not the default — ordinary computation/orchestration scripts do
+is the exception, not the default â€” ordinary computation/orchestration scripts do
 not need it, because gating execution is sufficient.
 
 **The critical integrity rule:** the script does **not** get a raw probe handle. It
 calls the server tools only through the **gated client API**, where every method
-routes through the *same* gates as a `server_tool` action — flash gate, refusals,
+routes through the *same* gates as a `server_tool` action â€” flash gate, refusals,
 convergence watcher, entry #7 timeouts, and the `AllowedServerToolName` whitelist.
 Scripting freedom for the model; per-call gating unchanged for the brain. Each call
 the script makes is still logged, counted, and convergence-checked.
 
 Two flavors fall out, and they land in **different tool classes** (entry #11):
 
-- **Computation scripts** — process ground truth without calling any server-native
+- **Computation scripts** â€” process ground truth without calling any server-native
   tool ("is this field non-zero across the last 10 reads?", "diff two register
   dumps"). These call **no** gated API, so they are **model-native** (entry #11):
   the model runs them **free** in its sandbox, no `run_script` decision needed. This
   is the entry #8 custom-predicate case.
-- **Orchestration scripts** — drive a sequence of *gated* server-tool calls
-  (flash → wait → read → check), i.e. a model-authored macro like `run_green_check`
+- **Orchestration scripts** â€” drive a sequence of *gated* server-tool calls
+  (flash â†’ wait â†’ read â†’ check), i.e. a model-authored macro like `run_green_check`
   or a named, reusable test sequence. Because they reach server-native tools they are
   **server-native** and run **only via a gated `run_script` decision**. The
   declarative batch (entry #5) is the no-control-flow subset of this.
@@ -2149,11 +2149,11 @@ Defining properties:
 
 - **Stable identity, versioned content (captured at run).** A script has a **stable
   identity** = its filename in the tool store (the model names the file when it
-  writes it). On each `run_script` the brain **snapshots and hashes the file** — that
+  writes it). On each `run_script` the brain **snapshots and hashes the file** â€” that
   hash is the version that ran. Editing the file natively produces a new hash (new
   version) under the same filename/identity; reuse and history accrue to the
   identity; re-validation runs the latest file. The brain never has to witness the
-  authoring — it captures identity + version from the file at execution.
+  authoring â€” it captures identity + version from the file at execution.
 - **Editable / iterative (native).** The model edits the file directly in its native
   flow. When a `run_script` errors or times out, the brain returns the failure
   (stderr / exit / timeout); the model edits the file and re-runs. Native edits are
@@ -2161,7 +2161,7 @@ Defining properties:
   drafts are *iteration states of one file*, not separate artifacts. The run/edit
   loop is **bounded** by the convergence watcher + entry #7 timeouts: after N failed
   run cycles the script is abandoned.
-- **Lifecycle is context-dependent.** Project-less ad-hoc run: ephemeral —
+- **Lifecycle is context-dependent.** Project-less ad-hoc run: ephemeral â€”
   discarded at run end (nowhere to persist). Inside a project: **retained as a
   candidate** (entry #10), never silently auto-loaded, promoted to active only by
   the brain-computed signals in #10.
@@ -2172,15 +2172,15 @@ Defining properties:
   tools via the brain-provided client API (each call gated as above) and may read
   brain-provided ground truth (observations, the ledger). It may **not** take
   model-supplied values as authoritative input or reach the probe / serial port
-  directly — hardware goes through the gated API, never around it.
+  directly â€” hardware goes through the gated API, never around it.
 - **The brain consumes the return / still owns the gates.** When a script's output
   feeds a brain mechanism (e.g. an entry #8 flag), the brain decides what it means;
-  the script never sets brain state or flags itself. And the brain — not the script
-  — owns every guardrail on the calls the script makes.
+  the script never sets brain state or flags itself. And the brain â€” not the script
+  â€” owns every guardrail on the calls the script makes.
 - **Model sees the existing tool index.** So it *edits/reuses* an existing tool
   rather than blindly re-authoring a near-duplicate, the brain shows the model the
   index of tools already available (the shipped vocabulary plus, in a project, the
-  project's tools) — same index pattern as skills (entry #3).
+  project's tools) â€” same index pattern as skills (entry #3).
 - **Deterministic, logged, re-runnable.** The script source (per version), its
   inputs, and its output are recorded under `runs/<session_id>/` so a run is
   auditable and the brain can re-execute it against the same evidence.
@@ -2189,7 +2189,7 @@ Defining properties:
 
 Per the [Accepted design stance](#accepted-design-stance-direct-hardware-access-is-not-sandboxed),
 the model on CLI providers *already* has full code execution, so this entry does
-not grant a new raw capability — it gives that capability a **structured, audited
+not grant a new raw capability â€” it gives that capability a **structured, audited
 shape** pointed at the gated server-tool API: gated calls, brain-consumed outputs,
 identity/versioning, lifecycle, and logging.
 
@@ -2197,7 +2197,7 @@ It also **reduces** bypass incentive rather than adding risk. The #1 reason a
 code-capable model would go *around* the brain is that the one-action-per-turn
 interface is more limiting than its native scripting. Code mode makes the
 sanctioned path as expressive as the raw path (minus the hardware danger), so the
-motivation to bypass largely disappears — strengthening, not weakening, the
+motivation to bypass largely disappears â€” strengthening, not weakening, the
 mitigation in the accepted stance. The honest framing is unchanged: this organizes
 a cooperative model's scripting; it is not a sandbox against a model that
 deliberately bypasses the brain.
@@ -2206,17 +2206,17 @@ deliberately bypasses the brain.
 
 The same machinery lets the model install a **guardrail**: a brain-enforced
 precondition on a specific dangerous action (e.g. "block the UART command that
-wipes the bootloader unless explicitly confirmed"). Honest framing — who it binds:
+wipes the bootloader unless explicitly confirmed"). Honest framing â€” who it binds:
 
 - **Against the model's own future error: hard.** The lucid model at T0 installs
   the guard; the brain enforces it; a thrashing/confused model at T5 is blocked by
   it. A self-binding commitment device for the long-tail dangers the shipped
   guardrails did not anticipate.
 - **Against a deliberately adversarial model: soft.** The model that authored it
-  could author a permissive one or remove it — the accepted-stance ceiling.
+  could author a permissive one or remove it â€” the accepted-stance ceiling.
 
 Design rules: (1) **known-critical ops get *shipped* guardrails**, not
-model-authored ones — model-authored guards are for the situation-specific long
+model-authored ones â€” model-authored guards are for the situation-specific long
 tail; (2) **the brain enforces it** as a real precondition for every actor
 including the model, or it is not "hard"; (3) **removal is gated/logged** (ideally
 human-approved) so a thrashing model cannot strip its own interlock; (4) guards
@@ -2224,7 +2224,7 @@ that recur are **promoted to shipped guardrails** (same promotion path as tools)
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/`** — a script runner that, on `run_script`, reads
+1. **`src/pyocd_debug_mcp/brain/`** â€” a script runner that, on `run_script`, reads
    the named file from the tool store, **snapshots + hashes it** (identity/version),
    exposes the **gated server-tool client API** (whitelisted tools, each routing
    through the existing `_execute_server_tool` gates) plus brain-provided ground
@@ -2232,33 +2232,33 @@ that recur are **promoted to shipped guardrails** (same promotion path as tools)
    budgets). Returns failures to the model for the native edit/re-run loop, capped by
    the convergence watcher, which still sees every gated call the script makes. Pairs
    with the entry #2 session model.
-2. **Action surface** (`actions.py`) — the formal action is **`run_script(name,
+2. **Action surface** (`actions.py`) â€” the formal action is **`run_script(name,
    inputs)`** (authoring is native, not an action). The `TurnDecision` format is
    never bypassed: decisions still only name actions/tools, and the script body is
    never inline in a decision. Surface the tool index so the model edits/reuses an
    existing file rather than re-authoring. *(Optional, guardrail-class only: a formal
-   write/install action as a pre-existence review checkpoint — see Design 1 above.)*
-3. **Tool-store location** — run the provider with its working dir pointed at (or
+   write/install action as a pre-existence review checkpoint â€” see Design 1 above.)*
+3. **Tool-store location** â€” run the provider with its working dir pointed at (or
    synced to) the tool store so native file writes land where `run_script` reads:
    the session run dir, or the project `tools/` folder (entry #10).
-4. **Persistence** — snapshot per-run source/inputs/output to `runs/<session_id>/`
+4. **Persistence** â€” snapshot per-run source/inputs/output to `runs/<session_id>/`
    for audit; in a project, retain the script file as a candidate (entry #10).
 
 ### What it is supposed to do
 
-- Restore the model's native scripting (code mode) — loops/branches/data
-  processing — pointed at the gated server-tool API, so it is no longer throttled
+- Restore the model's native scripting (code mode) â€” loops/branches/data
+  processing â€” pointed at the gated server-tool API, so it is no longer throttled
   to one action per turn for computation, orchestration, or guardrail authoring.
 - Keep that scripting honest and auditable: every hardware call gated as a normal
   action, brain consumes outputs, brain owns the guardrails, all logged per
-  version — without bloating the permanent tool surface or persisting throwaway
+  version â€” without bloating the permanent tool surface or persisting throwaway
   scripts.
 
 ### Format tax: native authoring dissolves it (and is why Design 2 beats Design 1)
 
 The model is pretrained/RLHF'd to write scripts in its **native** flow (codex via
 `apply_patch`/file-write tools, claude similarly). The format tax appears only if you
-force the script body through a *foreign serialization* — e.g. capturing it as a
+force the script body through a *foreign serialization* â€” e.g. capturing it as a
 structured "define-script" action, worst of all as an escaped JSON string in a
 `TurnDecision`. That is off-distribution: truncation/escaping errors, shorter and
 less dynamic scripts, suppressed "write-and-run" reflex.
@@ -2266,26 +2266,26 @@ less dynamic scripts, suppressed "write-and-run" reflex.
 **Design 2 sidesteps the tax by construction.** Because authoring is *native file-
 writing* (the model writes the file the exact way it does standalone) and is **not**
 captured into any structured action at all, the script body is never serialized into
-a foreign format — there is nothing to tax. This is a primary reason Design 2 (native
+a foreign format â€” there is nothing to tax. This is a primary reason Design 2 (native
 write, gated run) is preferred over Design 1 (formal write decision): Design 1, if
 its write step embedded the script in a structured action, would reintroduce the
 tax; Design 2 does not.
 
 So the only requirement is that the model's **native file-writing is active** in how
-the brain invokes the provider (it is, on the CLI providers — `codex exec` can still
+the brain invokes the provider (it is, on the CLI providers â€” `codex exec` can still
 `apply_patch`), and that its working dir is pointed at the tool store so the file
 lands where `run_script` reads it. Entry #4 (native tool-calling) is then **not**
-needed to avoid a script-body tax — it reverts to a general reliability option for
+needed to avoid a script-body tax â€” it reverts to a general reliability option for
 the *decisions* (`run_script` etc.), which carry only short names, no script body.
 
 **Verify empirically (don't assume).** If Design 1 is ever considered for guardrail-
 class scripts, compare native-file authoring (Design 2) vs. capturing the body in a
-structured action, on the same task — script length / quality / success — per
+structured action, on the same task â€” script length / quality / success â€” per
 verify-don't-claim, rather than guessing the tax.
 
 **Residual ceiling (honest):** the absolute highest scripting fidelity is full native
 agentic mode (BYO-agent, model drives), which we deliberately traded away for brain
-control. Design 2 (native authoring + gated run) gets *most* of the way — the
+control. Design 2 (native authoring + gated run) gets *most* of the way â€” the
 authoring is already fully native; what stays under brain control is execution. If
 some residual gap remains, the lever to reconsider is a more BYO-leaning hybrid for
 the scripting portion.
@@ -2298,7 +2298,7 @@ the scripting portion.
   #8 predicate).
 - **No fabricated inputs; hardware only through the gated API.** Ground truth comes
   from the brain; every hardware call goes through the gated client API (same gates
-  as a `server_tool` action), never around it — the convergence watcher and entry
+  as a `server_tool` action), never around it â€” the convergence watcher and entry
   #7 budgets see every call.
 - **Bounded iteration.** The edit/re-run loop runs under the convergence watcher +
   entry #7 timeouts; a tool that cannot be made to work after N edits is abandoned
@@ -2311,7 +2311,7 @@ the scripting portion.
 - **Logged** for audit (per version).
 - **Doc-sync + verify.** Document the script contract (native authoring + gated
   `run_script` + snapshot-at-run); before claiming it works, exercise a native
-  author → run → fail → edit → re-run → pass cycle on real hardware.
+  author â†’ run â†’ fail â†’ edit â†’ re-run â†’ pass cycle on real hardware.
 
 ### Status
 
@@ -2965,10 +2965,10 @@ Proposal only. Not yet specced, not yet implemented.
 
 The current success early-exit is the **green check**: `run_green_check` re-flashes
 the **reference** artifact and checks **one** expected symbol + **one** UART
-substring against the **whole board** ([loop.py:712](../src/pyocd_debug_mcp/brain/loop.py#L712)),
+substring against the **whole board** ([loop.py:712](../../src/pyocd_debug_mcp/brain/loop.py#L712)),
 and `finalize(healthy_confirmed | fixed)` is gated on `green_check_ok`
-([loop.py:888](../src/pyocd_debug_mcp/brain/loop.py#L888)). That is a *restore-to-
-known-good* validation — correct for the benchmark, **wrong for real development**,
+([loop.py:888](../../src/pyocd_debug_mcp/brain/loop.py#L888)). That is a *restore-to-
+known-good* validation â€” correct for the benchmark, **wrong for real development**,
 where success is **scoped** to a specific function/feature and there can be many
 diverse checkpoints. Forcing every success through one monolithic whole-board
 re-flash + final-UART + one-symbol check doesn't fit. **Replace it with scoped
@@ -2977,23 +2977,23 @@ success gates.**
 ### Why success can't just copy the entry #8 infeasible gate (the asymmetry)
 
 - **`infeasible` (a "broken" claim):** an honest test of a working board *contradicts*
-  a false claim — reality is a hostile witness, so a false "broken" is hard to fake.
+  a false claim â€” reality is a hostile witness, so a false "broken" is hard to fake.
 - **Success (a "works" claim):** a weak/trivial test *passes* without exercising the
-  feature — reality only pushes back if the test genuinely exercises it, and the
+  feature â€” reality only pushes back if the test genuinely exercises it, and the
   model controls the test.
 
 So a self-authored **success** test is far more gameable than a self-authored
 **failure** test. Success therefore needs *more* than entry #8's mechanism: the
 criteria must be **anchored** (human / manifest) or the discrimination must be
-**enforced** — never just "the model wrote a passing test."
+**enforced** â€” never just "the model wrote a passing test."
 
 ### What the change is
 
-Replace the monolithic green check with **scoped success gates** — verify success for
+Replace the monolithic green check with **scoped success gates** â€” verify success for
 the specific function/feature in question, not the whole board. **Two arms**, chosen
 by assurance need; in both, the success criteria are **anchored, never model-invented**.
 
-### Arm A — Automated (synchronized skill + brain-enforced flip)
+### Arm A â€” Automated (synchronized skill + brain-enforced flip)
 
 1. **Trigger.** The model declares a scoped success ("function X works").
 2. **Skill injection (entry #13, at done-time).** Inject the success-test rubric skill,
@@ -3001,7 +3001,7 @@ by assurance need; in both, the success criteria are **anchored, never model-inv
    - design the test so that **flipping ONE critical element makes it fail** (a
      discriminating test);
    - pick a critical element that is **relevant** to the goal;
-   - **declare that critical element to the brain as a specific, FLIPPABLE value** — a
+   - **declare that critical element to the brain as a specific, FLIPPABLE value** â€” a
      symbol/memory/register read or a UART substring the brain can corrupt, *not* a
      vague "correctness";
    - read the *actual* feature's real output (not a proxy), include a negative control.
@@ -3009,15 +3009,15 @@ by assurance need; in both, the success criteria are **anchored, never model-inv
    server-tool API; entry #11 `run_script` path) and **declares the flippable critical
    element**.
 4. **Brain gate (hard enforcement):**
-   - run the test on the current state → must **PASS**;
-   - re-run it while **flipping the declared element** — the brain mediates the read
-     and returns a corrupted value — → must **FAIL**.
-   Both must hold → accept the scoped success. The model **can't fake the flip** (the
+   - run the test on the current state â†’ must **PASS**;
+   - re-run it while **flipping the declared element** â€” the brain mediates the read
+     and returns a corrupted value â€” â†’ must **FAIL**.
+   Both must hold â†’ accept the scoped success. The model **can't fake the flip** (the
    brain runs it), and the brain **knows what to flip** (the model declared it). This
    is the synchronization: the skill makes the model build a flippable test and name
    the element; the brain enforces the flip.
 5. **Hard vs soft:**
-   - **Hard-enforced:** the test *genuinely discriminates on the declared element* —
+   - **Hard-enforced:** the test *genuinely discriminates on the declared element* â€”
      not a constant, not ignoring its reads, not lying about the flip outcome (the
      brain observed both runs).
    - **Soft (skill + cooperative model):** that the declared element is the *relevant*
@@ -3025,12 +3025,12 @@ by assurance need; in both, the success criteria are **anchored, never model-inv
      feature works.
    - **Residual ceiling (accepted):** a relevant-*looking* but actually-irrelevant
      declared element passes the flip yet doesn't verify the real feature. Soft-
-     guardrails line — defended by the skill + cooperative model, not enforced.
+     guardrails line â€” defended by the skill + cooperative model, not enforced.
 6. **Requirement:** the skill must force a **flippable** declaration (a concrete
    corruptible value), or the brain has nothing to flip. The declaration also doubles
    as the auditable "here is exactly what I claim."
 
-### Arm B — Manual (human-anchored test)
+### Arm B â€” Manual (human-anchored test)
 
 1. **Model authors the success test, summarizes what it does,** and asks the human to:
    - **(a)** manually sign off on the test,
@@ -3038,14 +3038,14 @@ by assurance need; in both, the success criteria are **anchored, never model-inv
    - **(c)** with the option to request additional checks via the chat box.
 2. **Only when the whole test is manually approved does the run continue.**
 3. **Timing:**
-   - **Upfront** (before the relevant work) for **specified** tasks — locking the test
+   - **Upfront** (before the relevant work) for **specified** tasks â€” locking the test
      *before* the work **kills post-hoc rigging** (the model can't tailor a weak test
      to whatever it ends up producing);
    - **mid-run** (once the goal crystallizes) for **exploratory** tasks where the
      success criteria aren't knowable at turn 0.
 4. **The human is the external anchor.** Confirming the important values pins **both**
    non-triviality **and relevance** (the human verifies the test checks the *right*
-   thing) — so Arm B is the **high-assurance** option with **no soft relevance
+   thing) â€” so Arm B is the **high-assurance** option with **no soft relevance
    ceiling.**
 
 ### Anchor sources (so criteria are never model-invented)
@@ -3053,9 +3053,9 @@ by assurance need; in both, the success criteria are **anchored, never model-inv
 Success criteria are always anchored to one of:
 
 - **human** (Arm B),
-- **manifest / spec / reference** (the benchmark and specified tasks — this is where
+- **manifest / spec / reference** (the benchmark and specified tasks â€” this is where
   the old green check's manifest-supplied expected symbol/UART values move),
-- **model-declared element + brain-enforced flip** (Arm A — discrimination-anchored,
+- **model-declared element + brain-enforced flip** (Arm A â€” discrimination-anchored,
   relevance soft).
 
 The model authors the **test**; it never invents the **criteria** unilaterally.
@@ -3063,32 +3063,32 @@ The model authors the **test**; it never invents the **criteria** unilaterally.
 ### Remove the old green check (explicit)
 
 - **Delete `run_green_check`** (the fixed whole-board macro,
-  [loop.py:712](../src/pyocd_debug_mcp/brain/loop.py#L712)) and the
-  **`green_check_ok` finalize gate** ([loop.py:888](../src/pyocd_debug_mcp/brain/loop.py#L888)).
+  [loop.py:712](../../src/pyocd_debug_mcp/brain/loop.py#L712)) and the
+  **`green_check_ok` finalize gate** ([loop.py:888](../../src/pyocd_debug_mcp/brain/loop.py#L888)).
 - Gate `finalize(healthy_confirmed | fixed)` on a **scoped success gate** (Arm A or B)
   instead.
 - **Benchmark continuity:** the benchmark's manifest-supplied criteria (expected
-  symbol/UART) become an **anchored scoped success test** — the manifest is the
-  anchor, exactly like the human in Arm B — so removing the green check does **not**
+  symbol/UART) become an **anchored scoped success test** â€” the manifest is the
+  anchor, exactly like the human in Arm B â€” so removing the green check does **not**
   lose benchmark trustworthiness; it generalizes it. The whole-board check becomes one
   *anchored instance*, not the only mechanism.
 - **Do not leave two success paths.** The green check is fully replaced.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/loop.py`** — remove `_execute_green_check` + the
+1. **`src/pyocd_debug_mcp/brain/loop.py`** â€” remove `_execute_green_check` + the
    `green_check_ok` gate; add the scoped success gate: run the model's test, enforce
    the declared-element flip (Arm A) or require human approval (Arm B).
-2. **`src/pyocd_debug_mcp/brain/actions.py`** — replace the `run_green_check` action
+2. **`src/pyocd_debug_mcp/brain/actions.py`** â€” replace the `run_green_check` action
    with a scoped-success action carrying the test + the **declared flippable element**
    (Arm A) or the human-approval handshake (Arm B); gate `fixed` / `healthy_confirmed`
    on it.
-3. **Entry #13** — deliver the success-test rubric skill at done-time.
-4. **Entries #9 / #11** — the model-authored gated test, plus the brain's
+3. **Entry #13** â€” deliver the success-test rubric skill at done-time.
+4. **Entries #9 / #11** â€” the model-authored gated test, plus the brain's
    mediated-read flip (re-run with the declared value corrupted).
-5. **`src/pyocd_debug_mcp/brain/benchmark.py`** — migrate the manifest criteria to an
+5. **`src/pyocd_debug_mcp/brain/benchmark.py`** â€” migrate the manifest criteria to an
    anchored success test.
-6. **`src/pyocd_debug_mcp/brain/cli.py`** — Arm B's human handshake (summarize test,
+6. **`src/pyocd_debug_mcp/brain/cli.py`** â€” Arm B's human handshake (summarize test,
    confirm values, chat for extra checks).
 
 ### What it is supposed to do
@@ -3101,18 +3101,18 @@ The model authors the **test**; it never invents the **criteria** unilaterally.
 
 ### Constraints / watch-outs
 
-- **The asymmetry is the reason for all of this** — never let the model both define
+- **The asymmetry is the reason for all of this** â€” never let the model both define
   success *and* author the only passing test unanchored.
 - **Arm A hard-enforces discrimination, soft on relevance; Arm B hard-anchors both.**
   Pick by assurance need.
-- **Flippable declaration required (Arm A)** — a concrete corruptible value, or the
+- **Flippable declaration required (Arm A)** â€” a concrete corruptible value, or the
   brain can't enforce.
 - **Upfront-lock for specified tasks (Arm B)** to kill post-hoc rigging; mid-run for
   exploratory.
 - **Benchmark:** migrate manifest criteria to an anchored success test; don't lose the
   existing trust.
-- **Remove the old green check entirely** — no dual success paths.
-- **Doc-sync + verify on real hardware** — including a *rejected* non-discriminating
+- **Remove the old green check entirely** â€” no dual success paths.
+- **Doc-sync + verify on real hardware** â€” including a *rejected* non-discriminating
   test (the flip doesn't make it fail) and a *rejected* constant test.
 
 ### Status
@@ -3128,12 +3128,12 @@ tests), and #13 (the done-time skill).
 ### Problem / current behavior
 
 Skills are selected **once** at run start (`load_skills_for_context`,
-[skills.py:131](../src/pyocd_debug_mcp/brain/skills.py#L131)) and rendered **once**
-to text (`render_skills`, [skills.py:155](../src/pyocd_debug_mcp/brain/skills.py#L155)),
+[skills.py:131](../../src/pyocd_debug_mcp/brain/skills.py#L131)) and rendered **once**
+to text (`render_skills`, [skills.py:155](../../src/pyocd_debug_mcp/brain/skills.py#L155)),
 but that same full `skills_text` is spliced into **every** turn's prompt
-([loop.py:1001](../src/pyocd_debug_mcp/brain/loop.py#L1001)). The entire payload —
+([loop.py:1001](../../src/pyocd_debug_mcp/brain/loop.py#L1001)). The entire payload â€”
 `facts` / `diagnostic_hints` / `verification_checks` / `forbidden_actions` for
-every matched skill — is re-paid on every iteration. In the re-serialization
+every matched skill â€” is re-paid on every iteration. In the re-serialization
 loop that is wasted tokens and compute each turn; in a native session it is worse,
 because re-injecting the same block mutates the conversation tail and **busts the
 KV cache** the session was meant to preserve.
@@ -3146,7 +3146,7 @@ on-demand:
 - **Always-on, cheap (cached prefix):** a one-line skill **index**
   (`skill_id: title` per matched skill) plus the **safety-critical
   `forbidden_actions`** (`avoid:` lines,
-  [skills.py:167](../src/pyocd_debug_mcp/brain/skills.py#L167)). Small, stable,
+  [skills.py:167](../../src/pyocd_debug_mcp/brain/skills.py#L167)). Small, stable,
   lives in the cached prefix.
 - **On-demand, expensive (model-pull):** the full `facts` / `diagnostic_hints` /
   `verification_checks` body, fetched via a new `load_skill(skill_id)` action
@@ -3164,18 +3164,18 @@ the index keeps it aware that the option exists.
 
 ### Where it belongs
 
-1. **`src/pyocd_debug_mcp/brain/skills.py`** — add `render_skill_index()`
+1. **`src/pyocd_debug_mcp/brain/skills.py`** â€” add `render_skill_index()`
    (id + title only) and `render_skill_safety()` (`forbidden_actions` only),
    distinct from the full `render_skills` (kept for the on-demand body and the
    deterministic mode). Add a `render_skill_body(skill_id)` for single-skill
    pulls.
-2. **`src/pyocd_debug_mcp/brain/actions.py`** — add a `LoadSkillAction`
+2. **`src/pyocd_debug_mcp/brain/actions.py`** â€” add a `LoadSkillAction`
    (`kind="load_skill"`, `skill_id`) to `ActionUnion`, or expose the same as a
    native tool in session mode.
-3. **`src/pyocd_debug_mcp/brain/loop.py`** — inject index + safety lines once
+3. **`src/pyocd_debug_mcp/brain/loop.py`** â€” inject index + safety lines once
    (native session) or compactly per turn (deterministic mode); handle the
    `load_skill` action by returning the requested body; add the nudge in
-   `_build_instructions` ([loop.py:168](../src/pyocd_debug_mcp/brain/loop.py#L168)).
+   `_build_instructions` ([loop.py:168](../../src/pyocd_debug_mcp/brain/loop.py#L168)).
 
 ### Native-session (API) note
 
@@ -3205,7 +3205,7 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
   the rendering/injection cadence changes. `load_skill` must validate `skill_id`
   against the already-selected set so the model cannot pull arbitrary or
   out-of-scope skills. This is the same *curated-allowlist* discipline as entry
-  #1's tool whitelist filtering — the model selects from a brain-curated set and
+  #1's tool whitelist filtering â€” the model selects from a brain-curated set and
   may never name something outside it.
 - **Doc-sync + verify.** Update the README turnkey section / R12 turnkey spec in
   the same unit of work, and re-run the suite before claiming it works.
@@ -3221,7 +3221,7 @@ Proposal only. Not yet specced, not yet implemented.
 ### Problem / current behavior
 
 The model's *board* interaction is skill-guided (entry #3), but its self-directed
-*host* work (the entries #11/#12 free-reign) is **unguided** — it runs complex local
+*host* work (the entries #11/#12 free-reign) is **unguided** â€” it runs complex local
 workflows (bug triage, test suites, writing a process) on its own with no structured
 process knowledge. We already ship these process skills (the repo's
 `fix-bug` / `test-suite` / `write-process` commands), so the gap is that the turnkey
@@ -3229,29 +3229,29 @@ model can't draw on them while working freely on the host.
 
 ### What the change is
 
-Equip the model with skills for its self-directed host work — extend the entry #3
+Equip the model with skills for its self-directed host work â€” extend the entry #3
 skill layer from board-decisions to host-workflows, **reusing the existing process
-skills** (read-bug ≈ `fix-bug`, feature-test ≈ `test-suite`, write-process). Complex
-actions (read bug, feature test, write process, …) are defined as skills; simple
+skills** (read-bug â‰ˆ `fix-bug`, feature-test â‰ˆ `test-suite`, write-process). Complex
+actions (read bug, feature test, write process, â€¦) are defined as skills; simple
 actions (`cd`, `mkdir`, read file, write a line) need none.
 
 This is an **experiment**: build the three delivery mechanisms below behind a switch
 and measure before committing. **Always-on in every arm:** a skill **index** (id +
 one-line description of each available process-skill) so the model is aware of what
-exists — cheap recognition without round-trips.
+exists â€” cheap recognition without round-trips.
 
 ### The three arms (how skills reach the model for complex workflows)
 
-- **Arm A — model-pull (model-side recognition).** The model self-discerns it is in a
+- **Arm A â€” model-pull (model-side recognition).** The model self-discerns it is in a
   complex workflow and pulls the skill (entry #3 `load_skill`); simple actions it just
   does. Lowest friction. Fails if the model doesn't recognize the workflow, or
   recognizes but doesn't pull. Simple actions free.
-- **Arm B — brain-push on declared complex action (model-side recognition, guaranteed
+- **Arm B â€” brain-push on declared complex action (model-side recognition, guaranteed
   push).** The model recognizes a complex action and declares it to the brain; the
   brain pushes that action's skill subset; the model proceeds with it as context.
   Removes "recognized but didn't pull"; still fails if the model doesn't recognize.
   Simple actions free.
-- **Arm C — brain-oracle on every action (brain-side recognition).** The user's
+- **Arm C â€” brain-oracle on every action (brain-side recognition).** The user's
   explicit design:
 
   > We want the model to have larger, more complex actions; however, the model is
@@ -3269,14 +3269,14 @@ exists — cheap recognition without round-trips.
 
 ### Why C is the distinct arm (not redundant)
 
-A and B both depend on the **model** recognizing complex actions — they differ only
+A and B both depend on the **model** recognizing complex actions â€” they differ only
 *pull vs push* after recognition. **C is the only arm that moves recognition to the
 brain**, so it tests a different variable. Failure-mode ladder:
 
 - **A** fails on (didn't-recognize) **or** (recognized-but-didn't-pull);
 - **B** fixes the second; still fails on (didn't-recognize);
-- **C** fixes both (recognition is brain-side) — fails only if the brain's
-  action→skill mapping is wrong, or the model deliberately doesn't surface.
+- **C** fixes both (recognition is brain-side) â€” fails only if the brain's
+  actionâ†’skill mapping is wrong, or the model deliberately doesn't surface.
 
 So C is strongest on **coverage** (the whole point of the feature). The redundant
 pair is **A vs B**; **C is the one to keep.** The cleanest two-arm cut is A (model-
@@ -3297,23 +3297,23 @@ side, low overhead) vs C (brain-side, high coverage), with B as an optional midd
 
 ### Cost control for C
 
-- **Cheap oracle, not turn boundary** — the brain-side check is a dict lookup; the
+- **Cheap oracle, not turn boundary** â€” the brain-side check is a dict lookup; the
   only cost is the model generating the ask + consuming the response, appended to
   context.
-- **Tight loops go in scripts** — entry #9 model-native scripts run without per-line
+- **Tight loops go in scripts** â€” entry #9 model-native scripts run without per-line
   asks, so only top-level actions surface; this bounds the ask count.
-- **(Optional) coarser-grain surfacing** — declare intent at the *workflow* grain
-  ("about to start on this bug") rather than every atomic `cd`/`mkdir` — most of C's
+- **(Optional) coarser-grain surfacing** â€” declare intent at the *workflow* grain
+  ("about to start on this bug") rather than every atomic `cd`/`mkdir` â€” most of C's
   recognition benefit for a fraction of the asks.
 
-### Measurement plan (it's an experiment — verify, don't assume)
+### Measurement plan (it's an experiment â€” verify, don't assume)
 
 Measure each arm on:
 
-- **Coverage** — for each complex workflow, did the right skill get loaded? (C should
+- **Coverage** â€” for each complex workflow, did the right skill get loaded? (C should
   win.)
-- **Overhead** — added latency / tokens (C pays most; bounded as above).
-- **Outcome quality** — did skill-guidance actually improve the host work vs.
+- **Overhead** â€” added latency / tokens (C pays most; bounded as above).
+- **Outcome quality** â€” did skill-guidance actually improve the host work vs.
   unguided?
 
 Decide by coverage-vs-overhead: if C's coverage gain beats its overhead, C wins; if
@@ -3321,13 +3321,13 @@ B's model-side recognition is "good enough" at lower cost, B wins.
 
 ### Where it belongs
 
-1. **`skills.py` / brain** — reuse the existing process skills
+1. **`skills.py` / brain** â€” reuse the existing process skills
    (`fix-bug`/`test-suite`/`write-process`) as host-workflow skills; render an
    always-on index; implement the three delivery mechanisms behind a config/flag so
    the arms are switchable for the experiment.
-2. **Arm C** — a fast in-context "consult" oracle the model calls before actions
+2. **Arm C** â€” a fast in-context "consult" oracle the model calls before actions
    (returns skill subset or "Continue"); ensure it is not a turn boundary.
-3. **Arms A/B** — `load_skill` (pull) and a declare-action push.
+3. **Arms A/B** â€” `load_skill` (pull) and a declare-action push.
 
 ### Constraints / watch-outs
 
@@ -3337,7 +3337,7 @@ B's model-side recognition is "good enough" at lower cost, B wins.
   get skills.
 - **C's anti-bypass is soft** (accepted); its value is brain-side recognition.
 - **Pin C's cheap-oracle implementation**; bound asks via scripts.
-- **This is an A/B/C experiment** — measure coverage AND overhead before committing.
+- **This is an A/B/C experiment** â€” measure coverage AND overhead before committing.
 - **Doc-sync + verify.**
 
 ### Status
@@ -3367,7 +3367,7 @@ later session. This completes a three-tier model:
   ships with FirmCLI.
 - **Project (persistent, target-scoped):** custom skills and tools accumulated for
   one target, stored client-side on the user's device, reusable across runs.
-  Project tools have two states — **candidate** (retained, available, not
+  Project tools have two states â€” **candidate** (retained, available, not
   auto-loaded) and **active** (promoted, auto-loaded into future sessions).
 - **Session (ephemeral only without a project):** entry #9 tools authored during a
   run. In a project they are **retained as candidates**, not discarded; only a
@@ -3378,18 +3378,18 @@ user's device, so a later session can reopen it and see its accumulated skills a
 tools.
 
 Nothing useful is thrown away (every session tool in a project is kept as a
-candidate), but not everything auto-loads (only promoted/active tools do) — this
+candidate), but not everything auto-loads (only promoted/active tools do) â€” this
 is the reconciliation of "don't waste reusable work" with "don't auto-run
 accumulating junk."
 
 ### Where the data lives (source of truth)
 
-A **client-managed project store** — e.g. `~/.firmcli/projects/<project>/` with
-`skills/` and `tools/` — is the source of truth, loaded and gated by the brain
+A **client-managed project store** â€” e.g. `~/.firmcli/projects/<project>/` with
+`skills/` and `tools/` â€” is the source of truth, loaded and gated by the brain
 exactly as shipped skills are. Explicitly **not** `.codex` / `.claude`:
 
 - Skills here are **brain-injected, not model-discovered** (loaded and rendered by
-  `load_skills_for_context`, [skills.py:131](../src/pyocd_debug_mcp/brain/skills.py#L131)),
+  `load_skills_for_context`, [skills.py:131](../../src/pyocd_debug_mcp/brain/skills.py#L131)),
   so the "model is trained on `.codex`" advantage does not apply.
 - The turnkey providers use brain-owned runtime working directories and provider
   resume handles. Those directories are implementation detail, not the user's
@@ -3397,20 +3397,20 @@ exactly as shipped skills are. Explicitly **not** `.codex` / `.claude`:
   the source of truth for turnkey skills or session tools.
 
 If a provider-style view ever helps native tool-authoring, the brain may *generate*
-a `.codex`/`AGENTS.md`-shaped mirror at runtime — a generated view, never the
+a `.codex`/`AGENTS.md`-shaped mirror at runtime â€” a generated view, never the
 store of record.
 
 ### Skills vs tools persist differently
 
-- **Project skills** (knowledge) — hazard is staleness/conflict (see the repo's
+- **Project skills** (knowledge) â€” hazard is staleness/conflict (see the repo's
   consistency/doc-sync rules). Require **precedence** (define whether shipped or
   project wins) and **validation against board facts** at load, so a stale project
   skill cannot silently contradict a shipped skill or the board config.
-- **Project tools** (model-authored code that can persist and auto-load) — hazard
+- **Project tools** (model-authored code that can persist and auto-load) â€” hazard
   is sharper: a script written in run 1 auto-executes in run 50. Resolved by the
   candidate/active split below: every session tool is **retained as a candidate**,
   but a tool **auto-loads only once it is promoted to active**, and promotion is
-  **brain-computed from deterministic signals** — not a model-set flag and not (by
+  **brain-computed from deterministic signals** â€” not a model-set flag and not (by
   default) a human review.
 
 ### Promotion: candidate -> active
@@ -3420,24 +3420,24 @@ preconditions and then the usefulness threshold.
 
 **Hard preconditions (deterministic, always required, brain-observed):**
 
-- **Clean-run** — its latest version ran without error/timeout (the brain executes
+- **Clean-run** â€” its latest version ran without error/timeout (the brain executes
   it, so it has this directly). Never auto-load a tool that errors.
-- **Re-validates** — the brain re-runs the latest version against *current* ground
+- **Re-validates** â€” the brain re-runs the latest version against *current* ground
   truth and it still behaves. This guards the hardcoded-transient case, so a tool
-  being **specific is not disqualifying** — if a specific tool keeps re-validating
+  being **specific is not disqualifying** â€” if a specific tool keeps re-validating
   it can auto-load. (No separate "generalizes" check; re-validation subsumes it.)
 
-**Usefulness threshold — latching useful-count >= 1.** Each invocation, the model
+**Usefulness threshold â€” latching useful-count >= 1.** Each invocation, the model
 reports whether *that* use was useful via a typed `tool_feedback` field on its
 `TurnDecision` (see below); the brain aggregates a `useful_count` per stable tool
 identity. Promote when `useful_count >= 1`. This single metric:
 
-- **handles the one-shot case** — a tool written once, useful that once, then the
-  session ends → `useful_count = 1` → promote;
-- **handles the high-volume / low-rate case** — useful 10% of 100 invocations is
-  10 useful uses → promote (a **rate** would wrongly reject this, and a high
-  **>= M count** would wrongly reject the one-shot — so it is neither);
-- **is also the veto** — a tool the model *never* marked useful (`useful_count = 0`)
+- **handles the one-shot case** â€” a tool written once, useful that once, then the
+  session ends â†’ `useful_count = 1` â†’ promote;
+- **handles the high-volume / low-rate case** â€” useful 10% of 100 invocations is
+  10 useful uses â†’ promote (a **rate** would wrongly reject this, and a high
+  **>= M count** would wrongly reject the one-shot â€” so it is neither);
+- **is also the veto** â€” a tool the model *never* marked useful (`useful_count = 0`)
   does not promote, however clean or often-run. This is the "passed the proxies but
   was actually junk" filter, falling out of the same metric.
 
@@ -3446,17 +3446,17 @@ tool is promotable; more useful uses only raise confidence/ranking and delay
 pruning, they are not required.
 
 **Durable vs provisional (bounding the softening).** Letting `tool_feedback` reach
-the threshold means a model-asserted "useful" can promote — a mild softening of the
+the threshold means a model-asserted "useful" can promote â€” a mild softening of the
 earlier *veto-only* framing. The blast radius is bounded because the hard
 preconditions still hold (it at least runs and re-validates), so the worst case is
 harmless clutter, not danger. To self-correct it, split promotion:
 
-- **durable** — backed by behavioral evidence the brain observes directly: *reused*
+- **durable** â€” backed by behavioral evidence the brain observes directly: *reused*
   (invoked >= N times, counted by stable identity so the count survives edits) or
-  *consumed* (output flowed into a brain-mediated mechanism — an entry #8 gate
+  *consumed* (output flowed into a brain-mediated mechanism â€” an entry #8 gate
   predicate, green-check/finalize inputs, or a dependent batch step; note "the
   model used it in its reasoning" is **not** brain-observable and does not count).
-- **provisional** — promoted on `useful_count >= 1` alone, no behavioral evidence
+- **provisional** â€” promoted on `useful_count >= 1` alone, no behavioral evidence
   yet. Auto-loads but on a **short leash**: if not actually reused within K later
   sessions, it is demoted/pruned. A genuinely useful one-shot gets reused and
   graduates to durable; a falsely-claimed one evaporates.
@@ -3466,16 +3466,16 @@ ranking** signals; `useful_count >= 1` (over the two hard preconditions) is the
 promotion threshold.
 
 **The `tool_feedback` field.** The model does not attach a loose variable for the
-brain to scrape from prose — it fills an optional typed field on the already-parsed
+brain to scrape from prose â€” it fills an optional typed field on the already-parsed
 `TurnDecision` (entry #2), e.g. `tool_feedback: { tool_id, useful: bool, note }`,
 on the turn after it used a tool. The model may also supply **metadata**
 (description, intended scope, ground truth needed) as helpful input. The model
 **proposes/reports**; the brain still computes the promotion verdict and owns the
-preconditions — consistent with the entry #8 rule that the model never sets the
+preconditions â€” consistent with the entry #8 rule that the model never sets the
 gate flag directly.
 
 **Storage stays bounded:** durable tools persist; provisional and unused candidates
-are prunable (LRU/TTL — drop candidates never reused after N sessions, demote
+are prunable (LRU/TTL â€” drop candidates never reused after N sessions, demote
 provisional tools not reused within K sessions). Good capability accumulates
 without unbounded junk.
 
@@ -3483,26 +3483,26 @@ without unbounded junk.
 
 Projects are first-class in the CLI, with visible storage and explicit deletion:
 
-- `pyocd-debug-brain project list` — list projects **with their memory/storage
+- `pyocd-debug-brain project list` â€” list projects **with their memory/storage
   usage** (disk size of each project's `skills/` + `tools/`).
-- `pyocd-debug-brain project show <name>` — what skills/tools the project holds,
+- `pyocd-debug-brain project show <name>` â€” what skills/tools the project holds,
   including each tool's state (**candidate** vs **active**) and reuse count.
-- `pyocd-debug-brain run --project <name> ...` — run inside a project (its skills
+- `pyocd-debug-brain run --project <name> ...` â€” run inside a project (its skills
   and tools load on top of shipped).
-- `pyocd-debug-brain project delete <name>` — **delete that client's project
+- `pyocd-debug-brain project delete <name>` â€” **delete that client's project
   folder** (its skills + tools) to free up space. Destructive and irreversible
   for that project's custom artifacts; confirm before deleting.
 
 ### Where it belongs
 
-1. **Client store** — a project-store module that creates/lists/loads/deletes
+1. **Client store** â€” a project-store module that creates/lists/loads/deletes
    `~/.firmcli/projects/<project>/{skills,tools}/` and reports sizes.
-2. **`src/pyocd_debug_mcp/brain/cli.py`** — a `project` subcommand group
+2. **`src/pyocd_debug_mcp/brain/cli.py`** â€” a `project` subcommand group
    (`list` / `show` / `delete`) and a `--project` option on `run`, alongside the
    existing `run` / `benchmark` subcommands.
-3. **`src/pyocd_debug_mcp/brain/skills.py`** — load project skills with the
+3. **`src/pyocd_debug_mcp/brain/skills.py`** â€” load project skills with the
    shipped ones, applying precedence + validation.
-4. **Promotion path** — retain entry #9 session tools as project **candidates**;
+4. **Promotion path** â€” retain entry #9 session tools as project **candidates**;
    compute candidate -> active promotion (preconditions clean-run + re-validates,
    then latching `useful_count >= 1` from `tool_feedback`), tag durable vs
    provisional, and prune (LRU/TTL for candidates, short leash for provisional).
@@ -3524,7 +3524,7 @@ Projects are first-class in the CLI, with visible storage and explicit deletion:
 - **Brain owns preconditions + verdict; model only reports usefulness.** Clean-run
   and re-validates are hard, brain-observed preconditions. The model reports
   per-use usefulness via the typed `tool_feedback` field, but the brain computes
-  the verdict and aggregates `useful_count` — the model never sets the promotion
+  the verdict and aggregates `useful_count` â€” the model never sets the promotion
   flag, consistent with the entry #8 rule.
 - **Latching useful-count, not a rate or a high count.** Promote at
   `useful_count >= 1` (honors both the one-shot and high-volume/low-rate cases);
@@ -3537,12 +3537,12 @@ Projects are first-class in the CLI, with visible storage and explicit deletion:
   storage stays bounded.
 - **Precedence + validation for skills** so persisted knowledge can't silently
   override shipped skills or board facts.
-- **`.codex`/`.claude` is not the store of record** — client project store is;
+- **`.codex`/`.claude` is not the store of record** â€” client project store is;
   any provider-folder view is a generated mirror.
 - **Delete is destructive.** `project delete` removes custom skills/tools for that
   project permanently; confirm, and never touch shipped/global assets.
-- **Doc-sync + verify.** Document the project model and exercise create → run →
-  promote → list (with size) → delete before claiming it works.
+- **Doc-sync + verify.** Document the project model and exercise create â†’ run â†’
+  promote â†’ list (with size) â†’ delete before claiming it works.
 
 ### Status
 
@@ -3557,9 +3557,9 @@ entry #9 (session tools) as the persistence tier between shipped and session.
 
 The model closes a turn by returning a `TurnDecision` JSON object whose governed
 `action` field is a discriminated union
-([actions.py:74](../src/pyocd_debug_mcp/brain/actions.py#L74)), which the brain
+([actions.py:74](../../src/pyocd_debug_mcp/brain/actions.py#L74)), which the brain
 parses (`parse_turn_decision_json`) and dispatches. This is **independent of the
-session/memory work in entry #2** — entry #2 keeps this JSON return for the final
+session/memory work in entry #2** â€” entry #2 keeps this JSON return for the final
 governed/terminal decision and only changes how turns are delivered (one
 persistent session vs. cold re-prompts). This entry is the *separate* question of
 whether to change the output **format** itself.
@@ -3576,7 +3576,7 @@ provider's native `tools` parameter, the model emits real `tool_use` calls, and
 the brain intercepts each call, runs it through the same `_execute_server_tool`
 gate, and appends a native `tool_result`.
 
-The logical governed action set is unchanged — `connect`, `flash_firmware`,
+The logical governed action set is unchanged â€” `connect`, `flash_firmware`,
 `run_script`, `run_build`, firmware-deliverable edits, `run_green_check`,
 `finalize`, terminal decisions, etc. become provider-native calls. Model-native
 host work stays outside this tool surface. The brain's guardrails, ledger, and
@@ -3589,7 +3589,7 @@ to do at the governed boundary" changes.
   so well-formed calls can be more reliable than free-form JSON-schema adherence;
   tool definitions live in the native `tools` param and are cached there (pairs
   with entry #1's API delivery).
-- **Against:** it gives up the clean, provider-agnostic `TurnDecision` contract —
+- **Against:** it gives up the clean, provider-agnostic `TurnDecision` contract â€”
   each provider's tool-call schema and surface differ, so the parsing/dispatch
   layer forks per provider. Acceptable only because we are not optimizing for
   provider symmetry; still a real cost in code surface.
@@ -3605,14 +3605,14 @@ to do at the governed boundary" changes.
 
 ### Where it belongs
 
-1. **The four providers** — add a native-tool-call path that surfaces the
+1. **The four providers** â€” add a native-tool-call path that surfaces the
    whitelisted tools via the provider `tools` parameter and parses `tool_use`
    responses, behind the same `DecisionProvider` boundary.
-2. **`src/pyocd_debug_mcp/brain/loop.py`** — accept a native tool call as an
+2. **`src/pyocd_debug_mcp/brain/loop.py`** â€” accept a native tool call as an
    alternative to a parsed `TurnDecision.action`, mapping it onto the same
    dispatch in `_execute_server_tool`. Keep the JSON-return path as the default /
    deterministic path.
-3. **`src/pyocd_debug_mcp/brain/actions.py`** — the existing action models become
+3. **`src/pyocd_debug_mcp/brain/actions.py`** â€” the existing action models become
    the schema source for the native tool definitions, so there is one source of
    truth for both formats.
 

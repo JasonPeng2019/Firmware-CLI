@@ -8,24 +8,13 @@ Completed process ledgers, superseded specs, and review artifacts should move to
 
 - `things-to-change.md` - broad prototype backlog.
 - `r12_turnkey_spec.md` - current R12 turnkey contract.
-- `branch-a-live-provider-hardware-suite_spec.md` - active merged A/B live
-  provider and hardware validation spec for `P-Wave-A`.
-- `branch-a-live-provider-hardware-suite_process.md` - live process ledger for
-  the merged A/B provider/hardware suite.
-- `branch-a-live-provider-hardware-suite_review.md` - attached-board clean
-  review verdict for the merged A/B provider/hardware suite.
+- `r12-branch-a-live-provider-status.md` - compact Branch A / merged A+B
+  live-provider handoff, replacing the completed spec/process/review cluster.
 - `r12-branch-b-status.md` - compact Branch B implementation and proof handoff.
 - `r12-branch-b-official-portability-closure_spec.md` - remaining stricter
   Branch B closure proof for official board/fresh-machine claims.
-- `r12-server-tool-action-hardening_spec.md` - completed no-credit hardening
-  spec for centralized server-tool action parsing and redundant `tool_name`
-  stripping.
-- `r12-server-tool-action-hardening_process.md` - process ledger and validation
-  matrix for the server-tool action hardening pass.
-- `r12-server-tool-action-hardening_review.md` - no-credit review verdict for
-  the server-tool action hardening pass.
-- `r12-claude-refresh-hardening-test-plan_spec.md` - deferred live Claude/API
-  validation plan for when usage and credits are available.
+- `p-wave-a-ab-final-readiness_review.md` - current independent review of
+  `P-Wave-A` with Branch B merged, including final-product gap assessment.
 
 ## Archive
 
@@ -33,14 +22,17 @@ Completed and redundant docs from previous loops were moved to:
 
 ```text
 markdowns/tmp/curr-archive-20260628/
+markdowns/tmp/markdown-audit-20260630/
 ```
 
 ## Verified
 
 - The active list reflects the intended reduced `curr` set after the
-  2026-06-28 cleanup.
+  2026-06-30 markdown audit cleanup.
 - Completed Branch A strict-recovery, P0 foundation, and A/B additive merge
   artifacts were archived out of `curr`.
+- Completed Branch A live-provider and server-tool hardening artifacts were
+  replaced by compact status/current docs and archived out of `curr`.
 
 ## Pending Verification
 

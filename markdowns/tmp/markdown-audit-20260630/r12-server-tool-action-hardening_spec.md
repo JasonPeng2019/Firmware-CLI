@@ -1,4 +1,7 @@
-> STATUS: PROPOSAL - implementation pass may proceed after local reconciliation in this document.
+> STATUS: IMPLEMENTED - no-credit parser/policy hardening is complete; later
+> Branch A live-provider validation exercised the hardened path through
+> Claude CLI on the attached `nucleo_l476rg + nrf52840dk` pair. Paid API
+> provider proof remains pending.
 
 # r12 server tool action hardening
 
@@ -29,12 +32,15 @@ In scope:
 - Add focused smoke/regression tests for the above behavior.
 - Run no-credit validation: unit/regression tests, lint/type checks, the
   non-hardware ladder, and a Codex-compatible/local smoke where feasible.
-- Document Claude/API validation that is blocked until Claude usage and paid API
-  credits are available again.
+- Document live-provider/API validation status honestly: Claude CLI was blocked
+  during the original pass but later ran after usage refresh; paid API-provider
+  proof remains blocked on credits.
 
 Out of scope:
 
-- No real Claude CLI run in this pass, because Claude session usage is exhausted.
+- No real Claude CLI run in the original no-credit implementation pass, because
+  Claude session usage was exhausted at that time. Follow-up Branch A
+  live-provider validation later ran Claude CLI after usage refresh.
 - No Anthropic/OpenAI API provider run in this pass, because there are no actual
   API credits available for this validation.
 - No hardware flashing requirement for this narrow parser/policy hardening pass.
@@ -105,8 +111,9 @@ behavior.
 - Repository non-hardware ladder through the FirmCLI check script.
 - Codex-compatible smoke that exercises provider-shaped decisions without
   spending Claude usage or paid API credits.
-- Explicitly pending: real Claude CLI multi-turn provider run and paid
-  Anthropic/OpenAI API provider runs.
+- Follow-up live-provider validation through the Branch A suite after Claude
+  usage refresh.
+- Explicitly pending: paid Anthropic/OpenAI API provider runs.
 
 ## Acceptance criteria
 
@@ -164,6 +171,10 @@ behavior.
   `nucleo_l476rg + nrf52840dk` pair, including multiple code-writing repair
   prompts on both boards. Official `nrf52833dk` closure remains pending because
   the attached Nordic board identifies as `0x52840`.
+- Current workspace audit: the historical Branch A `runs/20260629T03...`,
+  `04...`, `17...`, and `18...` directories cited by the process ledger are not
+  present in local `runs/`, so those specific artifacts cannot be reinspected
+  from this checkout until restored.
 
 ## Pending verification
 

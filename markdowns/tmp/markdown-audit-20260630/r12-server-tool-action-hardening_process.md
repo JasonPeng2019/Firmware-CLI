@@ -3,7 +3,9 @@
 ## Goal and roadmap anchor
 
 Task: Centralize server tool action normalization and harden namespaced
-`server_tool` argument handling without spending Claude/API credits.
+`server_tool` argument handling. The original implementation pass avoided
+Claude/API spend; later Branch A live-provider validation exercised the same
+path through Claude CLI after usage refreshed.
 
 Roadmap anchor: R12.
 
@@ -37,29 +39,21 @@ Roadmap anchor: R12.
 
 ## In progress
 
-- None for the no-credit scope.
+- None.
 
 ## TODO
 
-- Run the scaled Claude CLI refresh test after usage refresh:
-  - one board first;
-  - at least two top-level user prompts in the same continued workflow;
-  - short prompts;
-  - target `max_iters=2` per user prompt, allowing `max_iters=3` only for the
-    first prompt if setup needs it;
-  - no exhaustive Claude matrix on a basic Claude Pro window;
-  - optional third prompt with one tiny code-writing/workspace-change proof only
-    if the two-prompt smoke leaves enough usage headroom.
 - Run Anthropic/OpenAI API provider smoke after paid credits are available.
 
 ## Limitations and known gaps
 
-- Claude CLI validation is intentionally not run in this pass because current
-  Claude usage is exhausted.
-- The deferred Claude validation is intentionally scaled down. The previous
-  exhaustive Claude live pass consumed usage too quickly, so the next green bar
-  should prove the real Claude adapter/action path across multiple top-level
-  user prompts without trying to rerun the whole two-board, multi-case matrix.
+- The original no-credit pass did not run Claude CLI because Claude usage was
+  exhausted at that time.
+- Later Branch A live-provider validation records post-refresh Claude CLI proof
+  on the attached `nucleo_l476rg + nrf52840dk` pair. This checkout does not
+  currently contain the Branch A `runs/20260629T03...` / `04...` / `17...` /
+  `18...` artifact directories named by that process ledger, so those
+  historical run artifacts cannot be reinspected locally until restored.
 - Anthropic/OpenAI API provider validation is intentionally not run because
   there are no paid API credits available for this validation.
 - Hardware flashing is not required for this narrow parser/policy hardening
@@ -102,9 +96,12 @@ suite process and preserve board/probe/serial/silicon artifacts.
   - `FinalizeAction` parsed with `classification=healthy`.
   - Namespaced redundant server-tool smoke parsed as a batch and normalized to
     `tool_name=connect`, `arguments={'board_id': 'nrf52833dk'}`.
+- Follow-up Branch A live-provider validation records real Claude CLI
+  attached-board health and code-writing repair proof after usage refresh; see
+  `markdowns/curr/branch-a-live-provider-hardware-suite_process.md`.
 
 ## Pending verification
 
-- Real Claude CLI short multi-user-prompt smoke after usage refresh, sized for
-  a basic Claude Pro five-hour window.
 - Anthropic/OpenAI API provider run after credits are available.
+- Exact official `nrf52833dk` proof for claims that require the official
+  scoped Nordic board.

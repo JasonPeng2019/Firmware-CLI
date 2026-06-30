@@ -16,6 +16,8 @@ EXPECTED_SKILLS = (
     "firmcli-fix-bug",
     "firmcli-test-suite",
     "firmcli-write-process",
+    "firmcli-markdown-audit",
+    "python-change",
 )
 
 EXPECTED_SOURCE_FILES = (
@@ -91,9 +93,19 @@ def check_skill(skill_dir: Path, errors: list[str]) -> None:
 
 
 def maybe_run_quick_validate(skill_dir: Path, notices: list[str], errors: list[str]) -> None:
-    validator = Path.home() / ".codex" / "skills" / ".system" / "skill-creator" / "scripts" / "quick_validate.py"
+    validator = (
+        Path.home()
+        / ".codex"
+        / "skills"
+        / ".system"
+        / "skill-creator"
+        / "scripts"
+        / "quick_validate.py"
+    )
     if not validator.exists():
-        notices.append("quick_validate.py not found in the user skill-creator bundle; skipped external validation")
+        notices.append(
+            "quick_validate.py not found in the user skill-creator bundle; skipped external validation"
+        )
         return
     completed = subprocess.run(
         [sys.executable, str(validator), str(skill_dir)],

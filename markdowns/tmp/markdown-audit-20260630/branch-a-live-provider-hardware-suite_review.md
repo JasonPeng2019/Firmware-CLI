@@ -40,15 +40,23 @@ Still pending for official closure:
 - Codex CLI completed the same comparison repair prompts on each attached
   board.
 - The public client-action path is green and records audited execution.
-- Representative artifacts show provider remote resume handles and no
-  recovery-created replacement provider session.
+- The process ledger records that representative artifacts showed provider
+  remote resume handles and no recovery-created replacement provider session.
+- The review/process ledger records the relevant run IDs. A 2026-06-30 local
+  audit found that the Branch A `runs/20260629T03...`, `04...`, `17...`, and
+  `18...` artifact directories are not currently present in this checkout, so
+  those specific artifacts cannot be reinspected locally until restored.
 
 ## Verified
 
 - See `markdowns/curr/branch-a-live-provider-hardware-suite_process.md` for
   commands, run IDs, and artifact evidence.
+- Local run-artifact reinspection is currently limited by the missing untracked
+  Branch A/B run folders noted above.
 
 ## Pending verification
 
 - Official `nrf52833dk` second-provider closure.
 - Paid API-provider smokes.
+- Restoration or rerun of the missing Branch A/B run folders if artifact-level
+  reinspection is required.

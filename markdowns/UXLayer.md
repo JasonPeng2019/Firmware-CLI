@@ -321,12 +321,12 @@ The current CLI already creates and/or depends on these artifacts:
 
 - MCP-session artifacts under `runs/<session_id>/...`
 - turnkey artifacts such as:
-  - `run-metadata/turnkey_request.json`
-  - `run-metadata/turnkey_result.json`
-  - `run-metadata/turnkey_state.json`
+  - `runs/<session_id>/run-metadata/turnkey_request.json`
+  - `runs/<session_id>/run-metadata/turnkey_result.json`
+  - `runs/<session_id>/run-metadata/turnkey_state.json`
   - `logs/brain_trace.jsonl`
   - `logs/model_turns.jsonl`
-  - `logs/prompt.txt`
+  - `runs/<session_id>/logs/prompt.txt`
   - `applied-patches/turnkey.diff`
 
 This is important: the product already has strong machine-readable outputs. The

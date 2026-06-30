@@ -17,14 +17,17 @@ Use this skill to mirror `.claude/commands/fix-bug.md`.
 4. State the root cause in one or two sentences.
 5. For anything beyond a trivial one-file fix, create or update `markdowns/curr/slug_spec.md`. Use the helper if needed:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py spec bug-slug --task "bug summary"`
-6. Implement the smallest change in the correct layer.
-7. Add or extend a regression guard so the bug cannot silently return.
-8. Sync every doc the fix touched in the same unit of work.
-9. Run the validation ladder and any targeted repro checks:
+6. If the fix changes Python code or Python-facing project config, read and use `.codex/skills/python-change/SKILL.md` before editing. Its validation gate is required in addition to the FirmCLI ladder.
+7. Implement the smallest change in the correct layer.
+8. Add or extend a regression guard so the bug cannot silently return.
+9. Sync every doc the fix touched in the same unit of work.
+10. Run the validation ladder and any targeted repro checks:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add targeted commands with `--command`
-10. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
-11. For hardware-only proof, stop at the hand-off and do not claim the live result.
+11. For Python changes, also run the Python-change script unless already run after the final edit:
+   - `python .codex/skills/python-change/scripts/run_python_change_checks.py`
+12. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
+13. For hardware-only proof, stop at the hand-off and do not claim the live result.
 
 ## Closeout
 
