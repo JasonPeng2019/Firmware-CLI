@@ -766,7 +766,7 @@ def _select_canonical_session(
     agent_result: ParsedAgentResult,
     new_session_dirs: tuple[Path, ...],
 ) -> SessionSelection:
-    matching = tuple(path for path in new_session_dirs if path.name == agent_result.session_id)
+    matching = [path for path in new_session_dirs if path.name == agent_result.session_id]
     if not matching:
         raise RuntimeError(
             f"Structured benchmark result reported session_id={agent_result.session_id}, "

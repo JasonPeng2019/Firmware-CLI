@@ -92,6 +92,12 @@ skill owns the Python-specific edit discipline and validation gate:
 - run `uv run pytest -q`
 - report files changed, verification commands, and remaining risks
 
+Repo-wide Pyright is the desired hard gate. If full Pyright is temporarily
+blocked by known pre-existing debt, the Python-change closeout must classify
+changed-file/new diagnostics separately from baseline diagnostics and must not
+call Pyright green. Once the baseline is zero, every full-Pyright failure is a
+blocking bug for the current workflow.
+
 ## Reporting Contract
 
 Every workflow closeout must separate:

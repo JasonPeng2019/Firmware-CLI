@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-import anyio
+from anyio.to_thread import run_sync as run_sync_in_worker_thread
 
 from pyocd_debug_mcp.brain.provider_parsing import (
     parse_memory_summary_json,
@@ -70,7 +70,7 @@ class ClaudeCLIDecisionProvider:
         prompt_bundle: ProviderPromptBundle,
         session_state: ProviderSessionState,
     ) -> ProviderTurn:
-        return await anyio.to_thread.run_sync(
+        return await run_sync_in_worker_thread(
             self._next_decision_sync,
             prompt_bundle,
             session_state,
@@ -83,7 +83,7 @@ class ClaudeCLIDecisionProvider:
         prior_summary_text: str,
         evicted_entries: tuple[ProviderMemoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
-        return await anyio.to_thread.run_sync(
+        return await run_sync_in_worker_thread(
             self._summarize_memory_sync,
             session_state,
             prior_summary_text,

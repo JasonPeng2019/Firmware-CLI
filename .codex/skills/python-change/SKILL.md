@@ -57,6 +57,18 @@ After the gate, including after failures or interrupts:
 
 ## Type Discipline
 
+- `uv run pyright --outputjson` is a required hard gate once the repo-wide
+  Pyright baseline is green. Do not report a Python change as fully validated
+  while full Pyright fails.
+- If a branch is temporarily carrying known pre-existing Pyright debt, classify
+  the diagnostics by provenance before closeout:
+  - changed-file or new diagnostics are blocking and must be fixed
+  - pre-existing diagnostics may be reported only as a baseline exception, never
+    as a green Pyright result
+  - the final answer must say that repo-wide Pyright is not green
+- When the baseline has been burned down to zero errors, remove any baseline
+  exception language from the closeout and treat every full-Pyright failure as a
+  bug to route through the normal fix loop.
 - Fix Pyright errors caused by the change before reporting success.
 - Do not add `# type: ignore` unless there is no better fix.
 - If a `# type: ignore` is unavoidable, keep it as narrow as possible and

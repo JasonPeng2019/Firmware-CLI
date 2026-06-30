@@ -191,6 +191,21 @@ class FakeClient:
         return self._tool_descriptors
 
 
+def require_run_root(execution: TurnkeyExecution) -> Path:
+    assert execution.run_root is not None
+    return execution.run_root
+
+
+def require_str(value: object) -> str:
+    assert isinstance(value, str)
+    return value
+
+
+def require_mapping(value: object) -> dict[str, object]:
+    assert isinstance(value, dict)
+    return cast(dict[str, object], value)
+
+
 @pytest.mark.anyio
 async def test_run_turnkey_executes_ordered_action_batch_with_wait_and_uart_write() -> None:
     client = FakeClient(
@@ -392,7 +407,7 @@ async def test_run_turnkey_refuses_conflicting_tool_name_on_namespaced_server_to
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert execution.brain_trace[0]["result_text"].startswith(
+    assert require_str(execution.brain_trace[0]["result_text"]).startswith(
         "Refused [brain/conflicting-server-tool-name]"
     )
     assert client.calls == []
@@ -528,7 +543,7 @@ async def test_run_turnkey_refuses_conflicting_nested_server_tool_argument() -> 
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert execution.brain_trace[0]["result_text"].startswith(
+    assert require_str(execution.brain_trace[0]["result_text"]).startswith(
         "Refused [brain/conflicting-server-tool-argument]"
     )
     assert client.calls == []
@@ -839,10 +854,12 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
 
     assert record["provider"] == "codex-cli"
     assert record["memory_mode"] == "deterministic"
-    assert len(record["recent_memory_entries"]) == 4
-    assert record["recent_memory_entries"][0]["turn_index"] == 3
-    assert record["memory_summary"]["covered_through_turn"] == 2
-    assert record["memory_summary"]["source"] == "deterministic"
+    recent_memory_entries = cast(list[dict[str, object]], record["recent_memory_entries"])
+    memory_summary = require_mapping(record["memory_summary"])
+    assert len(recent_memory_entries) == 4
+    assert recent_memory_entries[0]["turn_index"] == 3
+    assert memory_summary["covered_through_turn"] == 2
+    assert memory_summary["source"] == "deterministic"
 
 
 def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> None:
@@ -1055,8 +1072,7 @@ def test_run_freeform_task_threads_cli_client_action_specs(
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    client_actions = captured["client_actions"]
-    assert client_actions is not None
+    client_actions = cast(InMemoryClientActionStore, captured["client_actions"])
     assert client_actions.list_actions()[0].name == "uart_write"
 
 
@@ -1226,16 +1242,17 @@ def test_run_turnkey_writes_run_artifacts_and_uses_structured_session_id(
     assert execution.result.session_id == "20260620T000000Z-deadbeef"
     assert execution.state.session_id is None
     assert execution.state.session_ids_seen == ["20260620T000000Z-deadbeef"]
-    assert execution.run_root == (tmp_path / "runs" / "20260620T000000Z-deadbeef")
-    assert (execution.run_root / "run-metadata" / "turnkey_request.json").exists()
-    assert (execution.run_root / "run-metadata" / "turnkey_result.json").exists()
-    assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
-    assert (execution.run_root / "logs" / "brain_trace.jsonl").exists()
-    assert (execution.run_root / "logs" / "model_turns.jsonl").exists()
-    assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
+    run_root = require_run_root(execution)
+    assert run_root == (tmp_path / "runs" / "20260620T000000Z-deadbeef")
+    assert (run_root / "run-metadata" / "turnkey_request.json").exists()
+    assert (run_root / "run-metadata" / "turnkey_result.json").exists()
+    assert (run_root / "run-metadata" / "turnkey_state.json").exists()
+    assert (run_root / "logs" / "brain_trace.jsonl").exists()
+    assert (run_root / "logs" / "model_turns.jsonl").exists()
+    assert (run_root / "logs" / "brain_events.jsonl").exists()
     event_kinds = [
         json.loads(line)["event_kind"]
-        for line in (execution.run_root / "logs" / "brain_events.jsonl")
+        for line in (run_root / "logs" / "brain_events.jsonl")
         .read_text(encoding="utf-8")
         .splitlines()
     ]
@@ -1429,7 +1446,7 @@ def test_run_turnkey_resume_failure_fails_closed_and_records_artifact_event(
     assert execution.result.final_status == "blocked"
     assert "turnkey/provider-resume-failed" in execution.result.summary
     assert provider.calls == 1
-    events_path = execution.run_root / "logs" / "brain_events.jsonl"
+    events_path = require_run_root(execution) / "logs" / "brain_events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
     resume_event = next(
         record for record in events if record["event_kind"] == "provider_resume_failed"
@@ -1508,17 +1525,15 @@ def test_run_turnkey_resume_failure_can_start_labeled_recovery_session(
     assert execution.result.summary == "Provider resume handling completed."
     assert provider.calls == 2
     assert provider.session_metadata[1]["resume_recovery_action"] == "new-session-from-memory"
-    assert execution.model_turns[-1]["provider_metadata"]["recovery_created_new_session"] is True
-    assert (
-        execution.model_turns[-1]["provider_metadata"]["replaced_remote_handle_id"]
-        == "thread-parent"
-    )
+    provider_metadata = require_mapping(execution.model_turns[-1]["provider_metadata"])
+    assert provider_metadata["recovery_created_new_session"] is True
+    assert provider_metadata["replaced_remote_handle_id"] == "thread-parent"
     choice_event = next(
         event
         for event in execution.brain_events
         if event["event_kind"] == "provider_resume_recovery_choice"
     )
-    assert choice_event["details"]["choice"] == "new-session-from-memory"
+    assert require_mapping(choice_event["details"])["choice"] == "new-session-from-memory"
 
 
 def test_run_turnkey_resume_failure_can_be_aborted_by_interactive_handler(
@@ -1708,6 +1723,91 @@ def test_run_turnkey_uses_invocation_default_timeout_for_disconnect(
     assert captured_disconnect_timeouts == [17.0]
 
 
+def test_run_turnkey_blocks_when_final_disconnect_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    original_call_tool = loop_mod._call_tool_with_timeout
+
+    async def _failing_disconnect(
+        client: Any, tool_name: str, arguments: dict[str, object], *, timeout_seconds: float
+    ) -> ToolTextResult:
+        if tool_name == "disconnect":
+            raise MCPClientError("disconnect timed out")
+        return await original_call_tool(
+            client, tool_name, arguments, timeout_seconds=timeout_seconds
+        )
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop._call_tool_with_timeout", _failing_disconnect)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Verify this reference firmware is healthy.",
+        model=None,
+        max_iters=2,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Need to connect first.",
+                classification="healthy",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Connected and ready to close.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="No fault found.",
+                    summary="Healthy baseline confirmed.",
+                ),
+            ),
+        ]
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(
+                Any,
+                lambda: FakeClient(
+                    {
+                        "connect": [
+                            ToolTextResult(
+                                tool_name="connect",
+                                text=(
+                                    "Connected to board 'NUCLEO-L476RG' via probe "
+                                    "0668FF514988525067213913 via pyocd-native. "
+                                    "[board config: nucleo_l476rg] session_id=20260625T000000Z-cleanup"
+                                ),
+                            )
+                        ],
+                    }
+                ),
+            ),
+        )
+    )
+
+    assert execution.result.final_status == "blocked"
+    assert execution.result.classification == "tooling_failure"
+    assert "final-disconnect-failed" in execution.result.summary
+    assert execution.state.session_id == "20260625T000000Z-cleanup"
+    cleanup_event_details: list[dict[str, object]] = []
+    for event in execution.brain_events:
+        if event["event_kind"] != "unexpected_failure":
+            continue
+        details = require_mapping(event["details"])
+        if details.get("phase") == "final_disconnect":
+            cleanup_event_details.append(details)
+    assert cleanup_event_details
+    assert cleanup_event_details[0]["session_id"] == "20260625T000000Z-cleanup"
+
+
 def test_run_turnkey_returns_structured_tooling_failure_for_mcp_startup_errors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1851,18 +1951,20 @@ def test_run_turnkey_treats_binary_read_as_workspace_error(
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert "WorkspaceError" in execution.state.last_result_text
-    assert "not UTF-8 text" in execution.state.last_result_text
+    last_result_text = execution.state.last_result_text
+    assert last_result_text is not None
+    assert "WorkspaceError" in last_result_text
+    assert "not UTF-8 text" in last_result_text
     assert execution.state.provider_session_state is not None
     memory_entry = execution.state.provider_session_state.recent_memory_entries[0]
     record = memory_entry.to_record()
-    assert record["decision_rationale"].startswith("Read the file before editing")
-    assert record["action_payload"]["path"] == "src/firmware.bin"
+    assert require_str(record["decision_rationale"]).startswith("Read the file before editing")
+    assert require_mapping(record["action_payload"])["path"] == "src/firmware.bin"
     assert record["result_status"] == "failure"
-    assert str(record["codebase_summary"]).startswith("workspace_root=")
+    assert require_str(record["codebase_summary"]).startswith("workspace_root=")
+    acceptance_constraints = cast(list[str], record["acceptance_constraints"])
     assert (
-        "do not finalize healthy/fixed without successful run_green_check"
-        in record["acceptance_constraints"]
+        "do not finalize healthy/fixed without successful run_green_check" in acceptance_constraints
     )
 
 
@@ -2111,7 +2213,7 @@ def test_run_turnkey_refuses_healthy_finalize_before_green_check(
 
     assert execution.result.final_status == "healthy_confirmed"
     assert execution.result.verification.green_check_ok is True
-    assert execution.brain_trace[1]["result_text"].startswith(
+    assert require_str(execution.brain_trace[1]["result_text"]).startswith(
         "Refused [brain/finalize-without-green-check]"
     )
 
@@ -2171,7 +2273,9 @@ def test_run_turnkey_refuses_redundant_connect() -> None:
     )
 
     assert execution.result.final_status == "diagnosed_only"
-    assert execution.brain_trace[1]["result_text"].startswith("Refused [brain/redundant-connect]")
+    assert require_str(execution.brain_trace[1]["result_text"]).startswith(
+        "Refused [brain/redundant-connect]"
+    )
 
 
 def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
@@ -2271,7 +2375,9 @@ def test_run_turnkey_keeps_same_session_after_failed_green_check_in_benchmark(
 
     assert execution.result.final_status == "diagnosed_only"
     assert execution.state.session_ids_seen == ["20260620T000000Z-greenfail"]
-    assert execution.brain_trace[2]["result_text"].startswith("Refused [brain/redundant-connect]")
+    assert require_str(execution.brain_trace[2]["result_text"]).startswith(
+        "Refused [brain/redundant-connect]"
+    )
 
 
 def test_run_turnkey_normalizes_integer_read_memory_address() -> None:

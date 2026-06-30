@@ -23,10 +23,10 @@ In scope:
 - Inventory `P-Wave-A` versus `P-Wave-C` before merging.
 - Keep `P-Wave-A` as the target/spine branch.
 - Merge or selectively transplant Branch C implementation and docs:
-  - `brain/events.py`
-  - `brain/timeout_policy.py`
-  - `brain/timeout_runtime.py`
-  - `timeouts.py`
+  - `src/pyocd_debug_mcp/brain/events.py`
+  - `src/pyocd_debug_mcp/brain/timeout_policy.py`
+  - `src/pyocd_debug_mcp/brain/timeout_runtime.py`
+  - `src/pyocd_debug_mcp/timeouts.py`
   - Branch C state and loop/server/client hooks
   - Branch C harness/tests/docs
 - Preserve Branch A behavior:
@@ -71,18 +71,18 @@ Out of scope:
   provider continuity, real tool schemas, batched actions, bounded waits,
   client actions, structured brain events, and model-refined timeout budgets
   inside hard caps.
-- Current code on `P-Wave-A`: Branch A and Branch B are implemented together.
-  The active docs still describe Branch C as unimplemented on this branch.
-- Source code on `P-Wave-C`: Branch C is implemented and tested for event
-  spine, timeout policy, hidden `_brain_sync_timeouts`, and provider-neutral
-  Branch C harness coverage on the then-attached Windows boards.
+- Pre-merge code on `P-Wave-A`: Branch A and Branch B were implemented
+  together, while active docs still described Branch C as unimplemented.
+- Source code from `P-Wave-C`: Branch C implemented and tested event spine,
+  timeout policy, hidden `_brain_sync_timeouts`, and provider-neutral Branch C
+  harness coverage on the then-attached Windows boards.
 - Other docs: `current-progress.md`, `r12-branch-a-live-provider-status.md`,
   and `r12-branch-b-status.md` define the A/B proof boundary. Branch C docs on
   `P-Wave-C` define the C proof boundary.
-- Disagreements: active `P-Wave-A` docs say Branch C is still missing. After a
-  successful merge, that statement becomes stale and must be updated. Existing
-  historical run IDs are not automatically current proof unless the artifacts
-  exist and are reinspected or the checks are rerun.
+- Reconciled result: the current `P-Wave-A` worktree includes the A/B/C
+  merge-back candidate. Existing historical run IDs are not automatically
+  current proof unless the artifacts exist and are reinspected or the checks
+  are rerun; the Verified section below records the current proof.
 
 ## Design
 
@@ -94,8 +94,12 @@ conflict, classify it by ownership:
   behavior.
 - Branch C wins event taxonomy, timeout policy, effective timeout state, and
   hidden server-timeout sync behavior.
-- Shared files such as `brain/loop.py`, `brain/actions.py`, `brain/cli.py`,
-  `brain/state.py`, `brain/mcp_client.py`, `server.py`, and `timeouts.py` must
+- Shared files such as `src/pyocd_debug_mcp/brain/loop.py`,
+  `src/pyocd_debug_mcp/brain/actions.py`,
+  `src/pyocd_debug_mcp/brain/cli.py`,
+  `src/pyocd_debug_mcp/brain/state.py`,
+  `src/pyocd_debug_mcp/brain/mcp_client.py`,
+  `src/pyocd_debug_mcp/server.py`, and `src/pyocd_debug_mcp/timeouts.py`
   preserve all three branches' hooks in one coherent path rather than carrying
   duplicate parallel implementations.
 
@@ -200,12 +204,40 @@ operator has authorized the board use. Do not claim them otherwise.
   - `uv run mypy src` -> passed
   - `uv run pytest -q tests/test_r11_benchmark.py` -> `34 passed`
   - `uv run python -m tests.harness.r11_benchmark --help` -> passed
+- Pyright baseline cleanup on June 30, 2026 after the adversarial audit:
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py`
+    -> ruff check/fix passed, ruff format passed, full Pyright passed with 105
+    files analyzed and 0 diagnostics, full pytest -> `339 passed`
+  - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite`
+    -> full suite ladder passed, including `339` pytest tests, ruff, mypy,
+    `34` R11 benchmark tests, and R11 benchmark help
+  - the older `95`-diagnostic Pyright lines above are historical evidence from
+    before this cleanup, not the current branch status
 - Python-change gate after the harness fix:
   - `uv run ruff check --fix .` -> passed
   - `uv run ruff format .` -> passed
   - `uv run pyright --outputjson` -> repo-wide baseline failure with `95`
     diagnostics; changed-file filter for the merge/harness files reported `0`
   - `uv run pytest -q` -> `338 passed`
+- Adversarial audit fix on June 30, 2026:
+  - fixed a second Branch C harness false negative: provider dry-run checks
+    now accept either a single action or a non-empty schema-valid
+    `action_batch`
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    -> `15 passed`
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --skip-hardware --skip-providers --fail-on-skip`
+    -> `4 passed, 0 failed, 0 skipped`
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py --continue-on-error`
+    -> ruff check/fix passed, ruff format passed, Pyright remained at the
+    known repo-wide `95` diagnostic baseline, full pytest -> `339 passed`
+  - changed-file Pyright filter for `tests/harness/branch_c_tests.py` and
+    `tests/test_branch_c_harness.py` -> `0` diagnostics
+  - focused Wave 1 suite:
+    `uv run pytest -q tests/test_r12_turnkey.py tests/test_r12_turnkey_merge.py tests/test_branch_c_harness.py tests/test_timeout_policy.py tests/test_p0_foundation.py`
+    -> `123 passed`
+  - `uv run mypy src` -> passed
+  - `uv run pytest -q tests/test_r11_benchmark.py` -> `34 passed`
+  - `uv run python -m tests.harness.r11_benchmark --help` -> passed
 - Live hardware substrate checks passed:
   - `host_bootstrap.py`, `stage0_check.py`, and `tests.harness.stage1_smoke`
     on `nucleo_l476rg`
@@ -219,6 +251,14 @@ operator has authorized the board use. Do not claim them otherwise.
   - `nrf52840dk`: `codex-cli` run root
     `runs/20260630T035749Z-166e2f98`, `claude-cli` run root
     `runs/20260630T035823Z-4733fa03`
+- A later post-Pyright-cleanup Branch C live rerun also passed on both
+  attached boards and both local CLI providers:
+  - `nucleo_l476rg`: `codex-cli` run root
+    `runs/20260630T050810Z-8a1abf43`, `claude-cli` run root
+    `runs/20260630T050841Z-1aaaf4a0`
+  - `nrf52840dk`: `codex-cli` run root
+    `runs/20260630T050814Z-ac5c22c2`, `claude-cli` run root
+    `runs/20260630T050845Z-c42644ee`
 - Explicit two-turn deployed CLI smokes passed on both attached boards and
   both providers using turn 1 `action_batch(connect, get_board_info)` and turn
   2 standalone `finalize`:
@@ -226,13 +266,56 @@ operator has authorized the board use. Do not claim them otherwise.
   - `runs/20260630T035938Z-d595f811`
   - `runs/20260630T040008Z-8a79ddbf`
   - `runs/20260630T040034Z-b497ea08`
+- A later post-Pyright-cleanup two-turn public CLI smoke rerun also passed by
+  artifact semantics on the same matrix:
+  - `runs/20260630T050932Z-f84bc258` (`nucleo_l476rg` + `codex-cli`)
+  - `runs/20260630T051005Z-56326461` (`nucleo_l476rg` + `claude-cli`)
+  - `runs/20260630T051045Z-34e7d70e` (`nrf52840dk` + `codex-cli`)
+  - `runs/20260630T051113Z-f12e5c29` (`nrf52840dk` + `claude-cli`)
+- The adversarial audit reran explicit task-file public CLI smokes on both
+  attached boards and both providers, again using turn 1
+  `action_batch(connect, get_board_info)` and turn 2 standalone `finalize`.
+  The CLI exits non-zero for the expected `blocked` final status, so the pass
+  condition is the artifact content:
+  - `runs/20260630T043529Z-6391fd28` (`nucleo_l476rg` + `codex-cli`)
+  - `runs/20260630T043559Z-83135d6d` (`nucleo_l476rg` + `claude-cli`)
+  - `runs/20260630T043636Z-e803899e` (`nrf52840dk` + `codex-cli`)
+  - `runs/20260630T043707Z-34dd6769` (`nrf52840dk` + `claude-cli`)
 - A Branch C harness false negative was fixed after the first Nucleo Codex
   run. Codex did reach hardware after recovering from an unsupported batched
   `finalize`, but the harness only accepted per-tool `tool_complete` event
   evidence. It now also accepts `TurnkeyRunResult.mcp_tools_used`, with a
   focused regression test.
 - Process/session audits after live provider and hardware smokes found no
-  leftover spawned provider, MCP, pyOCD, serial, or Python child processes.
+  leftover spawned provider, MCP, pyOCD, serial, or Python child processes from
+  the suite. A pre-existing VS Code/Codex app-server-owned `pyocd-debug-mcp`
+  process tree was present before and after this pass and was not killed.
+- Deep post-Pyright adversarial audit on June 30, 2026:
+  - valid finding fixed: final `run_turnkey` disconnect cleanup failures are no
+    longer swallowed; they now record `unexpected_failure` with phase
+    `final_disconnect` and convert the run result to `blocked` /
+    `tooling_failure`
+  - targeted cleanup regression:
+    `uv run pytest -q tests/test_r12_turnkey.py -k "disconnect_cleanup_fails or invocation_default_timeout_for_disconnect"`
+    -> `2 passed, 54 deselected`
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py`
+    -> ruff check/fix passed, ruff format passed, full Pyright passed with
+    105 files analyzed and 0 diagnostics, full pytest -> `340 passed`
+  - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite`
+    -> `340` pytest tests, ruff, mypy, `34` R11 benchmark tests, and R11
+    benchmark help all passed
+  - live Branch C harness reran on both attached boards with both local CLI
+    providers:
+    `nucleo_l476rg` run roots `runs/20260630T052616Z-4b553e39` and
+    `runs/20260630T052655Z-4e591717`; `nrf52840dk` run roots
+    `runs/20260630T052843Z-057bd52a` and
+    `runs/20260630T052926Z-bb4b66b1`
+  - public two-turn deployed CLI smokes reran on both attached boards and both
+    local CLI providers:
+    `runs/20260630T053014Z-2630df0f`,
+    `runs/20260630T053042Z-4a16f434`,
+    `runs/20260630T053111Z-eb3e6ce0`, and
+    `runs/20260630T053139Z-7449c301`
 
 ## Remaining gaps
 

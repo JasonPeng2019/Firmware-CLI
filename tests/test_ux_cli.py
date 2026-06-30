@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from rich.console import Console
@@ -15,6 +16,7 @@ from pyocd_debug_mcp.ux import shell as ux_shell
 from pyocd_debug_mcp.ux.artifacts import artifact_entries
 from pyocd_debug_mcp.ux.commands import SlashCommand, TaskInput, parse_shell_input
 from pyocd_debug_mcp.ux.history import (
+    HistoryEntry,
     HistoryListing,
     UXHistoryError,
     load_session_bundle,
@@ -63,6 +65,12 @@ def _seed_run(runs_root: Path, session_id: str, *, board_id: str, provider: str,
     (run_root / "logs").mkdir(parents=True, exist_ok=True)
     (run_root / "logs" / "prompt.txt").write_text("prompt", encoding="utf-8")
     return run_root
+
+
+def parse_slash_command(text: str) -> SlashCommand:
+    parsed = parse_shell_input(text)
+    assert isinstance(parsed, SlashCommand)
+    return parsed
 
 
 def test_parse_shell_input_supports_plain_tasks_and_slash_commands() -> None:
@@ -157,18 +165,18 @@ def test_renderer_renders_history_table() -> None:
     renderer.render_history(
         HistoryListing(
             entries=(
-                type(
-                    "Entry",
-                    (),
-                    {
-                        "session_id": "20260623T030000Z-dddd4444",
-                        "board_id": "nrf52833dk",
-                        "provider": "codex-cli",
-                        "run_mode": "freeform",
-                        "final_status": "healthy_confirmed",
-                        "task_summary": "Verify this reference firmware is healthy.",
-                    },
-                )(),
+                HistoryEntry(
+                    session_id="20260623T030000Z-dddd4444",
+                    run_root=Path("."),
+                    board_id="nrf52833dk",
+                    provider="codex-cli",
+                    model=None,
+                    run_mode="freeform",
+                    final_status="healthy_confirmed",
+                    case_id=None,
+                    task_summary="Verify this reference firmware is healthy.",
+                    created_at=None,
+                ),
             ),
             warnings=(),
         )
@@ -395,31 +403,31 @@ def test_shell_workspace_and_build_context_commands_persist_state(tmp_path: Path
     symbol_artifact = tmp_path / "firmware.sym.elf"
     symbol_artifact.write_text("sym", encoding="utf-8")
 
-    assert shell._dispatch_command(parse_shell_input(f"/workspace {workspace_root}")) is True
+    assert shell._dispatch_command(parse_slash_command(f"/workspace {workspace_root}")) is True
     assert shell.context.workspace_root == str(workspace_root.resolve())
 
     assert (
-        shell._dispatch_command(parse_shell_input('/build-command "west build -b nucleo_l476rg"'))
+        shell._dispatch_command(parse_slash_command('/build-command "west build -b nucleo_l476rg"'))
         is True
     )
     assert shell.context.build_command == "west build -b nucleo_l476rg"
 
-    assert shell._dispatch_command(parse_shell_input(f"/flash-artifact {flash_artifact}")) is True
+    assert shell._dispatch_command(parse_slash_command(f"/flash-artifact {flash_artifact}")) is True
     assert shell.context.flash_artifact == str(flash_artifact.resolve())
 
-    assert shell._dispatch_command(parse_shell_input(f"/elf {symbol_artifact}")) is True
+    assert shell._dispatch_command(parse_slash_command(f"/elf {symbol_artifact}")) is True
     assert shell.context.symbol_artifact == str(symbol_artifact.resolve())
 
-    assert shell._dispatch_command(parse_shell_input("/workspace clear")) is True
+    assert shell._dispatch_command(parse_slash_command("/workspace clear")) is True
     assert shell.context.workspace_root is None
 
-    assert shell._dispatch_command(parse_shell_input("/build-command clear")) is True
+    assert shell._dispatch_command(parse_slash_command("/build-command clear")) is True
     assert shell.context.build_command is None
 
-    assert shell._dispatch_command(parse_shell_input("/flash-artifact default")) is True
+    assert shell._dispatch_command(parse_slash_command("/flash-artifact default")) is True
     assert shell.context.flash_artifact is None
 
-    assert shell._dispatch_command(parse_shell_input("/elf default")) is True
+    assert shell._dispatch_command(parse_slash_command("/elf default")) is True
     assert shell.context.symbol_artifact is None
 
 
@@ -428,13 +436,13 @@ def test_shell_raw_command_toggles_modes_and_supports_last() -> None:
     shown = {"called": False}
     shell.renderer.show_last_raw = lambda: shown.update(called=True)  # type: ignore[method-assign]
 
-    assert shell._dispatch_command(parse_shell_input("/raw on")) is True
+    assert shell._dispatch_command(parse_slash_command("/raw on")) is True
     assert shell.renderer.raw_output == "all"
 
-    assert shell._dispatch_command(parse_shell_input("/raw off")) is True
+    assert shell._dispatch_command(parse_slash_command("/raw off")) is True
     assert shell.renderer.raw_output == "off"
 
-    assert shell._dispatch_command(parse_shell_input("/raw last")) is True
+    assert shell._dispatch_command(parse_slash_command("/raw last")) is True
     assert shown["called"] is True
 
 
@@ -442,13 +450,13 @@ def test_shell_memory_commands_update_context_and_reject_invalid_values() -> Non
     stream = io.StringIO()
     shell = _make_shell(_make_renderer(stream))
 
-    assert shell._dispatch_command(parse_shell_input("/memory-mode model-summary")) is True
+    assert shell._dispatch_command(parse_slash_command("/memory-mode model-summary")) is True
     assert shell.context.memory_mode == "model-summary"
 
-    assert shell._dispatch_command(parse_shell_input("/native-sync-every 0")) is True
+    assert shell._dispatch_command(parse_slash_command("/native-sync-every 0")) is True
     assert shell.context.native_sync_every == 0
 
-    assert shell._dispatch_command(parse_shell_input("/native-sync-every -1")) is True
+    assert shell._dispatch_command(parse_slash_command("/native-sync-every -1")) is True
     assert "ux/invalid-native-sync" in stream.getvalue()
 
 
@@ -474,7 +482,9 @@ def test_shell_provider_resume_prompt_maps_retry_new_and_abort_choices() -> None
         ("n", "new-session-from-memory"),
         ("a", "abort"),
     ):
-        shell._session = SimpleNamespace(prompt=lambda *_args, _typed=typed, **_kwargs: _typed)
+        shell._session = cast(
+            Any, SimpleNamespace(prompt=lambda *_args, _typed=typed, **_kwargs: _typed)
+        )
 
         assert shell._prompt_provider_resume_recovery(failure) == expected
 
@@ -519,7 +529,7 @@ def test_guided_verify_ignores_workspace_context_but_keeps_artifact_context(
     monkeypatch.setattr(ux_shell, "run_freeform_task", _fake_run_freeform_task)
     shell.renderer.render_execution = lambda execution: None  # type: ignore[method-assign]
 
-    assert shell._dispatch_command(parse_shell_input("/verify focus on UART evidence")) is True
+    assert shell._dispatch_command(parse_slash_command("/verify focus on UART evidence")) is True
     assert captured["workspace_root"] is None
     assert captured["build_command"] is None
     assert captured["flash_artifact"] == shell.context.flash_artifact
@@ -533,7 +543,7 @@ def test_guided_repair_refuses_without_required_context() -> None:
     shell = _make_shell(_make_renderer(stream))
     shell.context.board_id = "nucleo_l476rg"
 
-    assert shell._dispatch_command(parse_shell_input("/repair restore the healthy image")) is True
+    assert shell._dispatch_command(parse_slash_command("/repair restore the healthy image")) is True
     output = stream.getvalue()
     assert "ux/missing-repair-context" in output
     assert "/workspace <path>" in output
@@ -573,7 +583,7 @@ def test_guided_repair_uses_workspace_context(
     monkeypatch.setattr(ux_shell, "run_freeform_task", _fake_run_freeform_task)
     shell.renderer.render_execution = lambda execution: None  # type: ignore[method-assign]
 
-    assert shell._dispatch_command(parse_shell_input("/repair restore boot ok output")) is True
+    assert shell._dispatch_command(parse_slash_command("/repair restore boot ok output")) is True
     assert captured["workspace_root"] == str(workspace_root.resolve())
     assert captured["build_command"] == "west build -b nucleo_l476rg"
     assert "restore boot ok output" in str(captured["task"])
@@ -602,7 +612,20 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(
         ux_shell,
         "list_history",
         lambda limit=1: HistoryListing(
-            entries=(type("Entry", (), {"session_id": "20260623T060000Z-shortcuts"})(),),
+            entries=(
+                HistoryEntry(
+                    session_id="20260623T060000Z-shortcuts",
+                    run_root=run_root,
+                    board_id="nrf52833dk",
+                    provider="codex-cli",
+                    model=None,
+                    run_mode="freeform",
+                    final_status="healthy_confirmed",
+                    case_id=None,
+                    task_summary="Show prompt shortcut",
+                    created_at=None,
+                ),
+            ),
             warnings=(),
         ),
     )
@@ -610,11 +633,11 @@ def test_artifact_shortcuts_resolve_current_or_latest_session(
         title or entry.label
     )  # type: ignore[method-assign]
 
-    assert shell._dispatch_command(parse_shell_input("/prompt")) is True
+    assert shell._dispatch_command(parse_slash_command("/prompt")) is True
     assert rendered == ["prompt: prompt"]
 
     rendered.clear()
-    assert shell._dispatch_command(parse_shell_input("/events")) is True
+    assert shell._dispatch_command(parse_slash_command("/events")) is True
     assert rendered == ["events: brain_events", "events: server_events"]
 
 

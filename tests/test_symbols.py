@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from pyocd_debug_mcp.adapters.swd_interface import TargetSessionHandle
 from pyocd_debug_mcp.services import symbols
 from pyocd_debug_mcp.target_errors import SymbolLookupError
 
@@ -71,7 +73,7 @@ def test_resolve_symbol_raises_for_missing_symbol(monkeypatch, tmp_path: Path) -
 def test_read_symbol_u32_halts_and_restores_running_target(monkeypatch, tmp_path: Path) -> None:
     elf_path = tmp_path / "firmware.elf"
     elf_path.write_text("placeholder", encoding="utf-8")
-    handle = object()
+    handle = cast(TargetSessionHandle, object())
     calls: list[tuple[str, object]] = []
 
     monkeypatch.setattr(
@@ -113,7 +115,7 @@ def test_read_symbol_u32_halts_and_restores_running_target(monkeypatch, tmp_path
 def test_read_symbol_u32_leaves_halted_target_halted(monkeypatch, tmp_path: Path) -> None:
     elf_path = tmp_path / "firmware.elf"
     elf_path.write_text("placeholder", encoding="utf-8")
-    handle = object()
+    handle = cast(TargetSessionHandle, object())
     calls: list[str] = []
 
     monkeypatch.setattr(

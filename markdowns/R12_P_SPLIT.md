@@ -717,5 +717,9 @@ into the other branch, or into final integration.
   deployment proof remains pending because the Nordic board attached during the
   Branch B completion pass identified as `nrf52840dk` / `NRF52840_xxAA_REV2`,
   a retained alternate profile rather than the official scoped Nordic board.
-- Branch C behavior remains unimplemented here; session/client-scoped timeout
-  state and brain-only server timeout sync still need code and tests.
+- Branch C behavior is implemented in the current Wave 1 A/B/C merge-back
+  candidate through session/client-scoped timeout state, brain-only server
+  timeout sync, and event-spine hooks. The current proof is live on the attached
+  `nucleo_l476rg + nrf52840dk` pair with both local CLI providers; exact
+  official `nrf52833dk`, API-provider parity, and fresh-machine proof remain
+  pending/deferred.

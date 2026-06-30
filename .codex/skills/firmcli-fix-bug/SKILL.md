@@ -19,6 +19,9 @@ Use this skill to mirror `.claude/commands/fix-bug.md`.
 5. For anything beyond a trivial one-file fix, create or update `markdowns/curr/slug_spec.md`. Use the helper if needed:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py spec bug-slug --task "bug summary"`
 6. If the fix changes Python code or Python-facing project config, read and use `.codex/skills/python-change/SKILL.md` before editing. Its validation gate is required in addition to the FirmCLI ladder.
+   Once repo-wide Pyright is green, the Python-change gate requires full
+   `uv run pyright --outputjson` success; any Pyright failure is part of the bug
+   loop and must be fixed before reporting success.
 7. Implement the smallest change in the correct layer.
 8. Add or extend a regression guard so the bug cannot silently return.
 9. Sync every doc the fix touched in the same unit of work.

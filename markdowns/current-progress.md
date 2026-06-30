@@ -188,9 +188,10 @@ Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
   - mypy over `src`: passed
   - R11 benchmark tests: `34 passed`
   - `python -m tests.harness.r11_benchmark --help`: passed
-- Pyright remains a repo-wide baseline failure (`95` diagnostics), but the
-  changed-file filter for the A/B/C merge and harness fix reported `0`
-  diagnostics on the touched merge files.
+- The historical A/B/C merge pass still predated the Pyright cleanup and used a
+  changed-file Pyright filter. A later June 30, 2026 cleanup burned the
+  repo-wide Pyright baseline down from `95` diagnostics to `0`; full
+  `uv run pyright --outputjson` is now green across 105 analyzed files.
 - Live hardware substrate proof passed on the attached boards:
   - `nucleo_l476rg`: `host_bootstrap.py`, `stage0_check.py`, and
     `tests.harness.stage1_smoke`
@@ -220,6 +221,77 @@ Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
   leftover spawned `uv`, `python`, `codex`, `claude`, `pyocd`, MCP, or debug
   helper children. The only matching long-lived process was the pre-existing
   VS Code Codex app-server.
+- A follow-up adversarial audit on June 30, 2026 fixed one additional harness
+  false negative: Branch C provider dry-runs now accept schema-valid
+  `action_batch` decisions as well as single actions. The rerun evidence on
+  the current branch was:
+  - focused regression: `15 passed`
+  - full pytest: `339 passed`
+  - Pyright changed-file filter for the harness/test fix: `0` diagnostics at
+    that time; a later June 30 cleanup made full repo-wide Pyright green
+  - live Branch C harness on both attached boards with both `codex-cli` and
+    `claude-cli`: `11 passed, 0 failed, 0 skipped` for each board
+  - public task-file two-turn CLI smokes on both attached boards and both
+    providers: `runs/20260630T043529Z-6391fd28`,
+    `runs/20260630T043559Z-83135d6d`,
+    `runs/20260630T043636Z-e803899e`, and
+    `runs/20260630T043707Z-34dd6769`
+  - cleanup audit found no new leftover spawned provider/MCP/pyOCD/validation
+    children; the only matching long-lived repo MCP process was the same
+    pre-existing VS Code/Codex app-server-owned tree seen before the suite
+- A follow-up Pyright baseline cleanup on June 30, 2026 is now complete:
+  - workflow skills and the coding playbook define full Pyright as the hard
+    Python-change gate now that the baseline is green
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py`
+    passed: ruff check/fix, ruff format, full Pyright (`0` diagnostics), and
+    full pytest (`339 passed`)
+  - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite`
+    passed, including `339` pytest tests, ruff, mypy, `34` R11 benchmark
+    tests, and R11 benchmark help
+  - Branch C live provider/hardware harness reran green on both attached
+    boards with both local CLI providers:
+    `nucleo_l476rg` run roots `20260630T050810Z-8a1abf43` and
+    `20260630T050841Z-1aaaf4a0`; `nrf52840dk` run roots
+    `20260630T050814Z-ac5c22c2` and `20260630T050845Z-c42644ee`
+  - public two-turn CLI smokes reran green by artifact semantics on both
+    attached boards and both providers, with turn 1
+    `action_batch(connect, get_board_info)` and turn 2 `finalize`:
+    `20260630T050932Z-f84bc258`, `20260630T051005Z-56326461`,
+    `20260630T051045Z-34e7d70e`, and `20260630T051113Z-f12e5c29`
+  - cleanup audit again found no new leftover spawned provider/MCP/pyOCD or
+    validation children beyond the pre-existing VS Code/Codex app-server-owned
+    MCP process tree
+- A deeper adversarial audit after the Pyright cleanup on June 30, 2026 found
+  one valid Wave 1 product bug: final `run_turnkey` disconnect cleanup failures
+  were swallowed, which could hide a failed board-session close after a model
+  produced a final result. The fix now records an `unexpected_failure` event
+  with phase `final_disconnect`, leaves the active `session_id` visible in
+  state, and converts the run result to `blocked` / `tooling_failure`.
+  Verification after that fix:
+  - targeted cleanup regression:
+    `uv run pytest -q tests/test_r12_turnkey.py -k "disconnect_cleanup_fails or invocation_default_timeout_for_disconnect"`
+    -> `2 passed, 54 deselected`
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py`
+    -> ruff check/fix passed, ruff format passed, full Pyright passed with
+    105 files analyzed and 0 diagnostics, full pytest -> `340 passed`
+  - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite`
+    -> full suite ladder passed, including `340` pytest tests, ruff, mypy,
+    `34` R11 benchmark tests, and R11 benchmark help
+  - Branch C live provider/hardware harness passed on both attached boards
+    with both local CLI providers:
+    `nucleo_l476rg` run roots `20260630T052616Z-4b553e39` and
+    `20260630T052655Z-4e591717`; `nrf52840dk` run roots
+    `20260630T052843Z-057bd52a` and `20260630T052926Z-bb4b66b1`
+  - public two-turn CLI smokes passed by artifact semantics on both attached
+    boards and both providers, with turn 1
+    `action_batch(connect,get_board_info)`, turn 2 `finalize`, and
+    `mcp_tools_used=connect,get_board_info`:
+    `20260630T053014Z-2630df0f`, `20260630T053042Z-4a16f434`,
+    `20260630T053111Z-eb3e6ce0`, and `20260630T053139Z-7449c301`
+  - process audits before and after the gates, live harnesses, and public CLI
+    smokes showed no new leftover spawned provider/MCP/pyOCD or validation
+    children beyond the same pre-existing VS Code/Codex app-server-owned MCP
+    process tree
 
 The latest Wave 0 merge-validation pass also produced a current merged-branch
 proof artifact:

@@ -29,6 +29,9 @@ Use this skill to mirror `.claude/commands/write-process.md`.
    - confirm the spec and ledger still match the intended change
    - run `firmcli-spec-loop` for the scoped change or existing `*_spec.md`
    - if the sub-step changes Python code or Python-facing project config, use `.codex/skills/python-change/SKILL.md` and run its validation gate after the final Python edit for that sub-step
+   - after the repo-wide Pyright baseline is green, any Python-changing
+     sub-step must leave full `uv run pyright --outputjson` green; changed-file
+     filtering is no longer a success condition
    - if the loop, review, or smoke checks expose a real bug or must-fix finding, route that issue through `firmcli-fix-bug` instead of making ad hoc follow-up edits
    - after the fix, rerun `firmcli-spec-loop` for that same sub-step before moving on
 7. After each meaningful sub-step, run the non-hardware ladder as an extra smoke gate when the targeted spec loop did not already cover the needed checks:

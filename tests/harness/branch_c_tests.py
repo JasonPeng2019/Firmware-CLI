@@ -527,15 +527,21 @@ def check_provider_dry_run_prompt_render(
         )
 
     action = turn.decision.action
-    if action is None:
+    action_batch = turn.decision.action_batch
+    if action is None and (action_batch is None or not action_batch.calls):
         return CheckResult(
-            check_name, FAIL, f"{provider} returned action_batch instead of a single action"
+            check_name, FAIL, f"{provider} returned a TurnDecision without action or action_batch"
         )
+    if action is not None:
+        decision_shape = f"action.kind={action.kind}"
+    else:
+        assert action_batch is not None
+        decision_shape = f"action_batch.calls={len(action_batch.calls)}"
     return CheckResult(
         check_name,
         PASS,
         f"real prompt rendered with effective_timeouts and {provider} returned a valid "
-        f"TurnDecision (action.kind={action.kind})",
+        f"TurnDecision ({decision_shape})",
     )
 
 

@@ -60,7 +60,7 @@ def make_stm32_board() -> BoardConfig:
         test_addr=0x08000000,
         silicon_id_addr=None,
         silicon_id_expected=None,
-        silicon_id_label=None,
+        silicon_id_label="",
         default_baudrate=115200,
         requires_recover_validation=False,
         recover_mode=None,

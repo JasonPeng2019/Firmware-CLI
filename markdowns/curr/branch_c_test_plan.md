@@ -6,10 +6,11 @@ Validates the `P-Wave-C` implementation against its written spec in
 `markdowns/R12_P_SPLIT.md` ("Branch C - Event Spine + Timeout Policy"). Branch C
 owns four things:
 
-1. `brain/events.py` - the canonical `BrainEvent` taxonomy plus sink/fanout
-   helpers.
-2. `brain/timeout_policy.py` - parses model timeout/iteration proposals,
-   applies brain-owned clamps, builds partial server timeout-sync requests.
+1. `src/pyocd_debug_mcp/brain/events.py` - the canonical `BrainEvent`
+   taxonomy plus sink/fanout helpers.
+2. `src/pyocd_debug_mcp/brain/timeout_policy.py` - parses model
+   timeout/iteration proposals, applies brain-owned clamps, builds partial
+   server timeout-sync requests.
 3. `src/pyocd_debug_mcp/timeouts.py` - single source of truth for timeout
    defaults and clamp ranges, plus session/client-scoped effective timeout
    state.
@@ -54,9 +55,9 @@ uv run python tests/harness/branch_c_tests.py --board-id nucleo_l476rg --skip-ha
 
 - The board under test is plugged in and idle for hardware runs. `nrf52840dk`
   is the harness default because it has retained alternate-board proof in
-  `markdowns/current-progress.md`; official Branch C merge proof should still
-  use the scoped pair `nrf52833dk + nucleo_l476rg` unless the user explicitly
-  accepts retained-board proof instead.
+  `markdowns/current-progress.md`. The current A/B/C merge-back proof used
+  `nucleo_l476rg + nrf52840dk`; exact official `nrf52833dk` proof remains
+  pending until that silicon is attached.
 - `codex` and `claude` CLIs must be installed and authenticated for checks that
   drive real model turns. In development mode those checks may `SKIP`; in
   acceptance mode `--fail-on-skip` makes that pending proof visible.
@@ -88,9 +89,11 @@ clips out-of-range values rather than passing them through.
 `decision_schema_text()`, even though it is registered as a real MCP tool the
 brain can call directly.
 
-**4 - no overreach.** Greps `brain/events.py`, `brain/timeout_policy.py`, and
-`timeouts.py` for batch-execution, client-action, checkpoint, and inspector
-symbols. A hit means a later branch's ownership leaked into Branch C's files.
+**4 - no overreach.** Greps `src/pyocd_debug_mcp/brain/events.py`,
+`src/pyocd_debug_mcp/brain/timeout_policy.py`, and
+`src/pyocd_debug_mcp/timeouts.py` for batch-execution, client-action,
+checkpoint, and inspector symbols. A hit means a later branch's ownership
+leaked into Branch C's files.
 
 **5 - clamp + partial update.** Uses an out-of-range proposal
 (`connect_seconds=99999`, `flash_seconds=1`) and
@@ -107,7 +110,9 @@ board; killable worker enforcement is outside Branch C.
 **8 - Provider dry run of the real prompt.** Builds the same prompt text the
 live provider uses, sends it through the selected provider factory, and parses
 the response as a schema-valid `TurnDecision`. This touches board config only,
-not hardware.
+not hardware. A schema-valid single action or non-empty `action_batch` is a
+pass; batches are part of the Branch B/Wave 1 decision contract and are not a
+Branch C harness failure.
 
 **9 - full provider-driven live run.** Calls `run_freeform_task(...)`
 in-process with an out-of-range invocation-level timeout proposal and iteration
@@ -189,6 +194,50 @@ requests.
   and did not reach Branch C hardware checks because Stage 0 reported
   `FICR.INFO.PART actual=0x52840, expected=0x52833`. The attached Nordic board
   is therefore not the official `nrf52833dk` for this proof.
+- The current A/B/C merge-back validation on June 30, 2026 reran the Branch C
+  live provider/hardware harness on both attached boards with both local CLI
+  providers:
+  - `nucleo_l476rg`: `runs/20260630T035533Z-13eb8716` and
+    `runs/20260630T035604Z-1cab4775`
+  - `nrf52840dk`: `runs/20260630T035749Z-166e2f98` and
+    `runs/20260630T035823Z-4733fa03`
+- The June 30, 2026 adversarial audit fixed a harness false negative where
+  provider dry-run checks rejected schema-valid `action_batch` responses.
+  Regression and rerun evidence:
+  - `uv run pytest -q tests/test_branch_c_harness.py tests/test_timeout_policy.py`
+    -> `15 passed`
+  - `uv run python tests/harness/branch_c_tests.py --board-id nrf52840dk --skip-hardware --skip-providers --fail-on-skip`
+    -> `4 passed, 0 failed, 0 skipped`
+  - full live harness on `nucleo_l476rg` with `codex-cli` and `claude-cli`
+    -> `11 passed, 0 failed, 0 skipped`, run roots
+    `runs/20260630T043201Z-9346a430` and
+    `runs/20260630T043226Z-9b317d56`
+  - full live harness on `nrf52840dk` with `codex-cli` and `claude-cli`
+    -> `11 passed, 0 failed, 0 skipped`, run roots
+    `runs/20260630T043418Z-ef122410` and
+    `runs/20260630T043448Z-a2f53ffd`
+- A later June 30, 2026 deep audit fixed final disconnect cleanup failure
+  visibility in the turnkey loop and reran the Branch C deployment surface:
+  - `python .codex\skills\python-change\scripts\run_python_change_checks.py`
+    -> ruff check/fix passed, ruff format passed, full Pyright passed with
+    105 files analyzed and 0 diagnostics, full pytest -> `340 passed`
+  - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite`
+    -> `340` pytest tests, ruff, mypy, `34` R11 benchmark tests, and R11
+    benchmark help all passed
+  - full live harness on `nucleo_l476rg` with `codex-cli` and `claude-cli`
+    -> `11 passed, 0 failed, 0 skipped`, run roots
+    `runs/20260630T052616Z-4b553e39` and
+    `runs/20260630T052655Z-4e591717`
+  - full live harness on `nrf52840dk` with `codex-cli` and `claude-cli`
+    -> `11 passed, 0 failed, 0 skipped`, run roots
+    `runs/20260630T052843Z-057bd52a` and
+    `runs/20260630T052926Z-bb4b66b1`
+  - public deployed CLI two-turn smokes passed by artifact semantics on both
+    attached boards and both providers:
+    `runs/20260630T053014Z-2630df0f`,
+    `runs/20260630T053042Z-4a16f434`,
+    `runs/20260630T053111Z-eb3e6ce0`, and
+    `runs/20260630T053139Z-7449c301`
 
 ## Pending verification
 

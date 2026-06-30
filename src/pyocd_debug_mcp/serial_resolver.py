@@ -10,15 +10,25 @@ from typing import Callable, Protocol
 
 
 class BoardLike(Protocol):
-    board_id: str
-    display_name: str
-    mcu_family: str
-    probe_family: str
-    serial_hint_terms: tuple[str, ...]
+    @property
+    def board_id(self) -> str: ...
+
+    @property
+    def display_name(self) -> str: ...
+
+    @property
+    def mcu_family(self) -> str: ...
+
+    @property
+    def probe_family(self) -> str: ...
+
+    @property
+    def serial_hint_terms(self) -> tuple[str, ...]: ...
 
 
 class ProbeLike(Protocol):
-    uid: str
+    @property
+    def uid(self) -> str: ...
 
 
 @dataclass(frozen=True)

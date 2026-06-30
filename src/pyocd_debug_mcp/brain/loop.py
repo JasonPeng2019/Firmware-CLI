@@ -2417,8 +2417,33 @@ async def run_turnkey(
                         message="Disconnected from active session.",
                         details={"session_ids_seen": list(state.session_ids_seen)},
                     )
-                except MCPClientError:
-                    pass
+                except MCPClientError as exc:
+                    cleanup_message = (
+                        "Blocked [turnkey/final-disconnect-failed]: "
+                        f"final board-session cleanup failed: {exc}"
+                    )
+                    result = _tooling_failure_result(
+                        state,
+                        summary=cleanup_message,
+                        root_cause=(
+                            "The turnkey loop produced a result but could not close the "
+                            f"active board session {state.session_id!r}: {exc}"
+                        ),
+                    )
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="unexpected_failure",
+                        message=cleanup_message,
+                        details={
+                            "error_type": type(exc).__name__,
+                            "phase": "final_disconnect",
+                            "session_id": state.session_id,
+                            "session_ids_seen": list(state.session_ids_seen),
+                        },
+                    )
 
     except MCPClientError as exc:
         result = _tooling_failure_result(

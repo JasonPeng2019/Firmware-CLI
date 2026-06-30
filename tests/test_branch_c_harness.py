@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
+from pyocd_debug_mcp.brain.decision_types import ActionBatch, ActionCall
 from pyocd_debug_mcp.brain.mcp_client import ToolTextResult
 from pyocd_debug_mcp.brain.provider_types import (
     ProviderCapabilities,
@@ -195,6 +196,54 @@ def test_provider_dry_run_uses_selected_provider_factory(monkeypatch) -> None:
     assert captured["model"] == "sonnet"
     assert captured["config_timeout"] == 7
     assert "effective_timeouts=" in str(captured["turn_prompt"])
+
+
+def test_provider_dry_run_accepts_schema_valid_action_batch(monkeypatch) -> None:
+    class FakeProvider:
+        @property
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                supports_native_session=True,
+                supports_transcript_continuation=True,
+                supports_response_id_continuation=False,
+                supports_tool_schema_prompt=True,
+                continuation_mode="local-primary",
+            )
+
+        async def next_decision(
+            self,
+            *,
+            prompt_bundle: ProviderPromptBundle,
+            session_state: ProviderSessionState,
+        ) -> ProviderTurn:
+            return ProviderTurn(
+                decision=TurnDecision(
+                    observation_summary="batch is the intended next action",
+                    classification="tooling_failure",
+                    action_batch=ActionBatch(
+                        calls=(
+                            ActionCall(
+                                action_type="server_tool:connect",
+                                arguments={"board_id": "nucleo_l476rg"},
+                            ),
+                        )
+                    ),
+                ),
+                output_text="{}",
+                response_id=None,
+                session_state=session_state,
+            )
+
+    monkeypatch.setattr(branch_c_tests.shutil, "which", lambda name: f"C:/fake/{name}.exe")
+    monkeypatch.setattr(branch_c_tests, "create_decision_provider", lambda config: FakeProvider())
+    args = branch_c_tests.build_parser().parse_args(
+        ["--board-id", "nucleo_l476rg", "--provider", "codex-cli"]
+    )
+
+    result = branch_c_tests.check_provider_dry_run_prompt_render(args, "codex-cli")
+
+    assert result.status == branch_c_tests.PASS
+    assert "action_batch.calls=1" in result.detail
 
 
 def test_live_provider_run_accepts_final_result_tool_evidence(monkeypatch) -> None:

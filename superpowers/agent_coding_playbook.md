@@ -135,6 +135,12 @@ only values whose *origin and changeability* a future reader would need to know.
 
 - **After any change, run the cheapest check that proves it before moving on.** Prefer: type check →
   lint → unit test → dry-run → (hand off for) hardware test. Don't skip to "done."
+- **Pyright is a real gate, not advisory.** During a historical baseline
+  cleanup, changed-file or newly introduced Pyright diagnostics are blocking and
+  pre-existing diagnostics may be reported only as an explicit baseline
+  exception. Once the repo-wide baseline is green, any
+  `uv run pyright --outputjson` failure is a bug to fix before reporting a
+  Python change as validated.
 - **Test adapters in isolation before wiring them into the server; test tools in the MCP Inspector
   before wiring a real agent.** (The plan mandates Inspector-before-real-client because schema errors
   fail *silently* in the client.)

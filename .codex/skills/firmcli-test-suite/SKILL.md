@@ -36,6 +36,7 @@ Use this skill to mirror `.claude/commands/test-suite.md`.
    - update or create the narrowest spec needed for the fix
    - build the fix
    - if the fix changes Python code, use `.codex/skills/python-change/SKILL.md` and run its validation gate after the final Python edit
+   - after the Pyright baseline is green, a Python-changing repair is not suite-clean unless full `uv run pyright --outputjson` is green
    - review the fix
    - rerun the targeted failing checks
    - rerun the full suite before reporting green

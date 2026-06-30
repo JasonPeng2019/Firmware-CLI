@@ -23,7 +23,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -179,10 +179,16 @@ def rebuild_cached_index(cache: Cache) -> tuple[int, int]:
     Path(cache.index_path).parent.mkdir(parents=True, exist_ok=True)
     Path(cache.aliases_path).parent.mkdir(parents=True, exist_ok=True)
 
-    pdsc_index = ffi.gc(lib.update_pdsc_index_new(), lib.update_pdsc_index_free)
+    update_pdsc_index_new = cast(Callable[[], Any], getattr(lib, "update_pdsc_index_new"))
+    update_pdsc_index_free = cast(Callable[[Any], None], getattr(lib, "update_pdsc_index_free"))
+    update_pdsc_index_push = cast(
+        Callable[[Any, Any], None], getattr(lib, "update_pdsc_index_push")
+    )
+
+    pdsc_index = ffi.gc(update_pdsc_index_new(), update_pdsc_index_free)
     for path in pdsc_files:
         cpath = ffi.new("char[]", str(path).encode("utf-8"))
-        lib.update_pdsc_index_push(pdsc_index, cpath)
+        update_pdsc_index_push(pdsc_index, cpath)
 
     parsed = cache._call_rust_parse(pdsc_index)
     cache._call_rust_dump(parsed)

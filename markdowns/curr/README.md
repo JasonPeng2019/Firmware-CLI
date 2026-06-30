@@ -13,8 +13,12 @@ Completed process ledgers, superseded specs, and review artifacts should move to
 - `r12-branch-b-status.md` - compact Branch B implementation and proof handoff.
 - `r12-branch-b-official-portability-closure_spec.md` - remaining stricter
   Branch B closure proof for official board/fresh-machine claims.
-- `p-wave-a-ab-final-readiness_review.md` - current independent review of
-  `P-Wave-A` with Branch B merged, including final-product gap assessment.
+- `branch_c_test_plan.md` - current Branch C event/timeout harness and proof
+  boundary.
+- `p-wave-abc-merge-validation_spec.md` - executed Wave 1 A/B/C merge-back
+  validation ledger.
+- `p-wave-abc-merge-validation_review.md` - current independent review of the
+  merged A/B/C candidate.
 
 ## Archive
 
@@ -23,6 +27,7 @@ Completed and redundant docs from previous loops were moved to:
 ```text
 markdowns/tmp/curr-archive-20260628/
 markdowns/tmp/markdown-audit-20260630/
+markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ```
 
 ## Verified
@@ -33,6 +38,8 @@ markdowns/tmp/markdown-audit-20260630/
   artifacts were archived out of `curr`.
 - Completed Branch A live-provider and server-tool hardening artifacts were
   replaced by compact status/current docs and archived out of `curr`.
+- Completed Branch C process/spec/review fragments and the A/B-only readiness
+  review were archived after the A/B/C merge ledger became the current source.
 
 ## Pending Verification
 

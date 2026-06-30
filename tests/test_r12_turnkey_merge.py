@@ -5,13 +5,15 @@ import subprocess
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
 import pytest
 
-from pyocd_debug_mcp.brain.actions import FinalizeAction, TurnDecision
+from pyocd_debug_mcp import benchmark_support as r11
+from pyocd_debug_mcp.brain.actions import FinalizeAction, ServerToolAction, TurnDecision
 from pyocd_debug_mcp.brain import mcp_client as mcp_client_mod
 from pyocd_debug_mcp.brain.config import BrainConfigError, build_turnkey_invocation
 from pyocd_debug_mcp.brain.evidence import Experiment, Hypothesis, Observation, StrategyEvaluation
@@ -50,7 +52,11 @@ from pyocd_debug_mcp.brain.provider_types import (
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain import loop as loop_mod
 from pyocd_debug_mcp.brain import workspace as workspace_mod
-from tests.harness import r11_benchmark as r11
+
+
+def require_run_root(run_root: Path | None) -> Path:
+    assert run_root is not None
+    return run_root
 
 
 class _FakeProvider:
@@ -370,6 +376,10 @@ def test_brain_state_to_record_includes_typed_evidence() -> None:
 
     record = state.to_record()
 
+    observations = cast(list[dict[str, object]], record["observations"])
+    hypotheses = cast(list[dict[str, object]], record["hypotheses"])
+    experiments = cast(list[dict[str, object]], record["experiments"])
+    strategy_evaluations = cast(list[dict[str, object]], record["strategy_evaluations"])
     assert record["observations"] == [
         {
             "observation_id": "obs-001",
@@ -378,9 +388,10 @@ def test_brain_state_to_record_includes_typed_evidence() -> None:
             "evidence_excerpt": "UART matched",
         }
     ]
-    assert record["hypotheses"][0]["summary"] == "firmware is healthy"
-    assert record["experiments"][0]["purpose"] == "run green check"
-    assert record["strategy_evaluations"][0]["next_action"] == "finalize"
+    assert observations[0]["summary"] == "saw healthy UART"
+    assert hypotheses[0]["summary"] == "firmware is healthy"
+    assert experiments[0]["purpose"] == "run green check"
+    assert strategy_evaluations[0]["next_action"] == "finalize"
 
 
 def test_execute_read_file_returns_file_contents(tmp_path: Path) -> None:
@@ -436,11 +447,10 @@ def test_run_turnkey_records_decision_evidence_and_timeout_fallback(
                 classification="healthy",
                 hypothesis="The board is probably already healthy.",
                 strategy_evaluation="Connect first so the next decision uses real board evidence.",
-                action={
-                    "kind": "server_tool",
-                    "tool_name": "connect",
-                    "arguments": {"board_id": "nrf52840dk"},
-                },
+                action=ServerToolAction(
+                    tool_name="connect",
+                    arguments={"board_id": "nrf52840dk"},
+                ),
             ),
             TurnDecision(
                 observation_summary="The board connected cleanly, so the run can stop after diagnosis.",
@@ -474,7 +484,7 @@ def test_run_turnkey_records_decision_evidence_and_timeout_fallback(
         lambda: run_turnkey(
             invocation,
             provider=provider,
-            client_factory=client_factory,
+            client_factory=cast(Any, client_factory),
         )
     )
 
@@ -488,7 +498,7 @@ def test_run_turnkey_records_decision_evidence_and_timeout_fallback(
         "No repair is needed.",
     ]
     assert execution.state.strategy_evaluations[0].next_action == "server_tool"
-    assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
+    assert (require_run_root(execution.run_root) / "run-metadata" / "turnkey_state.json").exists()
 
 
 def _case_report(
@@ -793,7 +803,9 @@ def test_codex_cli_provider_surfaces_subprocess_timeout(
             return None
 
     def fake_run(command: list[str], **kwargs: object) -> object:
-        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, (int, float))
+        raise subprocess.TimeoutExpired(command, timeout)
 
     monkeypatch.setattr(
         "pyocd_debug_mcp.brain.provider_codex_cli.tempfile.TemporaryDirectory",
@@ -1030,7 +1042,9 @@ def test_claude_cli_provider_surfaces_subprocess_timeout(
             return None
 
     def fake_run(command: list[str], **kwargs: object) -> object:
-        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, (int, float))
+        raise subprocess.TimeoutExpired(command, timeout)
 
     monkeypatch.setattr(
         "pyocd_debug_mcp.brain.provider_claude_cli.tempfile.TemporaryDirectory",

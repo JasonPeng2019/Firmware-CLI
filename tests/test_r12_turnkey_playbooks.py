@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from pyocd_debug_mcp import benchmark_support as r11
 from pyocd_debug_mcp.brain.playbooks import load_playbook_specs, select_playbook
-from tests.harness import r11_benchmark as r11
 
 
 def test_load_playbook_specs_finds_internal_turnkey_helpers() -> None:

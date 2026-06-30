@@ -24,6 +24,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.is_dir():
@@ -233,6 +234,13 @@ def resolve_firmware_path(path_value: str | None, base_dir: Path | None = None) 
     if not path.is_absolute() and base_dir is not None:
         path = base_dir / path
     return path.resolve()
+
+
+def resolve_required_firmware_path(path_value: str) -> Path:
+    path = resolve_firmware_path(path_value)
+    if path is None:
+        raise ConfigError("reference firmware override path cannot be empty")
+    return path
 
 
 def action_context(action_name: str) -> ActionContext:
@@ -767,11 +775,13 @@ def read_uart_output(
         return False
 
     try:
-        on_port_open = None
+        on_port_open: Callable[[], None] | None = None
         if reset_handle is not None:
 
-            def on_port_open() -> None:
+            def reset_on_port_open() -> None:
                 target_control.reset(reset_handle, halt_after=False)
+
+            on_port_open = reset_on_port_open
 
         capture = capture_uart_output(
             port.device,
@@ -992,7 +1002,7 @@ def collect_overrides(
 ) -> tuple[dict[str, str], dict[str, Path], dict[str, str], dict[str, int], set[str], set[str]]:
     port_overrides = parse_key_value(args.port, "--port")
     reference_firmware_overrides = {
-        board_id: resolve_firmware_path(path_text)
+        board_id: resolve_required_firmware_path(path_text)
         for board_id, path_text in parse_key_value(
             args.reference_firmware, "--reference-firmware"
         ).items()
@@ -1002,8 +1012,10 @@ def collect_overrides(
         board_id: parse_int(value, "--baudrate")
         for board_id, value in parse_key_value(args.baudrate, "--baudrate").items()
     }
-    recover_tests = {board_id.strip().lower() for board_id in args.recover_test if board_id.strip()}
-    confirmed_shared_usb = {
+    recover_tests: set[str] = {
+        board_id.strip().lower() for board_id in args.recover_test if board_id.strip()
+    }
+    confirmed_shared_usb: set[str] = {
         board_id.strip().lower() for board_id in args.confirm_shared_usb if board_id.strip()
     }
 
