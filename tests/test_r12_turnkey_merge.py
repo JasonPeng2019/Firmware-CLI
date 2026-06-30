@@ -593,7 +593,7 @@ def test_codex_cli_provider_uses_utf8_subprocess_capture(
     assert turn.decision.classification == "healthy"
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
-    assert captured["input"] == "sys\n\nmemory block\n\nprompt"
+    assert captured["input"] == "sys\n\nprompt\n\nmemory block"
     assert captured["timeout"] == 300.0
 
 
@@ -757,7 +757,7 @@ def test_openai_provider_retry_updates_prompt_metadata(
 
     assert len(call_inputs) == 2
     assert (
-        call_inputs[0]["input"] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+        call_inputs[0]["input"] == "tool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
     assert (
         call_inputs[1]["input"]
@@ -997,7 +997,7 @@ def test_anthropic_provider_retry_updates_prompt_metadata(
     )
 
     assert len(captured_messages) == 2
-    assert captured_messages[0] == "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+    assert captured_messages[0] == "tool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     assert (
         captured_messages[1]
         == "turn context\n\ndecision schema\n\nYour previous reply was invalid. Return only one JSON object that matches the schema exactly."

@@ -26,6 +26,7 @@ from pyocd_debug_mcp.brain.actions import (
     TurnDecision,
     TurnkeyRunResult,
     VerificationSnapshot,
+    turn_decision_output_schema,
 )
 from pyocd_debug_mcp.brain.client_actions import (
     ClientActionRecord,
@@ -1078,6 +1079,7 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
 def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> None:
     bundle = ProviderPromptBundle(
         system_instructions="sys",
+        skill_context_text="skill context",
         tool_schema_text="tool schema",
         provider_memory_text="memory block",
         turn_context_text="turn context",
@@ -1085,11 +1087,11 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     )
 
     assert bundle.render_bootstrap_text(include_memory=True) == (
-        "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+        "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
     assert bundle.render_remote_delta_text() == "turn context"
     assert bundle.render_remote_sync_text(include_memory=True) == (
-        "tool schema\n\nmemory block\n\nturn context\n\ndecision schema"
+        "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
     assert not hasattr(bundle, "render_native_delta_text")
     assert not hasattr(bundle, "render_native_sync_text")
@@ -1146,6 +1148,24 @@ def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
     assert detail_result.missing_tool_names == ()
     assert "input_schema:" in detail_result.detail_text
     assert '"board_id"' in detail_result.detail_text
+
+
+def test_turn_decision_schema_excludes_finalize_from_action_batch() -> None:
+    schema = turn_decision_output_schema()
+    properties = cast(dict[str, Any], schema["properties"])
+    batch_schema = cast(dict[str, Any], properties["action_batch"])
+    batch_properties = cast(dict[str, Any], batch_schema["properties"])
+    calls_schema = cast(dict[str, Any], batch_properties["calls"])
+    item_schema = cast(dict[str, Any], calls_schema["items"])
+    item_properties = cast(dict[str, Any], item_schema["properties"])
+    action_type_schema = cast(dict[str, Any], item_properties["action_type"])
+    batch_action_types = set(cast(list[str], action_type_schema["enum"]))
+
+    assert "finalize" not in batch_action_types
+    assert {"connect", "server_tool:connect", "server_tool", "load_tool_details"}.issubset(
+        batch_action_types
+    )
+    assert {"load_skills", "wait", "run_script", "run_green_check"}.issubset(batch_action_types)
 
 
 def test_run_turnkey_blocks_server_tool_until_details_are_loaded(
@@ -1261,6 +1281,69 @@ def test_run_turnkey_load_tool_details_action_makes_schema_visible(
     assert execution.result.final_status == "diagnosed_only"
     assert "input_schema:" in provider.turn_prompts[1]
     assert "connect" in execution.state.loaded_tool_details
+
+
+def test_run_turnkey_invalid_mcp_arguments_keep_focused_details_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+
+    class InvalidArgumentsClient(FakeClient):
+        async def call_tool(
+            self, tool_name: str, arguments: dict[str, object] | None = None
+        ) -> ToolTextResult:
+            self.calls.append((tool_name, arguments))
+            raise MCPClientError(
+                "Invalid arguments: schema validation failed for required field board_id"
+            )
+
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nucleo_l476rg",
+        task="Exercise invalid argument detail recovery.",
+        model="gpt-test",
+        max_iters=3,
+        serial_read_seconds=1.0,
+    )
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("connect"),
+            TurnDecision(
+                observation_summary="Call connect with bad arguments.",
+                classification=None,
+                action=ServerToolAction(tool_name="connect", arguments={"bad_argument": "bad"}),
+            ),
+            TurnDecision(
+                observation_summary="Focused details are still visible for retry.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Invalid arguments were classified for retry.",
+                    summary="Invalid arguments surfaced with details.",
+                ),
+            ),
+        ]
+    )
+    client = InvalidArgumentsClient({})
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: client),
+        )
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls == [("connect", {"bad_argument": "bad", "board_id": "nucleo_l476rg"})]
+    assert "connect" in execution.state.loaded_tool_details
+    assert "connect" in execution.state.refused_action_families
+    assert "Focused governed tool details were loaded for retry" in require_str(
+        execution.brain_trace[1]["result_text"]
+    )
 
 
 def test_run_turnkey_load_tool_details_can_load_green_check_contract(

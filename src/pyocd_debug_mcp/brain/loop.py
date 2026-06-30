@@ -370,8 +370,6 @@ def _build_turn_prompt(
         f"hypotheses_recorded={len(state.hypotheses)}\n"
         f"experiments_recorded={len(state.experiments)}\n"
         f"strategy_evaluations_recorded={len(state.strategy_evaluations)}\n\n"
-        "Selected skills:\n"
-        f"{skills_text}\n\n"
         "Loaded governed tool details:\n"
         f"{_render_loaded_tool_details(state)}\n\n"
         "Loaded governed client-action/tool-script details:\n"
@@ -389,9 +387,12 @@ def _build_turn_prompt(
         "- run_green_check\n"
         "- wait(seconds)\n"
         "- run_script(name, inputs)\n"
-        "- action_batch(calls): ordered calls using action_type plus arguments; stop on the first "
-        "failure/refusal.\n"
-        "- finalize(final_status, classification, root_cause, summary)\n"
+        "- action_batch(calls): ordered non-final calls using action_type plus arguments; "
+        "stop on the first failure/refusal. Valid batched action_type values are governed "
+        "server tools, load_skills, load_tool_details, wait, run_script, and "
+        "run_green_check. Do not put finalize inside action_batch.\n"
+        "- finalize(final_status, classification, root_cause, summary): emit as a single "
+        "action only, never inside action_batch\n"
     )
 
 
@@ -407,6 +408,7 @@ def _build_prompt_bundle(
 ) -> ProviderPromptBundle:
     return ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
+        skill_context_text="Compact turnkey skill context:\n" + skills_text,
         tool_schema_text=tool_schema_bundle.rendered_text,
         provider_memory_text=render_provider_memory_text(
             state.provider_session_state
@@ -1513,8 +1515,15 @@ def _details_required_result(
 
 def _result_implies_invalid_arguments(result: ToolTextResult) -> bool:
     code = result.refusal_code or result.blocked_code or ""
-    text = f"{code}\n{result.text}".lower()
-    return any(token in text for token in ("invalid", "schema", "argument", "missing"))
+    return _text_implies_invalid_arguments(f"{code}\n{result.text}")
+
+
+def _text_implies_invalid_arguments(text: str) -> bool:
+    text = text.lower()
+    return any(
+        token in text
+        for token in ("invalid argument", "invalid arguments", "schema", "argument", "missing")
+    )
 
 
 async def _execute_wait(action: WaitAction, state: BrainState) -> str:
@@ -1683,62 +1692,93 @@ async def _execute_batched_actions(
                         client=client,
                         reason="before-connect",
                     )
-                action_result = await _execute_server_tool(invocation, board, state, client, action)
-                if _result_implies_invalid_arguments(action_result):
-                    _load_tool_detail_if_available(action.tool_name, state, tool_schema_bundle)
-                result_text = action_result.text
-                if state.session_id is not None:
-                    run_root = _promote_run_root(run_root, state.session_id)
-                if (
-                    action.tool_name == "disconnect"
-                    and state.pending_server_timeout_sync is not None
-                ):
-                    await sync_pending_server_timeouts(
-                        sink=event_sink,
-                        records=brain_events,
-                        invocation=invocation,
-                        state=state,
-                        client=client,
-                        reason="after-disconnect",
+                try:
+                    action_result = await _execute_server_tool(
+                        invocation, board, state, client, action
                     )
-                if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
-                    result = _blocked_result(
-                        state,
-                        classification=decision.classification or "observability_fault",
-                        code="benchmark/reconnect-not-allowed",
-                        message="The turnkey client opened more than one MCP session during a benchmark case.",
+                except MCPClientError as exc:
+                    if not _text_implies_invalid_arguments(str(exc)):
+                        raise
+                    loaded = _load_tool_detail_if_available(
+                        action.tool_name, state, tool_schema_bundle
                     )
-                    result_text = result.summary
-                if action.tool_name == "flash_firmware" and action_result.text.startswith(
-                    "Flashed "
-                ):
-                    await _record_verification_event(
-                        sink=event_sink,
-                        records=brain_events,
-                        invocation=invocation,
-                        state=state,
-                        reason="flash succeeded",
+                    state.refused_action_families.add(action.tool_name)
+                    state.last_action_summary = f"{action.tool_name}({action.arguments})"
+                    result_text = (
+                        f"MCPClientError: {exc}\n"
+                        "Focused governed tool details "
+                        f"{'were' if loaded else 'could not be'} loaded for retry."
                     )
-                if action.tool_name == "read_serial":
-                    await _record_verification_event(
-                        sink=event_sink,
-                        records=brain_events,
-                        invocation=invocation,
-                        state=state,
-                        reason="UART verification attempt completed",
-                    )
-                event_details = {
-                    "batch_index": index,
-                    "tool_name": action.tool_name,
-                    "arguments": action.arguments,
-                    "normalized_action_summary": state.last_action_summary,
-                    "result_text": action_result.text,
-                    "refusal_code": action_result.refusal_code,
-                    "blocked_code": action_result.blocked_code,
-                    "probe_uid": action_result.probe_uid,
-                    "route_used": action_result.route_used,
-                    "auto_loaded_tool_detail": _result_implies_invalid_arguments(action_result),
-                }
+                    state.last_result_text = result_text
+                    event_details = {
+                        "batch_index": index,
+                        "tool_name": action.tool_name,
+                        "arguments": action.arguments,
+                        "normalized_action_summary": state.last_action_summary,
+                        "result_text": result_text,
+                        "refusal_code": "brain/invalid-tool-arguments",
+                        "blocked_code": None,
+                        "probe_uid": None,
+                        "route_used": None,
+                        "auto_loaded_tool_detail": loaded,
+                    }
+                else:
+                    auto_loaded_tool_detail = _result_implies_invalid_arguments(action_result)
+                    if auto_loaded_tool_detail:
+                        _load_tool_detail_if_available(action.tool_name, state, tool_schema_bundle)
+                    result_text = action_result.text
+                    if state.session_id is not None:
+                        run_root = _promote_run_root(run_root, state.session_id)
+                    if (
+                        action.tool_name == "disconnect"
+                        and state.pending_server_timeout_sync is not None
+                    ):
+                        await sync_pending_server_timeouts(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            client=client,
+                            reason="after-disconnect",
+                        )
+                    if invocation.mode == "benchmark" and len(state.session_ids_seen) > 1:
+                        result = _blocked_result(
+                            state,
+                            classification=decision.classification or "observability_fault",
+                            code="benchmark/reconnect-not-allowed",
+                            message="The turnkey client opened more than one MCP session during a benchmark case.",
+                        )
+                        result_text = result.summary
+                    if action.tool_name == "flash_firmware" and action_result.text.startswith(
+                        "Flashed "
+                    ):
+                        await _record_verification_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            reason="flash succeeded",
+                        )
+                    if action.tool_name == "read_serial":
+                        await _record_verification_event(
+                            sink=event_sink,
+                            records=brain_events,
+                            invocation=invocation,
+                            state=state,
+                            reason="UART verification attempt completed",
+                        )
+                    event_details = {
+                        "batch_index": index,
+                        "tool_name": action.tool_name,
+                        "arguments": action.arguments,
+                        "normalized_action_summary": state.last_action_summary,
+                        "result_text": action_result.text,
+                        "refusal_code": action_result.refusal_code,
+                        "blocked_code": action_result.blocked_code,
+                        "probe_uid": action_result.probe_uid,
+                        "route_used": action_result.route_used,
+                        "auto_loaded_tool_detail": auto_loaded_tool_detail,
+                    }
         elif isinstance(action, WaitAction):
             result_text = await _execute_wait(action, state)
             event_details = {"batch_index": index, "result_text": result_text}
@@ -2279,6 +2319,7 @@ async def _tooling_failure_execution(
     )
     prompt_bundle = ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
+        skill_context_text="Compact turnkey skill context:\n" + skills_text,
         tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because the run failed before MCP startup)",
         provider_memory_text="",
         turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
@@ -2831,6 +2872,7 @@ async def run_turnkey(
     if not initial_prompt_text:
         initial_prompt_text = ProviderPromptBundle(
             system_instructions=_build_instructions(invocation),
+            skill_context_text="Compact turnkey skill context:\n" + skills_text,
             tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because MCP startup did not complete)",
             provider_memory_text="",
             turn_context_text=_build_turn_prompt(

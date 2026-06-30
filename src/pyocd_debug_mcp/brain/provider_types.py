@@ -465,15 +465,19 @@ class ProviderPromptBundle:
     provider_memory_text: str
     turn_context_text: str
     turn_decision_schema_text: str
+    skill_context_text: str = ""
 
     def _join_user_sections(self, *sections: str) -> str:
         return "\n\n".join(section for section in (part.strip() for part in sections) if section)
 
     def render_bootstrap_text(self, *, include_memory: bool = True) -> str:
-        sections = [self.tool_schema_text.strip()]
+        sections = [
+            self.skill_context_text.strip(),
+            self.tool_schema_text.strip(),
+            self.turn_context_text.strip(),
+        ]
         if include_memory and self.provider_memory_text.strip():
             sections.append(self.provider_memory_text.strip())
-        sections.append(self.turn_context_text.strip())
         sections.append(self.turn_decision_schema_text.strip())
         return self._join_user_sections(*sections)
 
@@ -502,6 +506,7 @@ class ProviderPromptBundle:
     def to_record(self) -> dict[str, object]:
         return {
             "system_instruction_length": len(self.system_instructions),
+            "skill_context_length": len(self.skill_context_text),
             "tool_schema_length": len(self.tool_schema_text),
             "provider_memory_length": len(self.provider_memory_text),
             "turn_context_length": len(self.turn_context_text),

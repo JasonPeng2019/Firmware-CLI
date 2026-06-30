@@ -7,6 +7,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from pyocd_debug_mcp.brain.action_policy import (
+    BRAIN_LOCAL_ACTIONS,
+    CLIENT_ACTIONS,
+    CONTEXT_EXPANSION_ACTIONS,
+    SERVER_NATIVE_ACTIONS,
+    SERVER_TOOL_ACTION_PREFIX,
+)
 from pyocd_debug_mcp.brain.decision_types import (
     ActionBatch,
     ActionCall,
@@ -36,6 +43,19 @@ FinalStatus = Literal["fixed", "healthy_confirmed", "diagnosed_only", "unresolve
 Classification = Literal[
     "healthy", "code_bug", "observability_fault", "physical_fault", "tooling_failure"
 ]
+
+
+def _batch_action_type_values() -> list[str]:
+    values = {
+        "server_tool",
+        "run_green_check",
+        *BRAIN_LOCAL_ACTIONS,
+        *CLIENT_ACTIONS,
+        *CONTEXT_EXPANSION_ACTIONS,
+        *SERVER_NATIVE_ACTIONS,
+        *(f"{SERVER_TOOL_ACTION_PREFIX}{name}" for name in SERVER_NATIVE_ACTIONS),
+    }
+    return sorted(values)
 
 
 class _StrictModel(BaseModel):
@@ -334,7 +354,15 @@ def turn_decision_output_schema() -> dict[str, object]:
                             "additionalProperties": False,
                             "required": ["action_type", "arguments"],
                             "properties": {
-                                "action_type": {"type": "string", "minLength": 1},
+                                "action_type": {
+                                    "type": "string",
+                                    "enum": _batch_action_type_values(),
+                                    "description": (
+                                        "Allowed batched action type. `finalize` is "
+                                        "intentionally excluded; emit finalize as a "
+                                        "single action, not inside action_batch."
+                                    ),
+                                },
                                 "arguments": {"type": "object", "additionalProperties": True},
                             },
                         },
