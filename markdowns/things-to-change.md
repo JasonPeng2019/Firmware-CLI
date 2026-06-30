@@ -10,7 +10,7 @@ ONLY INCLUDE for the first capability prototype:
 
 1. Persistent session and model memory.
    - Current direction: use provider-native resume where available plus the
-     compact brain-owned provider-memory ledger. Remote-primary providers sync
+     compact brain-owned provider-memory ledger. Remotehow-primary providers sync
      that compact memory every 10 provider turns by default.
 2. Free host work with a final governed board-decision boundary.
 3. Real tool schemas in the prompt.
