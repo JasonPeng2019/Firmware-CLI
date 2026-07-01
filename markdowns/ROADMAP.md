@@ -32,8 +32,11 @@
 > simulation is green through the real provider factory/turnkey-loop code paths,
 > but live API-provider proof still requires credentials/credits. Full closure
 > still requires live API proof, exact official `nrf52833dk` proof,
-> fresh-machine proof, and the remaining Wave 2 prototype-required modules. See
-> `current-progress.md` and `things-to-change.md`.
+> fresh-machine proof, and the remaining Wave 2 prototype-required modules.
+> Provider-visible streaming and user-interruptible provider turns are now
+> specified for Wave 2 Module D/H in
+> `curr/wave2-provider-stream-interrupt_spec.md`; they are not implemented yet.
+> See `current-progress.md` and `things-to-change.md`.
 >
 > **Prototype execution note:** the Prototype Priority list in
 > `things-to-change.md` is the hard bar. No subset implementation or green test
@@ -1516,14 +1519,16 @@ Corrected schedule:
     invocation proof is green for Codex CLI and Claude CLI.
 - serial merge-back: A, corrected B, and C merge into Wave 0 one at a time
 - Wave 2 hard-bar modules, not current git branches:
-  - Module D: progress UI + inspector
+  - Module D: progress UI + inspector, including provider-visible stream text
+    and public direction summaries before final provider output
   - Module E: stream checkpoints, now specified as provider-visible
     mid-tool observation buffers in
     `markdowns/curr/wave2-midtool-checkpoints_spec.md`
   - Module F: scoped green approval
   - Module G: static context efficiency, codebase-map scaffolding, and
     cache-assisted reuse
-  - Module H: process-tree + board-session cleanup guard
+  - Module H: process-tree + board-session cleanup guard, including cleanup
+    after user interruption during an in-flight provider turn
 - serial merge-back: rebuilt Wave 2 hard-bar work merges into Wave 0 one module
   at a time
 - serial last: final integration + acceptance cleanup

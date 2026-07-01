@@ -83,6 +83,19 @@ provider can inspect null reads, bad reads, partial output, stalls, and early
 errors before final timeout, then return a bounded continue/cancel/narrow-adjust
 checkpoint verdict.
 
+Wave 2 planning update, 2026-07-01: provider-visible stream text and
+user-interruptible provider turns are now specified in
+`markdowns/curr/wave2-provider-stream-interrupt_spec.md` and assigned across
+Module D and Module H. The current implementation does not have this feature:
+Codex CLI and Claude CLI provider turns still use captured subprocess waits, so
+provider-visible text is not streamed before final provider output, and Ctrl-C
+does not yet have an in-flight provider-turn cancellation/cleanup contract. The
+Wave 2 target is live provider-visible status text or brain-owned waiting
+heartbeats, no hidden chain-of-thought exposure, structured final decisions as
+the only authoritative brain input, user cancellation before partial output can
+become an action, partial provider-native file-change review, and cleanup
+records coordinated with the Module H process/session guard.
+
 Scaffold-hardening implementation update, 2026-06-30: the current Branch B
 model-native skill/tool prompt scaffold now implements the product-boundary work
 required before Wave 2 builds on it. The active contract is

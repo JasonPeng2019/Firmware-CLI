@@ -46,6 +46,10 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `wave2-midtool-checkpoints_spec.md` - active Wave 2 Module E spec for a
   brain-mediated mid-tool checkpoint observation buffer over
   UART/build/client-action streams.
+- `wave2-provider-stream-interrupt_spec.md` - active Wave 2 Module D/H spec for
+  provider-visible stream text, brain heartbeats, developer inspector records,
+  user interruption during provider turns, partial-work review, and
+  process-cleanup coordination.
 
 Canonical current status now lives in:
 
@@ -200,3 +204,7 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - Wave 2 progress/inspector, mid-tool checkpoint buffers, scoped green approval,
   static context/cache reuse, codebase-map scaffolding, and cleanup guard work
   remains hard prototype scope.
+- Wave 2 provider-visible stream and user-interrupt support is planning-only:
+  provider turns still expose coarse progress today, not live provider text
+  before final output, and in-flight provider cancellation still depends on the
+  future Module D/H implementation.

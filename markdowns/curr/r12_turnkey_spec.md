@@ -39,7 +39,10 @@ Current prototype amendment:
   part of the Wave 1 validation bar. Exact official `nrf52833dk`, live API
   provider proof, fresh-machine proof, and Wave 2 prototype modules remain
   pending. Wave 2 codebase-map scaffolding is now specified in
-  `markdowns/curr/wave2-codebase-map_spec.md`, but not implemented.
+  `markdowns/curr/wave2-codebase-map_spec.md`, but not implemented. Wave 2
+  provider-visible stream and user-interrupt behavior is now specified in
+  `markdowns/curr/wave2-provider-stream-interrupt_spec.md`, but not
+  implemented.
 - Product polish, remote hosting, broad backend expansion, and shipped UI
   completeness remain later work. The prototype should prioritize capability,
   bounded execution, and debuggability.
@@ -137,6 +140,9 @@ Later prototype work remains open for:
   provider turn
 - additional timeout policy/clamp work
 - progress UI and developer inspector completion
+- provider-visible stream text before final provider output, brain-owned
+  waiting heartbeats, user-interruptible provider turns, partial-work review,
+  and Module H cleanup coordination
 - scoped green approval
 - chunked long-running progress checkpoints beyond the current event stream
 - process-tree/provider/MCP/pyOCD/serial/board-session cleanup guard
@@ -570,7 +576,9 @@ Frozen Pass 1 UX decisions:
   - live provider/tool/build/green-check status is visible while work is in
     progress
   - full raw provider output becomes visible after the completed turn
-  - true token-level provider streaming is intentionally deferred to Pass 2
+  - true provider-visible streaming before final provider output and
+    user-interruptible provider turns are intentionally deferred to Pass 2,
+    specified in `wave2-provider-stream-interrupt_spec.md`
 
 ### Benchmark mode
 
@@ -683,6 +691,9 @@ The prototype capability increment additionally proves:
   operator
 - the operator can see progress and inspect brain/provider/server traffic while
   long work is still running
+- in the Wave 2 target, the operator can see provider-visible status text or a
+  brain-owned heartbeat during a long provider turn and interrupt that turn
+  before partial output is accepted as a decision
 
 Prototype proof boundary for the next phase:
 
@@ -813,6 +824,8 @@ uv run pyocd-debug history
   pass; SDK/app-server provider adapters are future hardening work
 - no reconnect-tolerant benchmark accounting
 - no token-level provider streaming in Pass 1; that is the deliberate next UX
-  follow-up after the current shell lands
+  follow-up after the current shell lands. The Wave 2 follow-up is now defined
+  as provider-visible stream/status text plus user-interruptible provider turns,
+  not hidden chain-of-thought exposure.
 - no expanded benchmark corpus beyond the current 12 cases
 - no `R13+` work

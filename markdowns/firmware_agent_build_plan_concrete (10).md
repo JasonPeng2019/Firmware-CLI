@@ -861,7 +861,12 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
    this prototype unless a later spec explicitly adds them.
 5. **Make progress visible.** Add normalized progress events from the brain loop, stream them in the CLI,
    and add a developer inspector mode that records prompt turns, provider stream text, parsed decisions,
-   tool calls, state snapshots, and server observations.
+   tool calls, state snapshots, and server observations. Wave 2 must also make
+   provider turns user-interruptible: provider-visible status text or a
+   brain-owned heartbeat appears before final provider output, streamed prose is
+   never authoritative, Ctrl-C/cancel stops the in-flight turn before any partial
+   output can become a board action, and partial provider-native file changes are
+   surfaced for review before later governed actions.
 6. **Harden blocking paths before expanding autonomy.** Every provider, MCP startup, server helper,
    subprocess, UART, and hardware-adjacent path must have a bounded failure mode. In-process pyOCD/vendor
    calls that cannot be interrupted directly must be documented and wrapped by the strongest feasible
@@ -909,12 +914,17 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
     provider can inspect null reads, bad reads, stalls, partial output, and
     early errors before final timeout. Do not broaden this prototype into the
     pyOCD worker/job layer.
+    Provider-turn streaming/cancellation is a separate Module D/H companion
+    requirement, specified in
+    `markdowns/curr/wave2-provider-stream-interrupt_spec.md`; mid-tool
+    checkpoint buffers remain Module E.
 
 **Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +
 `nucleo_l476rg`) and reuses the 12-case benchmark corpus, but the prototype is now judged by whether it can
 show a substantially more agentic loop: persistent work context, periodic compact-memory safety sync, cheap
 static context with on-demand detail and codebase-map scaffolding, free host-side code work, governed board decisions, visible progress,
-bounded waits, model-tuned budgets inside hard caps, client actions, and a scoped green-test story.
+provider-turn interruption, bounded waits, model-tuned budgets inside hard
+caps, client actions, and a scoped green-test story.
 Shipped-product polish and broad UI completeness are explicitly later work.
 
 Current status correction, 2026-06-30: the Wave 1 Branch B subset and the R12

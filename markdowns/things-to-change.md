@@ -24,7 +24,13 @@ ONLY INCLUDE for the first capability prototype:
 5. Model-estimated iteration and timeout budgets inside brain caps.
 6. Batches, `wait`, and UART write.
 7. Client actions / model-authored scripts.
-8. Progress output and developer inspector.
+8. Progress output, provider-visible stream text, user-interruptible provider
+   turns, and developer inspector. Wave 2 Module D/H is now specified in
+   `markdowns/curr/wave2-provider-stream-interrupt_spec.md`: the target is
+   provider-visible status/reasoning text before final provider output, no
+   hidden chain-of-thought contract, structured decisions as the only
+   authoritative brain input, partial-work review after interruption, and real
+   cleanup coordination.
 9. Stream checkpoints for UART/build/client-action flows. Wave 2 Module E is
    now specified in `markdowns/curr/wave2-midtool-checkpoints_spec.md`: the
    target is a generic brain-mediated mid-tool observation buffer for
@@ -68,7 +74,8 @@ ONLY INCLUDE for the first capability prototype:
    index, compact-memory cadence, and codebase-map rule; workflow skill turns
    inject the full map once; and provider-native file changes trigger a bounded
    map-maintenance turn before the next governed action is trusted.
-16. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard.
+16. Process-tree, provider, MCP, pyOCD, serial, and board-session cleanup guard,
+   including cleanup after user interruption during an in-flight provider turn.
 
 Prototype acceptance contract:
 
@@ -140,7 +147,10 @@ Prototype acceptance contract:
   remains an external hardware boundary. Wave 2 Module E checkpoint-buffer
   design is now captured in
   `markdowns/curr/wave2-midtool-checkpoints_spec.md`; it is planning-only and
-  not implemented.
+  not implemented. Wave 2 Module D/H provider-visible stream and user-interrupt
+  design is now captured in
+  `markdowns/curr/wave2-provider-stream-interrupt_spec.md`; it is also
+  planning-only and not implemented.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -2611,6 +2621,13 @@ GUI can consume the same event stream instead of scraping terminal text.
    JSON, and parsed decision/result separately so audit can distinguish "what the
    user saw" from "what the brain trusted".
 
+Wave 2 design anchor:
+
+- `markdowns/curr/wave2-provider-stream-interrupt_spec.md`
+- Primary ownership is Module D for normal/inspector rendering and Module H for
+  interruption cleanup. Module E remains the owner for mid-tool checkpoint
+  buffers after a server/client action has already started.
+
 ### What it is supposed to do
 
 - Prevent the operator from staring at a silent CLI for 10-20 minutes with no clue
@@ -2637,9 +2654,10 @@ GUI can consume the same event stream instead of scraping terminal text.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Complements entries #7/#14:
-timeouts make waits bounded; live progress makes bounded waits understandable and
-interruptible.
+Specced in `markdowns/curr/wave2-provider-stream-interrupt_spec.md` on
+2026-07-01. Not yet implemented. Complements entries #7/#14: timeouts make
+waits bounded; live progress and cancellation make bounded waits understandable
+and interruptible.
 
 ---
 
@@ -2742,6 +2760,12 @@ feedback into the next turn, state snapshots, structured decisions, and tool/ser
 traffic. Both should be backed by the same event/log infrastructure where possible,
 but they render different views of it.
 
+The Wave 2 provider stream/interrupt spec makes this relationship concrete:
+normal users see provider-visible text and public direction summaries, while
+the inspector can show raw final provider output, raw structured decisions,
+prompt metadata, provider stream logs, partial-work diffs, and cleanup records.
+Neither mode should expose or depend on hidden chain-of-thought.
+
 ### Where it belongs
 
 1. **`src/pyocd_debug_mcp/brain/loop.py`** - emit prompt snapshots, state snapshots,
@@ -2786,9 +2810,9 @@ but they render different views of it.
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. This is a prototype/developer
-debugging aid that complements, but should not replace, the product-facing live
-progress stream in entry #19.
+Specced as part of `markdowns/curr/wave2-provider-stream-interrupt_spec.md` for
+the provider-turn stream/interrupt surface. The broader inspector remains Wave
+2 Module D work and is not yet implemented.
 
 ---
 
@@ -3248,6 +3272,12 @@ MCP-backed, pyOCD-backed, serial, hardware, and long-running validation command:
   connected debug session as a failed cleanup row or explicit deployment
   ambiguity.
 
+For Wave 2 provider-visible streaming, this cleanup layer also owns the hard
+interrupt path: cancelling a running provider turn must terminate or cancel the
+provider subprocess/API request where possible, stop partial provider output
+from becoming an action, attempt product cleanup, and record
+`cancelled`/`cleanup_uncertain` status in events and artifacts.
+
 ### Where it belongs
 
 1. **Process/session guard module** - reusable helper for baseline process
@@ -3289,8 +3319,9 @@ MCP-backed, pyOCD-backed, serial, hardware, and long-running validation command:
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Wave 2 cleanup module; hard
-required before the first capability prototype is complete.
+Partly specced by `markdowns/curr/wave2-provider-stream-interrupt_spec.md` for
+provider-turn interruption cleanup. The broader process-tree and board-session
+cleanup guard remains Wave 2 Module H work and is not yet implemented.
 
 ## 16. Scoped success gates (replace the whole-board green check)
 

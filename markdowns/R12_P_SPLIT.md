@@ -67,11 +67,13 @@ SERIAL:
   merge A + B + C back into Wave 0
 
 WAVE 2 HARD-BAR WORK, NOT CURRENT GIT BRANCHES:
-  Module D: progress UI + inspector
+  Module D: progress UI + inspector, including provider-visible stream text
+            before final provider output
   Module E: stream checkpoints
   Module F: scoped green approval
   Module G: static context efficiency + cache-assisted reuse + codebase map
-  Module H: process-tree + board-session cleanup guard
+  Module H: process-tree + board-session cleanup guard, including
+            user/provider-turn interrupt cleanup
 
 SERIAL:
   merge the rebuilt Wave 2 hard-bar work back into Wave 0
@@ -94,6 +96,15 @@ specified in `markdowns/curr/wave2-midtool-checkpoints_spec.md`; it is also
 planning-only until implemented. Module E must treat checkpointing as a generic
 brain-mediated observation buffer for UART/build/client-action streams, not as a
 special board-presence poller or raw provider access to server tools.
+The provider-visible stream and user-interrupt design for Wave 2 Module D/H is
+now specified in
+`markdowns/curr/wave2-provider-stream-interrupt_spec.md`; it is planning-only
+until implemented. Module D owns normal/inspector rendering of provider-visible
+status text and public direction summaries before final provider output. Module
+H owns the cancellation cleanup contract for in-flight provider turns. Module E
+remains the owner for mid-tool checkpoint buffers after a server/client action
+has started, and Module G owns codebase-map/partial-edit review after
+provider-native file changes.
 The prerequisite scaffold hardening at
 `markdowns/curr/r12-context-scaffold-hardening_spec.md` has landed:
 product/client-owned model-native skills rather than `.codex/skills`,
@@ -473,11 +484,23 @@ Serial order inside Module D:
 
 1. `cli_progress.py`
    - render live progress from `BrainEvent`
+   - render provider-visible stream/status chunks before the provider returns
+     final raw output
+   - render brain-owned provider-wait heartbeats when a backend cannot stream
+   - keep normal output concise: public direction trace, tool/action progress,
+     changed-file summaries, and final status
 2. `inspector.py`
    - write prompt turns, provider stream text, parsed decisions, tool calls,
      server observations, and state snapshots
+   - include raw final provider output, provider stream logs, prompt metadata,
+     parsed decisions, checkpoint buffers, partial-work diffs, and cleanup
+     records
 3. CLI hook:
    - `cli.py` exposes progress/inspector flags through a small integration edit
+
+Design anchor:
+
+- `markdowns/curr/wave2-provider-stream-interrupt_spec.md`
 
 Should not own:
 
@@ -486,6 +509,7 @@ Should not own:
 - action execution semantics
 - proof escalation policy
 - static-context rendering, skill body loading, or cache key/reuse semantics
+- process-tree or board-session cleanup after interruption, owned by Module H
 
 ### Module E - Stream Checkpoints
 
@@ -653,6 +677,11 @@ Module H owns deployment hygiene for subprocess-backed and hardware-backed runs.
 It ensures provider CLIs, local MCP server children, pyOCD sessions, serial ports,
 validation commands, and board-debug sessions do not leak across failures,
 timeouts, interrupts, or malformed command invocations.
+It also owns the hard cleanup half of user-interruptible provider turns: Ctrl-C
+or an equivalent shell cancel during a Codex/Claude/API provider turn must stop
+the in-flight turn, prevent partial provider output from becoming an action,
+terminate/cancel what the product spawned where possible, and record precise
+cleanup status.
 
 Serial order inside Module H:
 
@@ -665,6 +694,8 @@ Serial order inside Module H:
    - `provider_codex_cli.py`
    - `provider_claude_cli.py`
    - explicit wall-clock timeout handling and provenance-based cleanup
+   - streaming-provider runner integration and provider-turn cancellation
+     records from `wave2-provider-stream-interrupt_spec.md`
    - prefer task/JSON files over fragile inline PowerShell prompt/JSON quoting in
      harnesses and docs
 3. MCP client/server lifecycle:
@@ -690,6 +721,9 @@ Cross-branch dependency:
   memory/session semantics except to make cleanup explicit on failure.
 - Module H may touch MCP/pyOCD/serial close paths, but it must not implement
   stream checkpoint continue/cancel policy; that remains Module E.
+- Module H is required for Module D's provider-turn interrupt feature to be
+  acceptance-complete. Module D can render cancel intent and provider-visible
+  stream text, but the feature is not green until Module H proves cleanup.
 
 Should not own:
 
@@ -794,6 +828,10 @@ into the other branch, or into final integration.
   `markdowns/curr/wave2-midtool-checkpoints_spec.md`. The feature remains
   unimplemented; current code still has whole request/response waits for long
   server/client actions rather than provider-visible checkpoint buffers.
+- Wave 2 Module D/H now has an active provider-visible stream and user-interrupt
+  spec at `markdowns/curr/wave2-provider-stream-interrupt_spec.md`. The feature
+  remains unimplemented; current CLI providers still use captured subprocess
+  turns and do not stream provider-visible text before final output.
 - Wave 1 validation must include the prompt/memory hardening tests and
   credentials-free OpenAI/Anthropic API-path simulation checks. Live API calls
   remain a separate credential/credit-dependent proof boundary.

@@ -191,7 +191,7 @@ a glance before relying on detail.
 | `ROADMAP.md` | Full project plan (R0-R15), dependency tree, gates, rolling-frontier staffing, and the current R12 prototype parallel frontier. *Design/plan doc - see status banner.* |
 | `R12_P_SPLIT.md` | Conflict-safe R12 prototype scheduling note. It now records that Branch B and the R12 scaffold hardening are implemented, the old D/E/F/G/H git branches were deleted, and Wave 2 remains hard-bar module work. |
 | `things-to-change.md` | Active product/design backlog for the R12 capability prototype. Its Prototype Priority list is the hard acceptance bar. |
-| `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 streaming/checkpoint work. |
+| `UXLayer.md` | Design note for the implemented Pass 1 operator shell and the remaining Pass 2 provider-streaming, interrupt, inspector, and checkpoint work. |
 | `firmware_agent_build_plan_concrete (10).md` | Step-ordered concrete build plan with design decisions and the current R12 prototype capability target. *Design/plan doc - see status banner.* |
 | `firmware_agent_mcp_architecture.md` | MCP-centered architecture (one server, two clients; tools/resources; guardrails) plus the current turnkey prototype control model. *Design doc - see status banner.* |
 | `current-progress.md` | Live repo status, bench facts, regression/manual checklists, R11 proof, and R12 status/prototype caveats. |
@@ -210,6 +210,8 @@ a glance before relying on detail.
 | `r12-provider-native-skill-invocation-proof_spec.md` | Focused test design and verification record proving live Codex CLI and Claude CLI can read a run-local provider-native skill body and return evidence through a normal `TurnDecision`. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
+| `wave2-midtool-checkpoints_spec.md` | Active Wave 2 Module E proposal for brain-mediated checkpoint buffers over UART/build/client-action streams. |
+| `wave2-provider-stream-interrupt_spec.md` | Active Wave 2 Module D/H proposal for provider-visible stream text, provider-turn interruption, partial-work review, and cleanup coordination. |
 
 ### `markdowns/tmp/` — step-scoped / throwaway docs (no longer needed after their step)
 

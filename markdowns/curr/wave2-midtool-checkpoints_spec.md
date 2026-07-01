@@ -17,6 +17,9 @@ long action is still in progress.
 Task: Wave 2 provider-visible mid-tool checkpoint buffer.
 Roadmap anchor: R12 Wave 2 Module E stream checkpoints, with UX Pass 2
 inspector/progress support from Module D and cleanup dependencies from Module H.
+Provider-turn streaming and user interruption before a final provider decision
+are specified separately in `wave2-provider-stream-interrupt_spec.md`; this spec
+starts after a long server/client action is already running.
 
 ## Scope and non-scope
 
@@ -49,6 +52,9 @@ Out of scope:
   is running. The brain mediates checkpoint observation and verdicts.
 - Token-by-token provider streaming. This spec covers server/client action
   checkpoints, not provider prose streaming.
+- User interruption during the provider turn before a final `TurnDecision` or
+  checkpoint verdict exists. That belongs to
+  `wave2-provider-stream-interrupt_spec.md`.
 - A broad killable pyOCD worker/job redesign for connect, flash, recover, or
   other in-process vendor calls. That belongs to Module H/process hygiene or a
   later worker isolation spec.
@@ -225,6 +231,10 @@ Final-product target:
 - Developer/inspector mode should expose detailed checkpoint buffers, raw
   provider checkpoint verdicts, prompt snippets, server observations, and event
   artifacts.
+- Provider-visible text during an ordinary provider turn, Ctrl-C cancellation
+  before final provider output, and partial provider-native workspace edits are
+  governed by `wave2-provider-stream-interrupt_spec.md`, not by the checkpoint
+  buffer.
 
 ## Board facts as data and origin tags
 

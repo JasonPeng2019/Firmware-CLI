@@ -212,6 +212,12 @@ Current `R12` prototype control model:
 - **Inspector:** developer builds can mirror prompt turns, provider stream text,
   parsed decisions, tool calls, server observations, and state snapshots into a
   terminal/log stream for debugging.
+- **Provider-visible stream and interrupt:** normal users should see
+  provider-visible status text or brain-owned heartbeats during long provider
+  turns before final provider output. Ctrl-C/cancel should stop the in-flight
+  provider turn, prevent partial output from becoming an action, surface partial
+  provider-native file changes for review, and rely on Module H cleanup. This
+  is not hidden chain-of-thought exposure.
 - **Compact memory + native safety sync:** the brain owns structured memory
   independent of provider session internals. It stores a working snapshot,
   exact recent boundary decisions, compact older history, artifact refs, and

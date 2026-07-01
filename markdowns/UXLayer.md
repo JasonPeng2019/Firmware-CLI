@@ -20,12 +20,16 @@ Current prototype focus:
 - live progress during provider turns and tool execution
 - visible model/provider text without treating that text as the authoritative
   decision
+- user interruption during a provider turn before final provider output or final
+  structured decision is accepted
 - structured decision files/objects as the source of truth for brain actions
 - an inspector mode for prompt/brain/provider/server debugging
 - chunked checkpoints for UART reads, builds, and long client actions. The Wave
   2 Module E target is now a brain-mediated mid-tool observation buffer, not a
   board-presence special case; see
   `markdowns/curr/wave2-midtool-checkpoints_spec.md`.
+- provider-visible stream and interrupt behavior is the Wave 2 Module D/H
+  target; see `markdowns/curr/wave2-provider-stream-interrupt_spec.md`.
 
 ## Non-Negotiable First Change
 
@@ -63,6 +67,7 @@ What this first change should provide:
 - one structured event shape for:
   - loop lifecycle
   - provider stream chunks and heartbeat/progress markers
+  - provider turn cancellation request, cancellation result, and cleanup state
   - provider turn start/end
   - parsed decision accepted/rejected
   - tool start/end
@@ -73,6 +78,7 @@ What this first change should provide:
   - green-check start/end
   - timeout budget requested/clamped/synced
   - stream checkpoint continue/cancel verdict
+  - provider-native partial-work detection and diff review
   - refusal/block/failure
   - verification-state updates
   - final result emission
@@ -154,13 +160,18 @@ and renders more live information:
   final raw-output policy is active;
 - final Run Result panels and artifact/history commands.
 
-Final-product direction: normal operator mode should keep concise live progress
-and evidence summaries, but provider-dispatch internals and detailed
-checkpoint/provider buffers should move behind verbose or inspector output.
+Final-product direction: normal operator mode should keep concise live progress,
+provider-visible status text, brain-owned waiting heartbeats, partial-work
+summaries, and public evidence summaries. Provider-dispatch internals, raw final
+provider output, raw JSON decisions, raw prompt bundles, and detailed
+checkpoint/provider buffers should move behind raw, verbose, or inspector
+output.
 
 What is deliberately **not** implemented yet:
 
 - token-by-token provider streaming
+- user-interruptible provider turns with provider subprocess/API cancellation
+  and partial-work review
 - provider-visible mid-tool checkpoint buffers for UART/build/client-action
   streams
 - live reconnection into an already-running session
@@ -827,16 +838,22 @@ Exit criteria:
 - one-shot runs still preserve deterministic exit codes
 - benchmark output remains scriptable
 
-### Phase 3: Add Inspector And Checkpoints
+### Phase 3: Add Provider Streaming, Inspector, And Checkpoints
 
-Add a developer-only inspector path and chunk checkpoints before investing in a
-full interactive shell.
+Add provider-visible streaming, provider-turn interruption, a developer-only
+inspector path, and chunk checkpoints before investing in further shell polish.
 
 Exit criteria:
 
 - `--inspect` or equivalent opens/writes a live trace of prompt turns, provider
   stream text, parsed decisions, tool calls, state snapshots, and server
   observations
+- Codex/Claude CLI provider turns no longer use opaque captured subprocess
+  waits for long turns; provider-visible text or a brain heartbeat appears
+  before the final provider output
+- Ctrl-C during a provider turn cancels the in-flight turn, prevents partial
+  provider text from becoming an action, records cleanup status, and surfaces
+  any partial provider-native workspace changes before later governed actions
 - UART reads, builds/external commands, and long client actions can emit
   checkpoint chunks
 - checkpoint turns can return a bounded continue/cancel/narrow-adjust verdict,
@@ -846,6 +863,10 @@ Exit criteria:
   `markdowns/curr/wave2-midtool-checkpoints_spec.md`: generic mid-tool
   observation buffer, brain-mediated provider verdicts, real cleanup state on
   cancellation, concise normal UX, and detailed inspector UX
+- provider-turn streaming and cancellation follow
+  `markdowns/curr/wave2-provider-stream-interrupt_spec.md`: provider-visible
+  stream text, no hidden chain-of-thought contract, structured decisions as the
+  only authoritative input, partial-work review, and Module H cleanup
 
 ### Phase 4: Add The Interactive Shell
 
@@ -885,6 +906,10 @@ The UX layer should only be considered real when all of the following are true:
 - a user can run a healthy-board verification flow without manually opening
   `runs/<session_id>/...`
 - a user can tell which tool the agent is using in real time
+- a user can see provider-visible status text or a brain-owned heartbeat while
+  a provider turn is still running
+- a user can interrupt a provider turn before final provider output and receive
+  a clear cancellation/cleanup result
 - a user can see concise reasoning/evidence summaries during the run
 - a user can inspect recent sessions from inside the shell
 - policy refusals and watcher blocks are clearly distinguishable from runtime
@@ -923,7 +948,9 @@ That gives the project both:
 
 - whether the final operator-facing command should be `pyocd-debug` or a new
   subcommand under `pyocd-debug-brain`
-- the exact terminal rendering library choice
-- the exact event schema to freeze for live rendering
+- the exact event schema to freeze for provider-visible stream chunks,
+  provider-turn cancellation, and partial-work review
 - whether session "resume" should mean inspection-only in v1 or true live
   reconnection
+- Wave 2 provider-visible streaming, user-interruptible provider turns, and
+  mid-tool checkpoint buffers remain unimplemented.

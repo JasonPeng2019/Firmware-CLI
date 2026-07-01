@@ -77,6 +77,13 @@ The current live status is:
   yet. The target is a generic brain-mediated checkpoint observation buffer for
   UART/build/client-action streams so providers can inspect null reads, bad
   reads, stalls, partial output, and early errors before final timeout.
+- Wave 2 Module D/H provider-visible stream and user-interrupt behavior is now
+  specified in `markdowns/curr/wave2-provider-stream-interrupt_spec.md`; it is
+  not implemented yet. The target is live provider-visible status text or
+  brain-owned heartbeats before final provider output, no hidden
+  chain-of-thought contract, structured decisions as the only authoritative
+  brain input, cancellation before partial output becomes an action, and
+  cleanup/partial-work review.
 - `claude-cli` is no longer globally blocked on this host:
   - STM32 freeform and `k001` benchmark proof now exist through the local
     Claude CLI path
@@ -717,6 +724,7 @@ Current limitation:
 - R12 provider-native UX CLI controls gap record: [markdowns/curr/r12-provider-native-ux-cli-controls_spec.md](./markdowns/curr/r12-provider-native-ux-cli-controls_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
 - Wave 2 mid-tool checkpoint buffer spec: [markdowns/curr/wave2-midtool-checkpoints_spec.md](./markdowns/curr/wave2-midtool-checkpoints_spec.md)
+- Wave 2 provider-visible stream and interrupt spec: [markdowns/curr/wave2-provider-stream-interrupt_spec.md](./markdowns/curr/wave2-provider-stream-interrupt_spec.md)
 - Archived July 1 current adversarial audit handoff/process ledger: [markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md](./markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)
@@ -865,8 +873,9 @@ Latest turnkey verification:
     alias-specific failure mode and should not be treated as the provider's
     current global status
 - the Pass 1 `pyocd-debug` shell is implemented and green under the local
-  non-hardware test/lint/typecheck ladder, but true provider-token streaming is
-  still intentionally deferred to the next UX follow-up
+  non-hardware test/lint/typecheck ladder, but provider-visible streaming before
+  final provider output and user-interruptible provider turns are still
+  intentionally deferred to the next UX follow-up
 - the broader self-contained no-`NCS` portability claim still needs true fresh
   Windows and macOS host validation
     that pass
