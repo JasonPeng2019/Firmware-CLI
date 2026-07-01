@@ -129,6 +129,13 @@ to:
 markdowns/tmp/curr-archive-20260701-repeat-adversarial-audit/
 ```
 
+The completed July 1 second repeat Wave 1 adversarial audit process ledger was
+moved to:
+
+```text
+markdowns/tmp/curr-archive-20260701-second-repeat-adversarial-audit/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -166,6 +173,10 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - A July 1 repeat adversarial audit found and closed one metadata gap: OpenAI
   periodic native memory safety-sync turns now keep remote-primary
   `remote-resume` metadata while still passing `previous_response_id`.
+- A July 1 second repeat adversarial audit after that metadata fix found no
+  new valid spec or product gaps. The full non-hardware suite ladder, focused
+  Wave 1 tests, provider-native projection tests, operator shell smoke, and
+  live no-hardware Codex/Claude hidden-token native-skill proof were green.
 
 ## Pending Verification
 

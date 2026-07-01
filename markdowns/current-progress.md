@@ -191,6 +191,18 @@ with both local CLI providers. The completed handoff/process ledger is archived
 under
 `markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md`.
 
+Second repeat adversarial audit update, 2026-07-01: after the OpenAI
+native-sync metadata fix, a full Wave 1 no-hardware repeat audit found no new
+valid spec or product gaps. The repeat pass rechecked stale governed action
+removal, four-tier memory behavior, provider continuation metadata,
+provider-native skill projection, public memory/native-skill controls, and
+operator shell behavior. The full non-hardware suite ladder was green
+(`387 passed`, ruff, mypy, R11 benchmark tests, and R11 benchmark help), and
+live no-hardware hidden-token proof was green for both `codex-cli` and
+`claude-cli` with `finalize` decisions, `remote-resume` metadata, and no
+`load_skills` fallback. The completed repeat-audit ledger is archived under
+`markdowns/tmp/curr-archive-20260701-second-repeat-adversarial-audit/wave1-second-repeat-adversarial-audit_process.md`.
+
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
 and validated. Agents must not use passing subset tests or narrower branch
