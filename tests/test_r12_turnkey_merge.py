@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -38,6 +39,7 @@ from pyocd_debug_mcp.brain.provider_openai import OpenAIDecisionProvider
 from pyocd_debug_mcp.brain.provider_anthropic import AnthropicDecisionProvider
 from pyocd_debug_mcp.brain.provider_types import (
     ProviderCapabilities,
+    ProviderMidHistoryEntry,
     ProviderMemoryEntry,
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
@@ -46,6 +48,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderRuntimeContext,
     ProviderSessionState,
     ProviderTurn,
+    append_memory_entry,
     make_provider_session_state,
     with_provider_resume_recovery_request,
 )
@@ -100,7 +103,7 @@ class _FakeProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         return ProviderMemorySummaryResult(
             summary_text=prior_summary_text or "- merge summary",
@@ -663,6 +666,83 @@ def test_openai_provider_uses_previous_response_id_and_updates_session_state(
         "continuation",
     ]
     assert provider.capabilities.supports_native_session is True
+
+
+def test_openai_provider_records_native_sync_as_remote_resume(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponses:
+        def create(self, **kwargs: object) -> object:
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(
+                id="resp-next-sync",
+                output_text=json.dumps(
+                    {
+                        "observation_summary": "synced",
+                        "classification": "healthy",
+                        "action": {
+                            "kind": "finalize",
+                            "final_status": "diagnosed_only",
+                            "classification": "healthy",
+                            "root_cause": "none",
+                            "summary": "ok",
+                        },
+                    }
+                ),
+            )
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            self.responses = _FakeResponses()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_openai.OpenAI", _FakeOpenAI)
+
+    provider = OpenAIDecisionProvider(api_key="test-key", model="gpt-test")
+    session_state = make_provider_session_state(
+        provider="openai-api",
+        model="gpt-test",
+        continuation_mode="remote-primary",
+        native_sync_every=2,
+    ).with_native_handle_update(response_id="resp-prev")
+    session_state = append_memory_entry(
+        session_state,
+        ProviderMemoryEntry(
+            turn_index=1,
+            classification="healthy",
+            observation_summary="Connected to target.",
+            hypothesis=None,
+            action_kind="connect",
+            action_summary="Connected.",
+            result_summary="Connected to board.",
+            verification_snapshot="flash=False uart=False symbol=False green=False",
+            result_status="success",
+        ),
+    )
+    session_state = replace(session_state, turns_since_last_memory_sync=2)
+    bundle = ProviderPromptBundle(
+        system_instructions="sys",
+        skill_context_text="skill index",
+        tool_schema_text="tool schema",
+        provider_memory_text="memory block",
+        turn_context_text="prompt",
+        turn_decision_schema_text="decision schema",
+    )
+
+    turn = provider._next_decision_sync(bundle, session_state)
+
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["previous_response_id"] == "resp-prev"
+    assert "memory block" in str(kwargs["input"])
+    assert "decision schema" in str(kwargs["input"])
+    assert turn.provider_metadata["continuation_path"] == "remote-resume"
+    assert turn.provider_metadata["prompt_render_mode"] == "remote-sync"
+    assert turn.provider_metadata["native_sync_used"] is True
+    assert turn.provider_metadata["local_memory_fallback_used"] is False
+    assert turn.provider_metadata["resumed_remote"] is True
+    assert turn.provider_metadata["fresh_remote_turn"] is False
 
 
 def test_openai_provider_previous_response_failure_is_typed_resume_failure(

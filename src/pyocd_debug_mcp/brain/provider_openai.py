@@ -17,7 +17,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     clear_provider_resume_recovery_request,
     ProviderCapabilities,
     ProviderContinuationPath,
-    ProviderMemoryEntry,
+    ProviderMidHistoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
@@ -79,7 +79,7 @@ class OpenAIDecisionProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         return await run_sync_in_worker_thread(
             self._summarize_memory_sync,
@@ -124,7 +124,7 @@ class OpenAIDecisionProvider:
             fresh_session = True
         elif should_inject_native_memory_sync(session_state):
             use_local_memory = True
-            continuation_path = "local-memory-fallback"
+            continuation_path = "remote-resume"
             native_sync_used = True
             prompt_render_mode = "remote-sync"
         else:
@@ -319,7 +319,7 @@ class OpenAIDecisionProvider:
         self,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         last_error: Exception | None = None
         prompt = render_memory_summary_request(

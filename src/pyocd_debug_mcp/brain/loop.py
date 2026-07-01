@@ -80,6 +80,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderTurn,
     make_provider_session_state,
     render_provider_memory_text,
+    render_mid_memory_entries,
     provider_turn_record,
     with_provider_resume_recovery_request,
 )
@@ -209,6 +210,12 @@ def _build_request_payload(
         "model": invocation.model,
         "memory_mode": invocation.memory_mode,
         "native_sync_every": invocation.native_sync_every,
+        "recent_turn_detail_limit": invocation.recent_turn_detail_limit,
+        "mid_history_turn_limit": invocation.mid_history_turn_limit,
+        "mid_history_render_char_limit": invocation.mid_history_render_chars,
+        "memory_summary_max_chars": invocation.memory_summary_max_chars,
+        "provider_native_skill_mode": invocation.provider_native_skills,
+        "provider_native_skill_root": str(invocation.provider_native_skill_root),
         "max_iters": invocation.max_iters,
         "serial_read_seconds": invocation.serial_read_seconds,
         "timeout_config": invocation.timeout_config.to_record(),
@@ -601,6 +608,8 @@ def _build_prompt_bundle(
                 ),
                 native_sync_every=invocation.native_sync_every,
                 recent_turn_limit=invocation.recent_turn_detail_limit,
+                mid_history_turn_limit=invocation.mid_history_turn_limit,
+                mid_history_render_char_limit=invocation.mid_history_render_chars,
                 summary_char_limit=invocation.memory_summary_max_chars,
             )
         ),
@@ -1139,64 +1148,72 @@ async def _commit_provider_memory(
     model_summary_fallback = False
     summarizer_metadata: dict[str, object] | None = None
     fallback_reason: str | None = None
+    summary_required = compaction_plan is not None and compaction_plan.requires_tier3_summary
     if compaction_plan is not None:
         if updated_session.memory_mode == "model-summary":
-            try:
-                await _record_brain_event(
-                    sink=sink,
-                    records=records,
-                    invocation=invocation,
-                    state=state,
-                    event_kind="provider_progress",
-                    message="Starting provider-backed memory summary compaction.",
-                    details={
-                        "stage": "memory_summary",
-                        "memory_mode": updated_session.memory_mode,
-                        "evicted_turn_count": len(compaction_plan.evicted_entries),
-                    },
-                )
-                prior_summary_text = (
-                    updated_session.memory_summary.summary_text
-                    if updated_session.memory_summary is not None
-                    else ""
-                )
-                summary_result = await provider.summarize_memory(
-                    session_state=updated_session,
-                    prior_summary_text=prior_summary_text,
-                    evicted_entries=compaction_plan.evicted_entries,
-                )
-                summarizer_metadata = dict(summary_result.provider_metadata)
-                updated_session = apply_summary_compaction(
-                    updated_session,
-                    compaction_plan,
-                    summary_text=summary_result.summary_text,
-                    source="model-summary",
-                )
-            except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
-                model_summary_fallback = True
-                fallback_reason = f"{type(exc).__name__}: {exc}"
-                await _record_brain_event(
-                    sink=sink,
-                    records=records,
-                    invocation=invocation,
-                    state=state,
-                    event_kind="provider_progress",
-                    message="Provider-backed memory summary failed; falling back to deterministic compaction.",
-                    details={
-                        "stage": "memory_summary_fallback",
-                        "fallback_reason": fallback_reason,
-                    },
-                )
+            if summary_required:
+                try:
+                    await _record_brain_event(
+                        sink=sink,
+                        records=records,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="provider_progress",
+                        message="Starting provider-backed memory summary compaction.",
+                        details={
+                            "stage": "memory_summary",
+                            "memory_mode": updated_session.memory_mode,
+                            "evicted_turn_count": len(compaction_plan.tier2_evicted_entries),
+                        },
+                    )
+                    prior_summary_text = (
+                        updated_session.memory_summary.summary_text
+                        if updated_session.memory_summary is not None
+                        else ""
+                    )
+                    summary_result = await provider.summarize_memory(
+                        session_state=updated_session,
+                        prior_summary_text=prior_summary_text,
+                        evicted_entries=compaction_plan.tier2_evicted_entries,
+                    )
+                    summarizer_metadata = dict(summary_result.provider_metadata)
+                    updated_session = apply_summary_compaction(
+                        updated_session,
+                        compaction_plan,
+                        summary_text=summary_result.summary_text,
+                        source="model-summary",
+                    )
+                except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
+                    model_summary_fallback = True
+                    fallback_reason = f"{type(exc).__name__}: {exc}"
+                    await _record_brain_event(
+                        sink=sink,
+                        records=records,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="provider_progress",
+                        message="Provider-backed memory summary failed; falling back to deterministic compaction.",
+                        details={
+                            "stage": "memory_summary_fallback",
+                            "fallback_reason": fallback_reason,
+                        },
+                    )
+                    updated_session = apply_deterministic_compaction(
+                        updated_session,
+                        compaction_plan,
+                        source="deterministic-fallback",
+                    )
+            else:
                 updated_session = apply_deterministic_compaction(
                     updated_session,
                     compaction_plan,
-                    source="deterministic-fallback",
+                    source="tier2-only",
                 )
         else:
             updated_session = apply_deterministic_compaction(
                 updated_session,
                 compaction_plan,
-                source="deterministic",
+                source="deterministic" if summary_required else "tier2-only",
             )
     memory_rendered_this_turn = bool(provider_metadata.get("memory_injected"))
     updated_session = advance_memory_sync_state(
@@ -1210,11 +1227,20 @@ async def _commit_provider_memory(
         "memory_entry_turn_index": memory_entry.turn_index,
         "memory_rendered_this_turn": memory_rendered_this_turn,
         "recent_memory_entry_count": len(updated_session.recent_memory_entries),
+        "mid_memory_entry_count": len(updated_session.mid_memory_entries),
+        "mid_history_turn_limit": updated_session.mid_history_turn_limit,
+        "mid_history_render_char_limit": updated_session.mid_history_render_char_limit,
+        "mid_history_render_char_count": len(
+            render_mid_memory_entries(
+                updated_session.mid_memory_entries,
+                char_limit=updated_session.mid_history_render_char_limit,
+            )
+        ),
         "native_sync_every": updated_session.native_sync_every,
         "turns_since_last_memory_sync": updated_session.turns_since_last_memory_sync,
         "compaction_ran": compaction_plan is not None,
         "summary_mode_invoked": (
-            compaction_plan is not None and current_session.memory_mode == "model-summary"
+            summary_required and current_session.memory_mode == "model-summary"
         ),
         "summary_rewrite_count": (
             summarizer_metadata.get("retry_count", 0)
@@ -1222,7 +1248,27 @@ async def _commit_provider_memory(
             else 0
         ),
         "compaction_plan": compaction_plan.to_record() if compaction_plan is not None else None,
+        "tier1_evicted_turns": (
+            [entry.turn_index for entry in compaction_plan.tier1_evicted_entries]
+            if compaction_plan is not None
+            else []
+        ),
+        "tier2_added_turns": (
+            [entry.turn_index for entry in compaction_plan.tier2_added_entries]
+            if compaction_plan is not None
+            else []
+        ),
+        "tier2_evicted_turns": (
+            [entry.turn_index for entry in compaction_plan.tier2_evicted_entries]
+            if compaction_plan is not None
+            else []
+        ),
         "summary_source": (
+            updated_session.memory_summary.source
+            if updated_session.memory_summary is not None
+            else None
+        ),
+        "tier3_summary_source": (
             updated_session.memory_summary.source
             if updated_session.memory_summary is not None
             else None
@@ -1232,7 +1278,17 @@ async def _commit_provider_memory(
             if updated_session.memory_summary is not None
             else None
         ),
+        "tier3_summary_covered_through_turn": (
+            updated_session.memory_summary.covered_through_turn
+            if updated_session.memory_summary is not None
+            else None
+        ),
         "summary_char_count": (
+            updated_session.memory_summary.char_count
+            if updated_session.memory_summary is not None
+            else 0
+        ),
+        "tier3_summary_char_count": (
             updated_session.memory_summary.char_count
             if updated_session.memory_summary is not None
             else 0
@@ -2616,6 +2672,8 @@ async def _tooling_failure_execution(
             continuation_mode=_continuation_mode_for_provider(invocation.provider),
             native_sync_every=invocation.native_sync_every,
             recent_turn_limit=invocation.recent_turn_detail_limit,
+            mid_history_turn_limit=invocation.mid_history_turn_limit,
+            mid_history_render_char_limit=invocation.mid_history_render_chars,
             summary_char_limit=invocation.memory_summary_max_chars,
             runtime_context=provider_runtime_context,
         ),
@@ -2775,6 +2833,8 @@ async def run_turnkey(
             continuation_mode=provider.capabilities.continuation_mode,
             native_sync_every=invocation.native_sync_every,
             recent_turn_limit=invocation.recent_turn_detail_limit,
+            mid_history_turn_limit=invocation.mid_history_turn_limit,
+            mid_history_render_char_limit=invocation.mid_history_render_chars,
             summary_char_limit=invocation.memory_summary_max_chars,
             runtime_context=provider_runtime_context,
         ),
@@ -2889,6 +2949,8 @@ async def run_turnkey(
                         continuation_mode=provider.capabilities.continuation_mode,
                         native_sync_every=invocation.native_sync_every,
                         recent_turn_limit=invocation.recent_turn_detail_limit,
+                        mid_history_turn_limit=invocation.mid_history_turn_limit,
+                        mid_history_render_char_limit=invocation.mid_history_render_chars,
                         summary_char_limit=invocation.memory_summary_max_chars,
                     )
                 )

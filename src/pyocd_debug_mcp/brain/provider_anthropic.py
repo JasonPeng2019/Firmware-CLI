@@ -13,7 +13,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     build_provider_turn_metadata,
     ProviderCapabilities,
     ProviderContinuationPath,
-    ProviderMemoryEntry,
+    ProviderMidHistoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
@@ -70,7 +70,7 @@ class AnthropicDecisionProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         return await run_sync_in_worker_thread(
             self._summarize_memory_sync,
@@ -179,7 +179,7 @@ class AnthropicDecisionProvider:
         self,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         last_error: Exception | None = None
         prompt = render_memory_summary_request(

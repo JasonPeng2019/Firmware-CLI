@@ -37,6 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--recent-turn-detail-limit", type=int)
+    run_parser.add_argument("--mid-history-turn-limit", type=int)
+    run_parser.add_argument("--mid-history-render-chars", type=int)
     run_parser.add_argument("--memory-summary-max-chars", type=int)
     run_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
     run_parser.add_argument("--provider-native-skill-root")
@@ -68,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     benchmark_parser.add_argument("--native-sync-every", type=int)
     benchmark_parser.add_argument("--recent-turn-detail-limit", type=int)
+    benchmark_parser.add_argument("--mid-history-turn-limit", type=int)
+    benchmark_parser.add_argument("--mid-history-render-chars", type=int)
     benchmark_parser.add_argument("--memory-summary-max-chars", type=int)
     benchmark_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
     benchmark_parser.add_argument("--provider-native-skill-root")
@@ -117,6 +121,8 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         memory_mode=getattr(args, "memory_mode", None),
         native_sync_every=getattr(args, "native_sync_every", None),
         recent_turn_detail_limit=getattr(args, "recent_turn_detail_limit", None),
+        mid_history_turn_limit=getattr(args, "mid_history_turn_limit", None),
+        mid_history_render_chars=getattr(args, "mid_history_render_chars", None),
         memory_summary_max_chars=getattr(args, "memory_summary_max_chars", None),
         preload_common_details=getattr(args, "preload_common_details", None),
         provider_native_skills=getattr(args, "provider_native_skills", None),
@@ -162,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
+                mid_history_turn_limit=args.mid_history_turn_limit,
+                mid_history_render_chars=args.mid_history_render_chars,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
                 provider_native_skills=args.provider_native_skills,
@@ -182,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
             recent_turn_detail_limit=args.recent_turn_detail_limit,
+            mid_history_turn_limit=args.mid_history_turn_limit,
+            mid_history_render_chars=args.mid_history_render_chars,
             memory_summary_max_chars=args.memory_summary_max_chars,
             preload_common_details=args.preload_common_details,
             provider_native_skills=args.provider_native_skills,

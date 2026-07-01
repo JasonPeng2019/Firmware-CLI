@@ -13,9 +13,11 @@ ONLY INCLUDE for the first capability prototype:
      compact brain-owned provider-memory ledger. Remote-primary providers sync
      that compact memory every 10 provider turns by default. The July 1 prompt
      cost hardening keeps cross-invocation provider-session persistence out of
-     scope, but now bounds in-run memory with a two-turn detailed window, a
-     hard-limited rolling summary, compact Tier 0 canonical state on every
-     decision turn, and rendered-vs-available prompt telemetry.
+     scope, but now bounds in-run memory with compact Tier 0 canonical state on
+     every decision turn, a two-turn Tier 1 detailed window, a deterministic
+     Tier 2 mid-history lane, a hard-limited Tier 3 rolling summary, and
+     rendered-vs-available prompt telemetry. Tier 2 is deterministically
+     compacted from Tier 1; only Tier 3 may use model-backed compression.
 2. Free host work with a final governed board-decision boundary.
 3. Compact real tool-metadata index in the prompt.
 4. Basic timeout hardening and timeout audit fixes.
@@ -110,6 +112,9 @@ Prototype acceptance contract:
   `remote-delta` state, bounded in-run memory, focused detail rendering,
   rendered-vs-available prompt telemetry, and credentials-free API-path
   simulation must stay green before Wave 1 can be called complete. The
+  four-tier provider-memory design is now implemented for the current turnkey
+  path: Tier 1 overflow moves into deterministic Tier 2 first, and provider or
+  model summarization is reserved for Tier 2 overflow into Tier 3. The
   provider-native skill bridge spec at
   `markdowns/curr/r12-provider-native-skill-bridge_spec.md` is also a Wave 1
   validation requirement: `.codex`/`.claude` native projection, Claude

@@ -337,6 +337,10 @@ def test_operator_cli_parser_supports_memory_controls() -> None:
             "6",
             "--recent-turn-detail-limit",
             "2",
+            "--mid-history-turn-limit",
+            "6",
+            "--mid-history-render-chars",
+            "3200",
             "--memory-summary-max-chars",
             "1800",
             "--no-preload-common-details",
@@ -346,8 +350,158 @@ def test_operator_cli_parser_supports_memory_controls() -> None:
     assert args.memory_mode == "model-summary"
     assert args.native_sync_every == 6
     assert args.recent_turn_detail_limit == 2
+    assert args.mid_history_turn_limit == 6
+    assert args.mid_history_render_chars == 3200
     assert args.memory_summary_max_chars == 1800
     assert args.preload_common_details is False
+
+
+def test_operator_cli_parser_supports_provider_native_skill_controls() -> None:
+    parser = ux_cli.build_parser()
+
+    run_args = parser.parse_args(
+        [
+            "run",
+            "--board-id",
+            "nucleo_l476rg",
+            "--task",
+            "Inspect native skills.",
+            "--provider-native-skills",
+            "require",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+    benchmark_args = parser.parse_args(
+        [
+            "benchmark",
+            "--case-id",
+            "nrf52833dk__k001_reference_green",
+            "--provider-native-skills",
+            "off",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+
+    assert run_args.provider_native_skills == "require"
+    assert run_args.provider_native_skill_root == "skills/provider_native"
+    assert benchmark_args.provider_native_skills == "off"
+    assert benchmark_args.provider_native_skill_root == "skills/provider_native"
+
+
+def test_operator_cli_render_run_passes_provider_native_skill_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_run_freeform_task(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                session_id="20260701T000000Z-native",
+                board_id="nucleo_l476rg",
+                classification="healthy",
+                final_status="diagnosed_only",
+                summary="Done.",
+                root_cause="None.",
+                verification=SimpleNamespace(
+                    flash_ok=False,
+                    uart_ok=False,
+                    symbol_ok=False,
+                    green_check_ok=False,
+                ),
+            ),
+            run_root=None,
+        )
+
+    monkeypatch.setattr(ux_cli, "run_freeform_task", _fake_run_freeform_task)
+    monkeypatch.setattr(ux_cli.UXRenderer, "render_execution", lambda self, execution: None)
+    args = ux_cli.build_parser().parse_args(
+        [
+            "run",
+            "--board-id",
+            "nucleo_l476rg",
+            "--task",
+            "Inspect native skills.",
+            "--provider-native-skills",
+            "require",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+
+    assert ux_cli._render_run(args) == 0
+    assert captured["provider_native_skills"] == "require"
+    assert captured["provider_native_skill_root"] == "skills/provider_native"
+
+
+def test_operator_cli_render_benchmark_passes_provider_native_skill_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_run_benchmark_case(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            score_report=SimpleNamespace(outcome_label="full_success"),
+            session_id="20260701T000000Z-native-bench",
+        )
+
+    monkeypatch.setattr(ux_cli, "run_benchmark_case", _fake_run_benchmark_case)
+    monkeypatch.setattr(ux_cli.UXRenderer, "render_case_report", lambda self, report: None)
+    args = ux_cli.build_parser().parse_args(
+        [
+            "benchmark",
+            "--case-id",
+            "nrf52833dk__k001_reference_green",
+            "--provider-native-skills",
+            "off",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+
+    assert ux_cli._render_benchmark(args) == 0
+    assert captured["provider_native_skills"] == "off"
+    assert captured["provider_native_skill_root"] == "skills/provider_native"
+
+
+def test_operator_cli_render_benchmark_suite_passes_provider_native_skill_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_run_benchmark_suite(**kwargs: object) -> list[object]:
+        captured.update(kwargs)
+        return [
+            SimpleNamespace(
+                score_report=SimpleNamespace(outcome_label="full_success"),
+                session_id="20260701T000000Z-native-suite",
+            )
+        ]
+
+    monkeypatch.setattr(ux_cli, "run_benchmark_suite", _fake_run_benchmark_suite)
+    monkeypatch.setattr(ux_cli.r12_benchmark, "_suite_acceptance", lambda suite_id, reports: True)
+    monkeypatch.setattr(ux_cli.UXRenderer, "render_case_report", lambda self, report: None)
+    monkeypatch.setattr(
+        ux_cli.UXRenderer, "render_suite_summary", lambda self, suite_id, reports: None
+    )
+    args = ux_cli.build_parser().parse_args(
+        [
+            "benchmark",
+            "--suite",
+            "smoke",
+            "--provider-native-skills",
+            "require",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+
+    assert ux_cli._render_benchmark(args) == 0
+    assert captured["provider_native_skills"] == "require"
+    assert captured["provider_native_skill_root"] == "skills/provider_native"
 
 
 def _make_renderer(stream: io.StringIO | None = None) -> UXRenderer:
@@ -526,6 +680,18 @@ def test_shell_memory_commands_update_context_and_reject_invalid_values() -> Non
     assert shell._dispatch_command(parse_slash_command("/native-sync-every 0")) is True
     assert shell.context.native_sync_every == 0
 
+    assert shell._dispatch_command(parse_slash_command("/recent-turn-detail-limit 3")) is True
+    assert shell.context.recent_turn_detail_limit == 3
+
+    assert shell._dispatch_command(parse_slash_command("/mid-history-turn-limit 5")) is True
+    assert shell.context.mid_history_turn_limit == 5
+
+    assert shell._dispatch_command(parse_slash_command("/mid-history-render-chars 3200")) is True
+    assert shell.context.mid_history_render_chars == 3200
+
+    assert shell._dispatch_command(parse_slash_command("/memory-summary-max-chars 1600")) is True
+    assert shell.context.memory_summary_max_chars == 1600
+
     assert shell._dispatch_command(parse_slash_command("/native-sync-every -1")) is True
     assert "ux/invalid-native-sync" in stream.getvalue()
 
@@ -574,6 +740,10 @@ def test_guided_verify_ignores_workspace_context_but_keeps_artifact_context(
     shell.context.build_command = "west build -b nrf52833dk"
     shell.context.flash_artifact = str((tmp_path / "firmware.elf").resolve())
     shell.context.symbol_artifact = str((tmp_path / "firmware.sym.elf").resolve())
+    shell.context.recent_turn_detail_limit = 3
+    shell.context.mid_history_turn_limit = 5
+    shell.context.mid_history_render_chars = 3200
+    shell.context.memory_summary_max_chars = 1600
 
     captured: dict[str, object] = {}
 
@@ -604,8 +774,59 @@ def test_guided_verify_ignores_workspace_context_but_keeps_artifact_context(
     assert captured["build_command"] is None
     assert captured["flash_artifact"] == shell.context.flash_artifact
     assert captured["elf"] == shell.context.symbol_artifact
+    assert captured["recent_turn_detail_limit"] == 3
+    assert captured["mid_history_turn_limit"] == 5
+    assert captured["mid_history_render_chars"] == 3200
+    assert captured["memory_summary_max_chars"] == 1600
     assert "focus on UART evidence" in str(captured["task"])
     assert "Do not edit source files" in str(captured["task"])
+
+
+def test_shell_rerun_replays_provider_native_skill_request_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shell = _make_shell()
+    captured: dict[str, object] = {}
+    request = {
+        "mode": "freeform",
+        "provider": "codex-cli",
+        "model": None,
+        "task": "Replay native skill controls.",
+        "board_id": "nucleo_l476rg",
+        "provider_native_skill_mode": "require",
+        "provider_native_skill_root": "skills/provider_native",
+        "max_iters": 12,
+        "serial_read_seconds": 3.0,
+    }
+
+    async def _fake_run_freeform_task(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                session_id="20260701T010000Z-rerun-native",
+                board_id="nucleo_l476rg",
+                classification="healthy",
+                final_status="diagnosed_only",
+                summary="Done.",
+                root_cause="None.",
+                verification=SimpleNamespace(
+                    flash_ok=False,
+                    uart_ok=False,
+                    symbol_ok=False,
+                    green_check_ok=False,
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        ux_shell, "load_session_bundle", lambda session_id: SimpleNamespace(request=request)
+    )
+    monkeypatch.setattr(ux_shell, "run_freeform_task", _fake_run_freeform_task)
+    shell.renderer.render_execution = lambda execution: None  # type: ignore[method-assign]
+
+    assert shell._rerun_session("20260701T000000Z-source") is True
+    assert captured["provider_native_skills"] == "require"
+    assert captured["provider_native_skill_root"] == "skills/provider_native"
 
 
 def test_guided_repair_refuses_without_required_context() -> None:

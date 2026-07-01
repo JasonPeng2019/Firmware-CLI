@@ -1,4 +1,9 @@
 > STATUS: IMPLEMENTED HARD BAR - Wave 1 prompt/memory cost hardening is now part of R12 product validation.
+>
+> TIER 2 UPDATE: the current implementation now includes the distinct
+> deterministic Tier 2 mid-history lane described below. Tier 1 overflow moves
+> into Tier 2 first; provider/model-backed summary mode is reserved for Tier 2
+> overflow into the hard-limited Tier 3 rolling summary.
 
 # R12 Prompt And Memory Cost Hardening Spec
 
@@ -505,9 +510,12 @@ Hardware/live checks after implementation:
 - Rendered-vs-available prompt accounting records section hashes plus
   `memory_injected`, `decision_schema_injected`, and
   `static_tool_schema_injected` booleans.
-- Provider memory is bounded by a recent detailed window plus a hard-limited
-  rolling summary; model-summary output is validated instead of silently
-  truncated.
+- Provider memory is bounded by Tier 1 recent details, deterministic Tier 2
+  mid-history compact facts, and a hard-limited Tier 3 rolling summary;
+  model-summary output is validated instead of silently truncated.
+- The distinct Tier 2 mid-history compact-summary lane in the target design is
+  implemented as separate state and rendering, with Tier 1 overflow moving into
+  Tier 2 before Tier 3 compaction is eligible.
 - Common `connect` and `run_green_check` details preload by default, loaded
   detail bodies are one-turn focused payloads, and later turns carry compact
   detail status/hashes.
@@ -530,6 +538,13 @@ Hardware/live checks after implementation:
   `claude-cli`, Branch C attached-board rows green on `nucleo_l476rg +
   nrf52840dk`, and representative `b001_wrong_boot_text` repair benchmarks
   green on both attached boards with both local CLI providers.
+- The Tier 2 memory bridge is implemented and validated in
+  `markdowns/tmp/curr-archive-20260701-repeat-adversarial-audit/r12-tier2-memory-bridge_process.md`:
+  focused Tier 1 -> Tier 2
+  -> Tier 3 tests are green, Python-change passed full pytest `381 passed` with
+  Pyright `0` diagnostics, the suite ladder is green, and no-hardware real
+  provider checks for Codex CLI and Claude CLI returned valid decisions and
+  bounded Tier 3 summary outputs.
 
 ## Pending Verification
 

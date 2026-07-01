@@ -297,6 +297,7 @@ Firmware-CLI/
     |   |-- r12-delta-compact-indexes_spec.md
     |   |-- r12_turnkey_spec.md
     |   |-- r12-prompt-memory-cost-hardening_spec.md
+    |   |-- r12-tier2-memory-bridge_spec.md
     |   |-- r12-provider-native-skill-bridge_spec.md
     |   |-- r12-provider-native-skill-invocation-proof_spec.md
     |   `-- wave2-codebase-map_spec.md
@@ -343,8 +344,12 @@ Firmware-CLI/
     (default `10`; `0` disables periodic sync injection)
   - `PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT` for the detailed recent provider
     memory window (default `2`)
+  - `PYOCD_TURNKEY_MID_HISTORY_TURN_LIMIT` for the deterministic Tier 2
+    mid-history provider memory lane (default `6`)
+  - `PYOCD_TURNKEY_MID_HISTORY_RENDER_CHAR_LIMIT` for the Tier 2 rendered
+    memory cap (default `4000`)
   - `PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS` for the hard limit on compacted
-    provider memory summaries (default `2000`)
+    Tier 3 provider memory summaries (default `2000`)
   - `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS` to enable/disable preloading common
     governed-action details such as `connect` and `run_green_check` (default
     enabled)
@@ -512,6 +517,8 @@ Operator-shell note:
   - `/verify`, `/diagnose`, `/repair`
   - `/prompt`, `/diff`, `/serial`, `/score`, `/events`
   - `/memory-mode`, `/native-sync-every`
+  - `/recent-turn-detail-limit`, `/mid-history-turn-limit`
+  - `/mid-history-render-chars`, `/memory-summary-max-chars`
 
 Run the turnkey benchmark against one case or the full frozen 12-case suite:
 
@@ -544,6 +551,11 @@ Turnkey provider rules:
   - ordinary later turns render compact canonical state and focused loaded
     details rather than repeating the full bootstrap task body, full decision
     schema, and full provider memory
+  - local memory is tiered: Tier 1 keeps the detailed recent window, Tier 2
+    keeps deterministic mid-history compact facts, and Tier 3 keeps the bounded
+    rolling summary; Tier 2 is compacted from Tier 1 without model calls, while
+    provider/model summary mode is only eligible when Tier 2 overflows into
+    Tier 3
   - selected turnkey skill facts render in full at bootstrap/sync, while
     ordinary remote-delta turns use a compact skill digest with IDs, counts, and
     hashes
@@ -572,6 +584,8 @@ Turnkey provider rules:
   - `--memory-mode deterministic|model-summary`
   - `--native-sync-every N` (`10` by default; `0` disables periodic sync)
   - `--recent-turn-detail-limit N` (`2` by default)
+  - `--mid-history-turn-limit N` (`6` by default)
+  - `--mid-history-render-chars N` (`4000` by default)
   - `--memory-summary-max-chars N` (`2000` by default)
   - `--no-preload-common-details` to disable default `connect` and
     `run_green_check` detail preload
@@ -582,6 +596,8 @@ Turnkey provider rules:
   - `.env`:
     `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`,
     `PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT`,
+    `PYOCD_TURNKEY_MID_HISTORY_TURN_LIMIT`,
+    `PYOCD_TURNKEY_MID_HISTORY_RENDER_CHAR_LIMIT`,
     `PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS`,
     `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS`,
     `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS`,
@@ -689,8 +705,10 @@ Current limitation:
 - R12 context/scaffold hardening hard bar: [markdowns/curr/r12-context-scaffold-hardening_spec.md](./markdowns/curr/r12-context-scaffold-hardening_spec.md)
 - R12 compact delta indexes hard bar: [markdowns/curr/r12-delta-compact-indexes_spec.md](./markdowns/curr/r12-delta-compact-indexes_spec.md)
 - R12 prompt/memory cost hardening hard bar: [markdowns/curr/r12-prompt-memory-cost-hardening_spec.md](./markdowns/curr/r12-prompt-memory-cost-hardening_spec.md)
+- R12 Tier 2 memory bridge implementation record: [markdowns/curr/r12-tier2-memory-bridge_spec.md](./markdowns/curr/r12-tier2-memory-bridge_spec.md)
 - R12 provider-native skill bridge hard bar: [markdowns/curr/r12-provider-native-skill-bridge_spec.md](./markdowns/curr/r12-provider-native-skill-bridge_spec.md)
 - R12 provider-native skill invocation proof: [markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md](./markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md)
+- R12 provider-native UX CLI controls gap record: [markdowns/curr/r12-provider-native-ux-cli-controls_spec.md](./markdowns/curr/r12-provider-native-ux-cli-controls_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
 - Archived July 1 current adversarial audit handoff/process ledger: [markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md](./markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
@@ -782,6 +800,8 @@ Verified:
 - the current Branch A provider/prompt layer is also in place:
   - provider capabilities and loop-owned provider session state are explicit
   - all providers share one canonical compact local-memory model
+  - that model now has deterministic Tier 2 mid-history memory between the
+    recent detailed window and the bounded Tier 3 rolling summary
   - OpenAI uses native continuation as an accelerator, with strict
     resume-failure handling and optional periodic safety sync
   - Claude CLI and Codex CLI now add real remote continuation on top of that

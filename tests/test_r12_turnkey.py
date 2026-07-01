@@ -41,6 +41,8 @@ from pyocd_debug_mcp.brain.config import (
     load_provider_config,
     resolve_memory_mode,
     resolve_memory_summary_max_chars,
+    resolve_mid_history_render_chars,
+    resolve_mid_history_turn_limit,
     resolve_native_sync_every,
     resolve_provider_native_skill_root,
     resolve_provider_native_skills,
@@ -62,6 +64,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     plan_memory_compaction,
     ProviderCapabilities,
     ProviderMemoryEntry,
+    ProviderMidHistoryEntry,
     ProviderMemorySummaryResult,
     ProviderPromptBundle,
     ProviderProgressUpdate,
@@ -71,6 +74,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderSessionState,
     ProviderTurn,
     make_provider_session_state,
+    render_provider_memory_text,
 )
 from pyocd_debug_mcp.brain.skills import load_skills_for_context
 from pyocd_debug_mcp.brain.state import BrainState
@@ -94,6 +98,7 @@ class FakeProvider:
         self._decisions = deque(decisions)
         self._before_decision = deque(before_decision or [])
         self.turn_prompts: list[str] = []
+        self.summary_calls: list[tuple[int, ...]] = []
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -137,9 +142,10 @@ class FakeProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         turns = ",".join(str(entry.turn_index) for entry in evicted_entries) or "none"
+        self.summary_calls.append(tuple(entry.turn_index for entry in evicted_entries))
         return ProviderMemorySummaryResult(
             summary_text=f"{prior_summary_text}\n- summarized turns: {turns}".strip(),
             provider_metadata={"provider": "fake-provider"},
@@ -1074,11 +1080,123 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
     assert record["provider"] == "codex-cli"
     assert record["memory_mode"] == "deterministic"
     recent_memory_entries = cast(list[dict[str, object]], record["recent_memory_entries"])
-    memory_summary = require_mapping(record["memory_summary"])
+    mid_memory_entries = cast(list[dict[str, object]], record["mid_memory_entries"])
     assert len(recent_memory_entries) == 2
     assert recent_memory_entries[0]["turn_index"] == 5
-    assert memory_summary["covered_through_turn"] == 4
+    assert [entry["turn_index"] for entry in mid_memory_entries] == [1, 2, 3, 4]
+    assert record["memory_summary"] is None
+
+
+def test_provider_memory_tier2_overflow_rolls_into_tier3_summary() -> None:
+    state = make_provider_session_state(
+        provider="codex-cli",
+        model=None,
+        continuation_mode="local-primary",
+        mid_history_turn_limit=2,
+    )
+    for index in range(1, 6):
+        state = append_memory_entry(
+            state,
+            ProviderMemoryEntry(
+                turn_index=index,
+                classification="healthy",
+                observation_summary=f"obs {index}",
+                hypothesis=f"hyp {index}",
+                action_kind="server_tool",
+                action_summary=f"connect {index}",
+                result_summary=f"result {index}",
+                verification_snapshot="flash=True uart=True symbol=True green=True",
+                changed_files=(f"src/{index}.c",),
+            ),
+        )
+        plan = plan_memory_compaction(state)
+        if plan is not None:
+            state = apply_deterministic_compaction(state, plan)
+
+    record = state.to_record()
+    recent_memory_entries = cast(list[dict[str, object]], record["recent_memory_entries"])
+    mid_memory_entries = cast(list[dict[str, object]], record["mid_memory_entries"])
+    memory_summary = require_mapping(record["memory_summary"])
+    assert [entry["turn_index"] for entry in recent_memory_entries] == [4, 5]
+    assert [entry["turn_index"] for entry in mid_memory_entries] == [2, 3]
+    assert memory_summary["covered_through_turn"] == 1
     assert memory_summary["source"] == "deterministic"
+    rendered = render_provider_memory_text(state)
+    assert "Tier 3 rolling summary" in rendered
+    assert "Tier 2 mid-history compact facts" in rendered
+    assert "Tier 1 recent committed turn facts" in rendered
+    assert "action_payload" not in rendered
+
+
+def test_run_turnkey_model_summary_waits_for_tier2_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("connect"),
+            load_tool_details_decision("read_serial"),
+            load_tool_details_decision("get_state"),
+            load_tool_details_decision("disconnect"),
+            TurnDecision(
+                observation_summary="Enough context gathered without board tools.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="No hardware action was needed for this memory cadence check.",
+                    summary="Tier 2 overflow behavior was exercised.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Exercise provider memory compaction without touching hardware.",
+        model=None,
+        max_iters=5,
+        serial_read_seconds=1.0,
+        memory_mode="model-summary",
+        recent_turn_detail_limit=2,
+        mid_history_turn_limit=2,
+        mid_history_render_chars=4_000,
+        memory_summary_max_chars=2_000,
+        preload_common_details=False,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    assert provider.summary_calls == [(1,)]
+    assert execution.state.provider_session_state is not None
+    final_session = execution.state.provider_session_state
+    assert [entry.turn_index for entry in final_session.recent_memory_entries] == [4, 5]
+    assert [entry.turn_index for entry in final_session.mid_memory_entries] == [2, 3]
+    assert final_session.memory_summary is not None
+    assert final_session.memory_summary.source == "model-summary"
+    assert execution.request_payload["recent_turn_detail_limit"] == 2
+    assert execution.request_payload["mid_history_turn_limit"] == 2
+    assert execution.request_payload["mid_history_render_char_limit"] == 4_000
+    compactions = [
+        require_mapping(event["details"])["compaction"]
+        for event in execution.brain_events
+        if event["event_kind"] == "provider_memory_update"
+    ]
+    assert require_mapping(compactions[2])["summary_mode_invoked"] is False
+    assert require_mapping(compactions[3])["summary_mode_invoked"] is False
+    final_compaction = require_mapping(compactions[4])
+    assert final_compaction["summary_mode_invoked"] is True
+    assert final_compaction["tier1_evicted_turns"] == [3]
+    assert final_compaction["tier2_added_turns"] == [3]
+    assert final_compaction["tier2_evicted_turns"] == [1]
 
 
 def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> None:
@@ -1575,6 +1693,8 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_MODE", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_MID_HISTORY_TURN_LIMIT", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_MID_HISTORY_RENDER_CHAR_LIMIT", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS", raising=False)
@@ -1583,6 +1703,20 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     assert resolve_memory_mode() == "deterministic"
     assert resolve_native_sync_every() == 10
     assert resolve_recent_turn_detail_limit() == 2
+    assert resolve_mid_history_turn_limit() == 6
+    assert resolve_mid_history_render_chars() == 4_000
+    assert (
+        build_turnkey_invocation(
+            mode="freeform",
+            provider="codex-cli",
+            board_id="nucleo_l476rg",
+            task="Check defaults.",
+            model=None,
+            max_iters=1,
+            serial_read_seconds=1.0,
+        ).mid_history_turn_limit
+        == 6
+    )
     assert resolve_memory_summary_max_chars() == 2_000
     assert resolve_preload_common_details() is True
     assert resolve_provider_native_skills() == "auto"
@@ -1592,6 +1726,8 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_MODE", "model-summary")
     monkeypatch.setenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", "7")
     monkeypatch.setenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", "3")
+    monkeypatch.setenv("PYOCD_TURNKEY_MID_HISTORY_TURN_LIMIT", "4")
+    monkeypatch.setenv("PYOCD_TURNKEY_MID_HISTORY_RENDER_CHAR_LIMIT", "1500")
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", "2500")
     monkeypatch.setenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", "false")
     monkeypatch.setenv("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS", "require")
@@ -1603,6 +1739,17 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     assert resolve_memory_mode() == "model-summary"
     assert resolve_native_sync_every() == 7
     assert resolve_recent_turn_detail_limit() == 3
+    overridden = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nucleo_l476rg",
+        task="Check overrides.",
+        model=None,
+        max_iters=1,
+        serial_read_seconds=1.0,
+    )
+    assert overridden.mid_history_turn_limit == 4
+    assert overridden.mid_history_render_chars == 1_500
     assert resolve_memory_summary_max_chars() == 2_500
     assert resolve_preload_common_details() is False
     assert resolve_provider_native_skills() == "require"
@@ -1633,7 +1780,9 @@ def test_memory_compaction_triggers_on_recent_memory_char_limit() -> None:
         )
     plan = plan_memory_compaction(state)
     assert plan is not None
-    assert plan.evicted_entries
+    assert plan.tier1_evicted_entries
+    assert plan.tier2_added_entries
+    assert not plan.tier2_evicted_entries
     assert plan.rendered_recent_char_count <= state.recent_render_char_limit
 
 
@@ -1989,7 +2138,7 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
             *,
             session_state: ProviderSessionState,
             prior_summary_text: str,
-            evicted_entries: tuple[ProviderMemoryEntry, ...],
+            evicted_entries: tuple[ProviderMidHistoryEntry, ...],
         ) -> ProviderMemorySummaryResult:
             raise RuntimeError("summarizer exploded")
 
@@ -2311,7 +2460,7 @@ class ResumeFailureProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         del session_state, evicted_entries
         return ProviderMemorySummaryResult(summary_text=prior_summary_text or "- summary")
@@ -2516,7 +2665,7 @@ def test_run_turnkey_forwards_provider_progress_updates(
             *,
             session_state: ProviderSessionState,
             prior_summary_text: str,
-            evicted_entries: tuple[ProviderMemoryEntry, ...],
+            evicted_entries: tuple[ProviderMidHistoryEntry, ...],
         ) -> ProviderMemorySummaryResult:
             return ProviderMemorySummaryResult(summary_text=prior_summary_text or "- summary")
 
@@ -3082,6 +3231,7 @@ def test_run_turnkey_projects_provider_native_skills_into_runtime(
         model=None,
         max_iters=1,
         serial_read_seconds=0.1,
+        provider_native_skills="require",
         provider_native_skill_root=source_root,
     )
 
@@ -3096,6 +3246,8 @@ def test_run_turnkey_projects_provider_native_skills_into_runtime(
     projection = require_mapping(execution.request_payload["provider_native_skills"])
     projection_root = Path(require_str(projection["projection_root"]))
     assert execution.result.final_status == "diagnosed_only"
+    assert execution.request_payload["provider_native_skill_mode"] == "require"
+    assert execution.request_payload["provider_native_skill_root"] == str(source_root)
     assert projection["status"] == "available"
     assert projection["layout"] == ".codex/skills"
     assert (projection_root / "firmcli-test-skill" / "SKILL.md").exists()
@@ -4119,6 +4271,10 @@ def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
             "off",
             "--provider-native-skill-root",
             "skills/provider_native",
+            "--mid-history-turn-limit",
+            "4",
+            "--mid-history-render-chars",
+            "1500",
             "--timeout-config-json",
             '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
@@ -4133,6 +4289,8 @@ def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
     assert args.iteration_estimate_json == '{"requested_max_iterations": 6}'
     assert args.provider_native_skills == "off"
     assert args.provider_native_skill_root == "skills/provider_native"
+    assert args.mid_history_turn_limit == 4
+    assert args.mid_history_render_chars == 1500
 
 
 def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4165,6 +4323,10 @@ def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyP
             "require",
             "--provider-native-skill-root",
             "skills/provider_native",
+            "--mid-history-turn-limit",
+            "4",
+            "--mid-history-render-chars",
+            "1500",
             "--timeout-config-json",
             '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
@@ -4183,6 +4345,8 @@ def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyP
     assert captured["iteration_estimate"] == IterationEstimate(requested_max_iterations=6)
     assert captured["provider_native_skills"] == "require"
     assert captured["provider_native_skill_root"] == "skills/provider_native"
+    assert captured["mid_history_turn_limit"] == 4
+    assert captured["mid_history_render_chars"] == 1500
 
 
 def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path) -> None:

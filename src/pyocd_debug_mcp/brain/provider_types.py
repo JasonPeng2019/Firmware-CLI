@@ -36,6 +36,8 @@ ProviderPromptRenderMode = Literal[
 
 DEFAULT_RECENT_TURN_LIMIT = 2  # PROJECT-DEFINED (detailed recent-turn window)
 DEFAULT_RECENT_RENDER_CHAR_LIMIT = 8_000  # PROJECT-DEFINED (recent-memory prompt cap)
+DEFAULT_MID_HISTORY_TURN_LIMIT = 6  # PROJECT-DEFINED (compact mid-history window)
+DEFAULT_MID_HISTORY_RENDER_CHAR_LIMIT = 4_000  # PROJECT-DEFINED (mid-history prompt cap)
 DEFAULT_SUMMARY_CHAR_LIMIT = 2_000  # PROJECT-DEFINED (compacted-summary prompt cap)
 DEFAULT_NATIVE_SYNC_EVERY = 10  # PROJECT-DEFINED (remote safety-sync cadence)
 DEFAULT_MEMORY_SUMMARY_TRIGGER_TURNS = 8  # PROJECT-DEFINED (summary-mode cadence target)
@@ -210,6 +212,47 @@ class ProviderMemoryEntry:
 
 
 @dataclass(frozen=True)
+class ProviderMidHistoryEntry:
+    turn_index: int
+    classification: str | None
+    action_kind: str
+    action_summary: str
+    result_status: ProviderMemoryResultStatus
+    durable_learning: str
+    verification_snapshot: str
+    changed_files: tuple[str, ...] = ()
+    refused_or_blocked_paths: tuple[str, ...] = ()
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "turn_index": self.turn_index,
+            "classification": self.classification,
+            "action_kind": self.action_kind,
+            "action_summary": self.action_summary,
+            "result_status": self.result_status,
+            "durable_learning": self.durable_learning,
+            "verification_snapshot": self.verification_snapshot,
+            "changed_files": list(self.changed_files),
+            "refused_or_blocked_paths": list(self.refused_or_blocked_paths),
+        }
+
+    def render_text(self) -> str:
+        lines = [
+            f"[turn {self.turn_index}]",
+            f"classification: {self.classification or '(none)'}",
+            f"action: {self.action_kind} | {_trim_text(self.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+            f"result_status: {self.result_status}",
+            f"learning: {_trim_text(self.durable_learning, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+            f"verification: {_trim_text(self.verification_snapshot, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        ]
+        if self.changed_files:
+            lines.append("changed_files: " + ", ".join(self.changed_files[:5]))
+        if self.refused_or_blocked_paths:
+            lines.append("blocked_or_refused: " + ", ".join(self.refused_or_blocked_paths[:5]))
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class ProviderResumeFailureRecord:
     provider: str
     remote_strategy: ProviderRemoteStrategy
@@ -283,16 +326,33 @@ class ProviderMemorySummaryResult:
 
 @dataclass(frozen=True)
 class ProviderMemoryCompactionPlan:
-    evicted_entries: tuple[ProviderMemoryEntry, ...]
+    tier1_evicted_entries: tuple[ProviderMemoryEntry, ...]
+    tier2_added_entries: tuple[ProviderMidHistoryEntry, ...]
+    tier2_evicted_entries: tuple[ProviderMidHistoryEntry, ...]
     retained_entries: tuple[ProviderMemoryEntry, ...]
+    retained_mid_entries: tuple[ProviderMidHistoryEntry, ...]
     rendered_recent_char_count: int
+    rendered_mid_char_count: int
 
     def to_record(self) -> dict[str, object]:
         return {
-            "evicted_turns": [entry.turn_index for entry in self.evicted_entries],
+            "evicted_turns": [entry.turn_index for entry in self.tier2_evicted_entries],
+            "tier1_evicted_turns": [entry.turn_index for entry in self.tier1_evicted_entries],
+            "tier2_added_turns": [entry.turn_index for entry in self.tier2_added_entries],
+            "tier2_evicted_turns": [entry.turn_index for entry in self.tier2_evicted_entries],
             "retained_turns": [entry.turn_index for entry in self.retained_entries],
+            "retained_mid_turns": [entry.turn_index for entry in self.retained_mid_entries],
             "rendered_recent_char_count": self.rendered_recent_char_count,
+            "rendered_mid_char_count": self.rendered_mid_char_count,
         }
+
+    @property
+    def requires_tier3_summary(self) -> bool:
+        return bool(self.tier2_evicted_entries)
+
+    @property
+    def evicted_entries(self) -> tuple[ProviderMidHistoryEntry, ...]:
+        return self.tier2_evicted_entries
 
 
 @dataclass(frozen=True)
@@ -304,9 +364,12 @@ class ProviderSessionState:
     runtime_context: ProviderRuntimeContext | None = None
     native_handle: ProviderNativeHandle | None = None
     recent_memory_entries: tuple[ProviderMemoryEntry, ...] = ()
+    mid_memory_entries: tuple[ProviderMidHistoryEntry, ...] = ()
     memory_summary: ProviderMemorySummary | None = None
     recent_turn_limit: int = DEFAULT_RECENT_TURN_LIMIT
     recent_render_char_limit: int = DEFAULT_RECENT_RENDER_CHAR_LIMIT
+    mid_history_turn_limit: int = DEFAULT_MID_HISTORY_TURN_LIMIT
+    mid_history_render_char_limit: int = DEFAULT_MID_HISTORY_RENDER_CHAR_LIMIT
     summary_char_limit: int = DEFAULT_SUMMARY_CHAR_LIMIT
     native_sync_every: int = DEFAULT_NATIVE_SYNC_EVERY
     turns_since_last_memory_sync: int = 0
@@ -327,11 +390,14 @@ class ProviderSessionState:
             else None,
             "recent_turn_limit": self.recent_turn_limit,
             "recent_render_char_limit": self.recent_render_char_limit,
+            "mid_history_turn_limit": self.mid_history_turn_limit,
+            "mid_history_render_char_limit": self.mid_history_render_char_limit,
             "summary_char_limit": self.summary_char_limit,
             "native_sync_every": self.native_sync_every,
             "turns_since_last_memory_sync": self.turns_since_last_memory_sync,
             "last_continuation_path": self.last_continuation_path,
             "recent_memory_entries": [entry.to_record() for entry in self.recent_memory_entries],
+            "mid_memory_entries": [entry.to_record() for entry in self.mid_memory_entries],
             "memory_summary": self.memory_summary.to_record()
             if self.memory_summary is not None
             else None,
@@ -353,6 +419,11 @@ class ProviderSessionState:
             "recent_memory_entry_count": len(self.recent_memory_entries),
             "recent_memory_render_char_count": len(
                 _render_recent_memory_entries(self.recent_memory_entries)
+            ),
+            "mid_memory_entry_count": len(self.mid_memory_entries),
+            "mid_history_turn_limit": self.mid_history_turn_limit,
+            "mid_history_render_char_count": len(
+                _render_mid_memory_entries(self.mid_memory_entries)
             ),
             "memory_summary": (
                 {
@@ -449,6 +520,7 @@ class ProviderSessionState:
         self,
         *,
         recent_memory_entries: tuple[ProviderMemoryEntry, ...] | None = None,
+        mid_memory_entries: tuple[ProviderMidHistoryEntry, ...] | None = None,
         memory_summary: ProviderMemorySummary | None | _KeepSentinel = _KEEP,
         turns_since_last_memory_sync: int | None = None,
         metadata: dict[str, object] | None = None,
@@ -467,6 +539,9 @@ class ProviderSessionState:
                 if recent_memory_entries is None
                 else recent_memory_entries
             ),
+            mid_memory_entries=(
+                self.mid_memory_entries if mid_memory_entries is None else mid_memory_entries
+            ),
             memory_summary=resolved_memory_summary,
             turns_since_last_memory_sync=(
                 self.turns_since_last_memory_sync
@@ -478,9 +553,10 @@ class ProviderSessionState:
 
     def next_turn_index(self) -> int:
         covered = self.memory_summary.covered_through_turn if self.memory_summary is not None else 0
-        if not self.recent_memory_entries:
-            return covered + 1
-        return max(entry.turn_index for entry in self.recent_memory_entries) + 1
+        indexes = [covered]
+        indexes.extend(entry.turn_index for entry in self.mid_memory_entries)
+        indexes.extend(entry.turn_index for entry in self.recent_memory_entries)
+        return max(indexes) + 1
 
 
 @dataclass(frozen=True)
@@ -722,7 +798,7 @@ class DecisionProvider(Protocol):
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult: ...
 
 
@@ -734,6 +810,8 @@ def make_provider_session_state(
     continuation_mode: ProviderContinuationMode = "local-primary",
     native_sync_every: int = DEFAULT_NATIVE_SYNC_EVERY,
     recent_turn_limit: int = DEFAULT_RECENT_TURN_LIMIT,
+    mid_history_turn_limit: int = DEFAULT_MID_HISTORY_TURN_LIMIT,
+    mid_history_render_char_limit: int = DEFAULT_MID_HISTORY_RENDER_CHAR_LIMIT,
     summary_char_limit: int = DEFAULT_SUMMARY_CHAR_LIMIT,
     runtime_context: ProviderRuntimeContext | None = None,
     metadata: dict[str, object] | None = None,
@@ -745,6 +823,8 @@ def make_provider_session_state(
         continuation_mode=continuation_mode,
         native_sync_every=native_sync_every,
         recent_turn_limit=recent_turn_limit,
+        mid_history_turn_limit=mid_history_turn_limit,
+        mid_history_render_char_limit=mid_history_render_char_limit,
         summary_char_limit=summary_char_limit,
         runtime_context=runtime_context,
         metadata=dict(metadata or {}),
@@ -836,7 +916,11 @@ def build_provider_turn_metadata(
 
 
 def provider_has_local_memory(session_state: ProviderSessionState) -> bool:
-    return bool(session_state.recent_memory_entries or session_state.memory_summary)
+    return bool(
+        session_state.recent_memory_entries
+        or session_state.mid_memory_entries
+        or session_state.memory_summary
+    )
 
 
 def render_recent_memory_entries(
@@ -867,6 +951,34 @@ def _render_recent_memory_entries(
     return "\n\n".join(blocks)
 
 
+def render_mid_memory_entries(
+    entries: tuple[ProviderMidHistoryEntry, ...],
+    *,
+    char_limit: int,
+) -> str:
+    return _render_mid_memory_entries(entries, char_limit=char_limit)
+
+
+def _render_mid_memory_entries(
+    entries: tuple[ProviderMidHistoryEntry, ...],
+    *,
+    char_limit: int | None = None,
+) -> str:
+    if not entries:
+        return ""
+    blocks: list[str] = []
+    for entry in entries:
+        block = entry.render_text()
+        tentative = "\n\n".join((*blocks, block))
+        if char_limit is not None and len(tentative) > char_limit and blocks:
+            break
+        if char_limit is not None and len(tentative) > char_limit:
+            blocks.append(_trim_text(block, char_limit))
+            break
+        blocks.append(block)
+    return "\n\n".join(blocks)
+
+
 def render_provider_memory_text(session_state: ProviderSessionState) -> str:
     sections: list[str] = []
     if (
@@ -877,6 +989,12 @@ def render_provider_memory_text(session_state: ProviderSessionState) -> str:
             "Tier 3 rolling summary (model/deterministic, non-authoritative):\n"
             + session_state.memory_summary.summary_text.strip()
         )
+    mid_text = render_mid_memory_entries(
+        session_state.mid_memory_entries,
+        char_limit=session_state.mid_history_render_char_limit,
+    )
+    if mid_text:
+        sections.append("Tier 2 mid-history compact facts (brain-authored):\n" + mid_text)
     recent_text = render_recent_memory_entries(
         session_state.recent_memory_entries,
         char_limit=session_state.recent_render_char_limit,
@@ -915,23 +1033,42 @@ def plan_memory_compaction(
     session_state: ProviderSessionState,
 ) -> ProviderMemoryCompactionPlan | None:
     retained = list(session_state.recent_memory_entries)
-    evicted: list[ProviderMemoryEntry] = []
+    retained_mid = list(session_state.mid_memory_entries)
+    tier1_evicted: list[ProviderMemoryEntry] = []
+    tier2_added: list[ProviderMidHistoryEntry] = []
+    tier2_evicted: list[ProviderMidHistoryEntry] = []
     rendered_char_count = len(_render_recent_memory_entries(tuple(retained)))
     if (
         len(retained) <= session_state.recent_turn_limit
         and rendered_char_count <= session_state.recent_render_char_limit
+        and len(retained_mid) <= session_state.mid_history_turn_limit
+        and len(_render_mid_memory_entries(tuple(retained_mid)))
+        <= session_state.mid_history_render_char_limit
     ):
         return None
     while len(retained) > session_state.recent_turn_limit:
-        evicted.append(retained.pop(0))
+        tier1_evicted.append(retained.pop(0))
     rendered_char_count = len(_render_recent_memory_entries(tuple(retained)))
     while retained and rendered_char_count > session_state.recent_render_char_limit:
-        evicted.append(retained.pop(0))
+        tier1_evicted.append(retained.pop(0))
         rendered_char_count = len(_render_recent_memory_entries(tuple(retained)))
+    tier2_added = [_mid_history_entry_from_memory_entry(entry) for entry in tier1_evicted]
+    retained_mid.extend(tier2_added)
+    rendered_mid_char_count = len(_render_mid_memory_entries(tuple(retained_mid)))
+    while len(retained_mid) > session_state.mid_history_turn_limit:
+        tier2_evicted.append(retained_mid.pop(0))
+    rendered_mid_char_count = len(_render_mid_memory_entries(tuple(retained_mid)))
+    while retained_mid and rendered_mid_char_count > session_state.mid_history_render_char_limit:
+        tier2_evicted.append(retained_mid.pop(0))
+        rendered_mid_char_count = len(_render_mid_memory_entries(tuple(retained_mid)))
     return ProviderMemoryCompactionPlan(
-        evicted_entries=tuple(evicted),
+        tier1_evicted_entries=tuple(tier1_evicted),
+        tier2_added_entries=tuple(tier2_added),
+        tier2_evicted_entries=tuple(tier2_evicted),
         retained_entries=tuple(retained),
+        retained_mid_entries=tuple(retained_mid),
         rendered_recent_char_count=rendered_char_count,
+        rendered_mid_char_count=rendered_mid_char_count,
     )
 
 
@@ -941,32 +1078,30 @@ def apply_deterministic_compaction(
     *,
     source: str = "deterministic",
 ) -> ProviderSessionState:
-    merged_lines = _merged_summary_lines(
-        existing_summary=session_state.memory_summary.summary_text
-        if session_state.memory_summary
-        else "",
-        new_lines=[_deterministic_summary_line(entry) for entry in plan.evicted_entries],
-        char_limit=session_state.summary_char_limit,
-    )
-    summary_text = "\n".join(merged_lines)
-    if plan.evicted_entries:
-        covered_through_turn = plan.evicted_entries[-1].turn_index
-    else:
-        covered_through_turn = (
-            session_state.memory_summary.covered_through_turn
-            if session_state.memory_summary is not None
-            else 0
+    summary = session_state.memory_summary
+    if plan.tier2_evicted_entries:
+        merged_lines = _merged_summary_lines(
+            existing_summary=session_state.memory_summary.summary_text
+            if session_state.memory_summary
+            else "",
+            new_lines=[
+                _deterministic_mid_summary_line(entry) for entry in plan.tier2_evicted_entries
+            ],
+            char_limit=session_state.summary_char_limit,
         )
-    summary = ProviderMemorySummary(
-        mode=session_state.memory_mode,
-        summary_text=summary_text,
-        covered_through_turn=covered_through_turn,
-        source=source,
-        char_count=len(summary_text),
-    )
+        summary_text = "\n".join(merged_lines)
+        covered_through_turn = plan.tier2_evicted_entries[-1].turn_index
+        summary = ProviderMemorySummary(
+            mode=session_state.memory_mode,
+            summary_text=summary_text,
+            covered_through_turn=covered_through_turn,
+            source=source,
+            char_count=len(summary_text),
+        )
     return replace(
         session_state,
         recent_memory_entries=plan.retained_entries,
+        mid_memory_entries=plan.retained_mid_entries,
         memory_summary=summary,
     )
 
@@ -978,18 +1113,17 @@ def apply_summary_compaction(
     summary_text: str,
     source: str,
 ) -> ProviderSessionState:
+    if not plan.tier2_evicted_entries:
+        return replace(
+            session_state,
+            recent_memory_entries=plan.retained_entries,
+            mid_memory_entries=plan.retained_mid_entries,
+        )
     normalized_summary = validate_memory_summary_text(
         summary_text,
         char_limit=session_state.summary_char_limit,
     )
-    if plan.evicted_entries:
-        covered_through_turn = plan.evicted_entries[-1].turn_index
-    else:
-        covered_through_turn = (
-            session_state.memory_summary.covered_through_turn
-            if session_state.memory_summary is not None
-            else 0
-        )
+    covered_through_turn = plan.tier2_evicted_entries[-1].turn_index
     summary = ProviderMemorySummary(
         mode=session_state.memory_mode,
         summary_text=normalized_summary,
@@ -1000,6 +1134,7 @@ def apply_summary_compaction(
     return replace(
         session_state,
         recent_memory_entries=plan.retained_entries,
+        mid_memory_entries=plan.retained_mid_entries,
         memory_summary=summary,
     )
 
@@ -1016,7 +1151,7 @@ def advance_memory_sync_state(
 def render_memory_summary_request(
     *,
     prior_summary_text: str,
-    evicted_entries: tuple[ProviderMemoryEntry, ...],
+    evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     summary_char_limit: int,
 ) -> str:
     lines = [
@@ -1037,8 +1172,8 @@ def render_memory_summary_request(
         "Prior compacted summary:",
         prior_summary_text.strip() or "(none)",
         "",
-        "Evicted committed turn facts:",
-        render_recent_memory_entries(evicted_entries, char_limit=24_000) or "(none)",
+        "Evicted Tier 2 mid-history facts:",
+        render_mid_memory_entries(evicted_entries, char_limit=24_000) or "(none)",
     ]
     return "\n".join(lines)
 
@@ -1077,21 +1212,45 @@ def _trim_text(text: str | None, limit: int) -> str:
     return value[: limit - 3].rstrip() + "..."
 
 
-def _deterministic_summary_line(entry: ProviderMemoryEntry) -> str:
+def _mid_history_entry_from_memory_entry(entry: ProviderMemoryEntry) -> ProviderMidHistoryEntry:
+    durable_components = [
+        f"obs={_trim_text(entry.observation_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        f"result={_trim_text(entry.result_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+    ]
+    if entry.hypothesis:
+        durable_components.insert(
+            1,
+            f"hyp={_trim_text(entry.hypothesis, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        )
+    if entry.decision_rationale:
+        durable_components.append(
+            f"rationale={_trim_text(entry.decision_rationale, _SUMMARY_COMPONENT_CHAR_LIMIT)}"
+        )
+    return ProviderMidHistoryEntry(
+        turn_index=entry.turn_index,
+        classification=entry.classification,
+        action_kind=entry.action_kind,
+        action_summary=_trim_text(entry.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT),
+        result_status=entry.result_status,
+        durable_learning="; ".join(durable_components),
+        verification_snapshot=_trim_text(
+            entry.verification_snapshot,
+            _SUMMARY_COMPONENT_CHAR_LIMIT,
+        ),
+        changed_files=entry.changed_files,
+        refused_or_blocked_paths=entry.refused_or_blocked_paths,
+    )
+
+
+def _deterministic_mid_summary_line(entry: ProviderMidHistoryEntry) -> str:
     components = [
         f"turn {entry.turn_index}",
         f"class={entry.classification or '(none)'}",
-        f"obs={_trim_text(entry.observation_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        f"action={entry.action_kind}:{_trim_text(entry.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        f"status={entry.result_status}",
+        f"learned={_trim_text(entry.durable_learning, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
+        f"verify={_trim_text(entry.verification_snapshot, _SUMMARY_COMPONENT_CHAR_LIMIT)}",
     ]
-    if entry.hypothesis:
-        components.append(f"hyp={_trim_text(entry.hypothesis, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
-    components.append(
-        f"action={entry.action_kind}:{_trim_text(entry.action_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}"
-    )
-    components.append(f"result={_trim_text(entry.result_summary, _SUMMARY_COMPONENT_CHAR_LIMIT)}")
-    components.append(
-        f"verify={_trim_text(entry.verification_snapshot, _SUMMARY_COMPONENT_CHAR_LIMIT)}"
-    )
     return "- " + "; ".join(components)
 
 
@@ -1106,10 +1265,3 @@ def _merged_summary_lines(
     while lines and len("\n".join(lines)) > char_limit:
         lines.pop(0)
     return lines
-
-
-def _trim_summary_text(text: str, *, char_limit: int) -> str:
-    lines = [line for line in text.strip().splitlines() if line.strip()]
-    while lines and len("\n".join(lines)) > char_limit:
-        lines.pop(0)
-    return "\n".join(lines)

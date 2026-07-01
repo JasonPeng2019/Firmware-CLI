@@ -288,6 +288,8 @@ async def run_case_async(
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
     recent_turn_detail_limit: int | None = None,
+    mid_history_turn_limit: int | None = None,
+    mid_history_render_chars: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
     provider_native_skills: ProviderNativeSkillMode | str | None = None,
@@ -322,6 +324,8 @@ async def run_case_async(
         memory_mode=memory_mode,
         native_sync_every=native_sync_every,
         recent_turn_detail_limit=recent_turn_detail_limit,
+        mid_history_turn_limit=mid_history_turn_limit,
+        mid_history_render_chars=mid_history_render_chars,
         memory_summary_max_chars=memory_summary_max_chars,
         preload_common_details=preload_common_details,
         provider_native_skills=provider_native_skills,
@@ -470,6 +474,8 @@ def run_case(
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
     recent_turn_detail_limit: int | None = None,
+    mid_history_turn_limit: int | None = None,
+    mid_history_render_chars: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
     provider_native_skills: ProviderNativeSkillMode | str | None = None,
@@ -489,6 +495,8 @@ def run_case(
             memory_mode=memory_mode,
             native_sync_every=native_sync_every,
             recent_turn_detail_limit=recent_turn_detail_limit,
+            mid_history_turn_limit=mid_history_turn_limit,
+            mid_history_render_chars=mid_history_render_chars,
             memory_summary_max_chars=memory_summary_max_chars,
             preload_common_details=preload_common_details,
             provider_native_skills=provider_native_skills,
@@ -511,6 +519,8 @@ def run_suite(
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
     recent_turn_detail_limit: int | None = None,
+    mid_history_turn_limit: int | None = None,
+    mid_history_render_chars: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
     provider_native_skills: ProviderNativeSkillMode | str | None = None,
@@ -530,6 +540,8 @@ def run_suite(
             memory_mode=memory_mode,
             native_sync_every=native_sync_every,
             recent_turn_detail_limit=recent_turn_detail_limit,
+            mid_history_turn_limit=mid_history_turn_limit,
+            mid_history_render_chars=mid_history_render_chars,
             memory_summary_max_chars=memory_summary_max_chars,
             preload_common_details=preload_common_details,
             provider_native_skills=provider_native_skills,
@@ -555,6 +567,8 @@ def build_parser() -> argparse.ArgumentParser:
     case_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     case_parser.add_argument("--native-sync-every", type=int)
     case_parser.add_argument("--recent-turn-detail-limit", type=int)
+    case_parser.add_argument("--mid-history-turn-limit", type=int)
+    case_parser.add_argument("--mid-history-render-chars", type=int)
     case_parser.add_argument("--memory-summary-max-chars", type=int)
     case_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
     case_parser.add_argument("--provider-native-skill-root")
@@ -579,6 +593,8 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     suite_parser.add_argument("--native-sync-every", type=int)
     suite_parser.add_argument("--recent-turn-detail-limit", type=int)
+    suite_parser.add_argument("--mid-history-turn-limit", type=int)
+    suite_parser.add_argument("--mid-history-render-chars", type=int)
     suite_parser.add_argument("--memory-summary-max-chars", type=int)
     suite_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
     suite_parser.add_argument("--provider-native-skill-root")
@@ -615,6 +631,8 @@ def main(argv: list[str] | None = None) -> int:
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
+                mid_history_turn_limit=args.mid_history_turn_limit,
+                mid_history_render_chars=args.mid_history_render_chars,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
                 provider_native_skills=args.provider_native_skills,
@@ -635,6 +653,8 @@ def main(argv: list[str] | None = None) -> int:
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
             recent_turn_detail_limit=args.recent_turn_detail_limit,
+            mid_history_turn_limit=args.mid_history_turn_limit,
+            mid_history_render_chars=args.mid_history_render_chars,
             memory_summary_max_chars=args.memory_summary_max_chars,
             preload_common_details=args.preload_common_details,
             provider_native_skills=args.provider_native_skills,

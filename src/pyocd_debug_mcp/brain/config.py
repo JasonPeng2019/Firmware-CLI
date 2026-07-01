@@ -28,6 +28,8 @@ TurnkeyMemoryMode = Literal["deterministic", "model-summary"]
 DEFAULT_TURNKEY_MEMORY_MODE: TurnkeyMemoryMode = "deterministic"
 DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 10
 DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT = 2
+DEFAULT_TURNKEY_MID_HISTORY_TURN_LIMIT = 6
+DEFAULT_TURNKEY_MID_HISTORY_RENDER_CHARS = 4_000
 DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS = 2_000
 DEFAULT_TURNKEY_PRELOAD_COMMON_DETAILS = True
 DEFAULT_TURNKEY_PROVIDER_NATIVE_SKILLS: ProviderNativeSkillMode = "auto"
@@ -57,6 +59,8 @@ class TurnkeyInvocation:
     memory_mode: TurnkeyMemoryMode
     native_sync_every: int
     recent_turn_detail_limit: int
+    mid_history_turn_limit: int
+    mid_history_render_chars: int
     memory_summary_max_chars: int
     preload_common_details: bool
     provider_native_skills: ProviderNativeSkillMode
@@ -237,6 +241,24 @@ def resolve_memory_summary_max_chars(override: int | None = None) -> int:
     )
 
 
+def resolve_mid_history_turn_limit(override: int | None = None) -> int:
+    return _resolve_positive_int_env(
+        override=override,
+        env_name="PYOCD_TURNKEY_MID_HISTORY_TURN_LIMIT",
+        default=DEFAULT_TURNKEY_MID_HISTORY_TURN_LIMIT,
+        label="mid-history turn limit",
+    )
+
+
+def resolve_mid_history_render_chars(override: int | None = None) -> int:
+    return _resolve_positive_int_env(
+        override=override,
+        env_name="PYOCD_TURNKEY_MID_HISTORY_RENDER_CHAR_LIMIT",
+        default=DEFAULT_TURNKEY_MID_HISTORY_RENDER_CHARS,
+        label="mid-history render char limit",
+    )
+
+
 def resolve_preload_common_details(override: bool | None = None) -> bool:
     if override is not None:
         return override
@@ -293,6 +315,8 @@ def build_turnkey_invocation(
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
     recent_turn_detail_limit: int | None = None,
+    mid_history_turn_limit: int | None = None,
+    mid_history_render_chars: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
     provider_native_skills: str | ProviderNativeSkillMode | None = None,
@@ -330,6 +354,8 @@ def build_turnkey_invocation(
         memory_mode=resolve_memory_mode(memory_mode),
         native_sync_every=resolve_native_sync_every(native_sync_every),
         recent_turn_detail_limit=resolve_recent_turn_detail_limit(recent_turn_detail_limit),
+        mid_history_turn_limit=resolve_mid_history_turn_limit(mid_history_turn_limit),
+        mid_history_render_chars=resolve_mid_history_render_chars(mid_history_render_chars),
         memory_summary_max_chars=resolve_memory_summary_max_chars(memory_summary_max_chars),
         preload_common_details=resolve_preload_common_details(preload_common_details),
         provider_native_skills=resolve_provider_native_skills(provider_native_skills),

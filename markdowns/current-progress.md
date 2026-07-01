@@ -104,15 +104,18 @@ state. Normal provider turns render a Tier 0 brain-owned digest with task
 contract, loaded-detail status, latest evidence, changed files, blockers, and
 available action kinds, while bootstrap/retry/sync modes keep the larger context
 where it is useful. Provider memory defaults to the last two detailed committed
-turns plus a hard-limited rolling summary, summary-mode prompts are explicitly
-non-actionable, and overlong model summaries are rejected instead of silently
-trimmed. The run artifacts now record rendered-vs-available prompt accounting
-with per-section hashes and explicit `memory_injected`,
+turns in Tier 1, six deterministic mid-history compact entries in Tier 2, and a
+hard-limited Tier 3 rolling summary. Tier 2 is compacted from Tier 1 by the
+brain; summary-mode prompts are explicitly non-actionable and are only eligible
+when Tier 2 overflows into Tier 3. Overlong model summaries are rejected instead
+of silently trimmed. The run artifacts now record rendered-vs-available prompt
+accounting with per-section hashes and explicit `memory_injected`,
 `decision_schema_injected`, and `static_tool_schema_injected` booleans, so
 debugging can distinguish "state exists" from "state was actually sent to the
 provider." Common safe details for `connect` and `run_green_check` preload by
 default to avoid avoidable `details_required` turns; the behavior is
 configurable with `--recent-turn-detail-limit`,
+`--mid-history-turn-limit`, `--mid-history-render-chars`,
 `--memory-summary-max-chars`, `--no-preload-common-details`, and matching
 `PYOCD_TURNKEY_*` env vars. Follow-up audit during live benchmark repair found
 two additional valid prompt-cost gaps and closed them: loaded detail bodies now
@@ -130,6 +133,17 @@ request/response handling, prompt render modes, retry/error surfaces, and
 prompt accounting are covered without live API credentials. This feature still
 does not add cross-invocation provider-session persistence.
 
+Tier 2 memory bridge update, 2026-07-01: the four-tier provider-memory design is
+now implemented for the current turnkey path. The third committed provider turn
+normally moves turn 1 from Tier 1 into deterministic Tier 2 rather than
+compressing it with a model, and model-backed summary mode is reserved for Tier
+2 overflow into the hard-limited Tier 3 summary. Validation is recorded in
+`markdowns/tmp/curr-archive-20260701-repeat-adversarial-audit/r12-tier2-memory-bridge_process.md`: focused Tier 1 -> Tier 2 ->
+Tier 3 tests are green, Python-change passed full pytest `381 passed`, Pyright
+reported `0` diagnostics, the suite ladder is green, and no-hardware real
+provider smokes for Codex CLI and Claude CLI returned valid decisions and
+bounded Tier 3 summary outputs.
+
 Provider-native skill bridge update, 2026-07-01: the Wave 1 skill hard bar now
 uses native provider skill behavior where it is proven available. Phase 0
 burner probes proved `codex exec` can read run-local `.codex/skills`, and
@@ -140,7 +154,10 @@ projection hashes in `firmcli-native-skills.json`, prompts CLI providers to
 prefer native skill invocation, and keeps API providers on deterministic
 `load_skills` fallback. It adds `--provider-native-skills off|auto|require`,
 `--provider-native-skill-root`, `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS`, and
-`PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT`. Focused non-hardware coverage,
+`PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT`. A later spec-to-code audit closed
+the public UX CLI gap: `pyocd-debug run/benchmark` now expose those controls,
+saved requests persist explicit provider-native mode/root fields, and rerun
+replays them. Focused non-hardware coverage,
 Python-change, the suite ladder, credentials-free API-path simulation, Branch C
 provider/hardware rows, and representative projected-skill hardware repair
 benchmarks are green. The attached-board projected-skill proof used

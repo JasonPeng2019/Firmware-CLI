@@ -32,7 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--recent-turn-detail-limit", type=int)
+    run_parser.add_argument("--mid-history-turn-limit", type=int)
+    run_parser.add_argument("--mid-history-render-chars", type=int)
     run_parser.add_argument("--memory-summary-max-chars", type=int)
+    run_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    run_parser.add_argument("--provider-native-skill-root")
     run_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -56,7 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     benchmark_parser.add_argument("--native-sync-every", type=int)
     benchmark_parser.add_argument("--recent-turn-detail-limit", type=int)
+    benchmark_parser.add_argument("--mid-history-turn-limit", type=int)
+    benchmark_parser.add_argument("--mid-history-render-chars", type=int)
     benchmark_parser.add_argument("--memory-summary-max-chars", type=int)
+    benchmark_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    benchmark_parser.add_argument("--provider-native-skill-root")
     benchmark_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -98,8 +106,12 @@ def _render_run(args: argparse.Namespace) -> int:
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
+                mid_history_turn_limit=args.mid_history_turn_limit,
+                mid_history_render_chars=args.mid_history_render_chars,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
+                provider_native_skills=args.provider_native_skills,
+                provider_native_skill_root=args.provider_native_skill_root,
                 workspace_root=args.workspace_root,
                 build_command=args.build_command,
                 event_sink=renderer.emit,
@@ -129,8 +141,12 @@ def _render_benchmark(args: argparse.Namespace) -> int:
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
+                mid_history_turn_limit=args.mid_history_turn_limit,
+                mid_history_render_chars=args.mid_history_render_chars,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
+                provider_native_skills=args.provider_native_skills,
+                provider_native_skill_root=args.provider_native_skill_root,
                 event_sink=renderer.emit,
             )
             renderer.render_case_report(report)
@@ -144,8 +160,12 @@ def _render_benchmark(args: argparse.Namespace) -> int:
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
             recent_turn_detail_limit=args.recent_turn_detail_limit,
+            mid_history_turn_limit=args.mid_history_turn_limit,
+            mid_history_render_chars=args.mid_history_render_chars,
             memory_summary_max_chars=args.memory_summary_max_chars,
             preload_common_details=args.preload_common_details,
+            provider_native_skills=args.provider_native_skills,
+            provider_native_skill_root=args.provider_native_skill_root,
             event_sink=renderer.emit,
         )
         for report in reports:

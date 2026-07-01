@@ -18,9 +18,13 @@ active current-step truth, not historical process ledgers or branch proof notes.
   skill and governed-tool indexes in ordinary `remote-delta` provider turns
   without changing memory cadence or full-schema cadence.
 - `r12-prompt-memory-cost-hardening_spec.md` - implemented Wave 1 hard-bar spec
-  for compact later-turn prompts, bounded tiered in-run provider memory,
-  rendered-vs-available prompt accounting, focused detail rendering, and
-  credentials-free API-provider simulation coverage.
+  for compact later-turn prompts, bounded in-run provider memory,
+  deterministic Tier 2 mid-history memory, rendered-vs-available prompt
+  accounting, focused detail rendering, and credentials-free API-provider
+  simulation coverage.
+- `r12-tier2-memory-bridge_spec.md` - implemented bridge spec and validation
+  record for the brain-authored Tier 2 mid-history lane between recent Tier 1
+  facts and the hard-limited Tier 3 rolling summary.
 - `r12-provider-native-skill-bridge_spec.md` - implemented Wave 1 hard-bar spec
   for projecting FirmCLI-owned skills into native `.codex/skills` and
   `.claude/skills` runtime views for CLI providers, with deterministic
@@ -28,6 +32,12 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12-provider-native-skill-invocation-proof_spec.md` - active proof spec and
   validation record for the focused live Codex/Claude CLI native-skill
   invocation test that closes the remaining provider-native skill evidence gap.
+- `r12-provider-native-ux-cli-controls_spec.md` - implemented narrow gap spec
+  and validation record for exposing provider-native skill mode/root controls
+  through the public `pyocd-debug` UX CLI and rerun path.
+- `r12-openai-native-sync-metadata_spec.md` - implemented narrow audit-gap spec
+  and validation record for truthful OpenAI remote-primary metadata during
+  periodic native memory safety sync.
 
 ## Active Future Specs
 
@@ -111,6 +121,14 @@ were moved to:
 markdowns/tmp/curr-archive-20260701-current-adversarial-audit/
 ```
 
+The completed July 1 Tier 2 bridge process ledger, provider-native UX controls
+process ledger, and repeat Wave 1 adversarial audit process ledger were moved
+to:
+
+```text
+markdowns/tmp/curr-archive-20260701-repeat-adversarial-audit/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -136,13 +154,27 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   validated non-interactive operator shell smoke coverage for piped command
   scripts, including PowerShell BOM-prefixed slash commands such as `/help`,
   `/history`, `/prompt`, and `/events`.
+- The current bounded memory implementation has Tier 0 canonical state, Tier 1
+  recent committed facts, deterministic Tier 2 mid-history compact facts, and a
+  hard-limited Tier 3 rolling summary. Tier 2 is compacted from Tier 1 by the
+  brain; only Tier 3 may use provider/model-backed summary mode.
+- A July 1 spec-to-code audit found and closed one public-entrypoint gap:
+  `pyocd-debug run/benchmark` now mirror the headless provider-native
+  `--provider-native-skills` and `--provider-native-skill-root` controls,
+  saved requests record explicit provider-native mode/root fields, and rerun
+  replays those fields.
+- A July 1 repeat adversarial audit found and closed one metadata gap: OpenAI
+  periodic native memory safety-sync turns now keep remote-primary
+  `remote-resume` metadata while still passing `previous_response_id`.
 
 ## Pending Verification
 
 - Branch B's free-host-work / governed-decision boundary, R12 scaffold
-  hardening, R12 prompt/memory cost hardening, and the provider-native skill
-  bridge are implemented and validated on the attached `nucleo_l476rg` and
-  `nrf52840dk` deployment surface available on this host.
+  hardening, R12 prompt/memory cost hardening including the Tier 2 memory lane,
+  and the provider-native skill bridge are implemented and validated on the
+  attached `nucleo_l476rg` and `nrf52840dk` deployment surface available on this
+  host where hardware proof was required. The Tier 2 memory bridge itself is a
+  software-only feature and was validated without hardware by user instruction.
 - Remaining proof gaps are external: live API credentials, exact official-board
   proof beyond the attached board set, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.

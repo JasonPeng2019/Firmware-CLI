@@ -759,6 +759,11 @@ Hardware checks after no-hardware proof:
   off|auto|require`, `--provider-native-skill-root`,
   `skills/provider_native/common/firmcli-firmware-debug`, and
   `skills/model_native/firmcli-firmware-debug`.
+- A later spec-to-code audit closed the public UX entrypoint gap: `pyocd-debug
+  run` and `pyocd-debug benchmark` now expose those provider-native mode/root
+  flags, saved turnkey requests record explicit mode/root fields, and rerun
+  replays them. The narrow gap record is
+  `r12-provider-native-ux-cli-controls_spec.md`.
 - Focused non-hardware tests are green:
   `uv run pytest tests/test_provider_native_skills.py tests/test_r12_turnkey.py -q`
   -> `78 passed`.

@@ -25,13 +25,21 @@ if sys.platform == "win32":  # pragma: no cover - Windows import path only
 from pyocd_debug_mcp.brain.app import run_benchmark_case, run_benchmark_suite, run_freeform_task
 from pyocd_debug_mcp.brain.config import (
     BrainConfigError,
+    DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS,
+    DEFAULT_TURNKEY_MID_HISTORY_RENDER_CHARS,
+    DEFAULT_TURNKEY_MID_HISTORY_TURN_LIMIT,
     DEFAULT_TURNKEY_NATIVE_SYNC_EVERY,
+    DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT,
     TurnkeyMemoryMode,
     TurnkeyProviderKind,
     cast_provider,
     cast_memory_mode,
     resolve_memory_mode,
+    resolve_memory_summary_max_chars,
+    resolve_mid_history_render_chars,
+    resolve_mid_history_turn_limit,
     resolve_native_sync_every,
+    resolve_recent_turn_detail_limit,
 )
 from pyocd_debug_mcp.brain.provider_types import (
     ProviderResumeFailure,
@@ -129,6 +137,10 @@ class ShellContext:
     raw_output: RawOutputPolicy = "off"
     memory_mode: TurnkeyMemoryMode = "deterministic"
     native_sync_every: int = DEFAULT_TURNKEY_NATIVE_SYNC_EVERY
+    recent_turn_detail_limit: int = DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT
+    mid_history_turn_limit: int = DEFAULT_TURNKEY_MID_HISTORY_TURN_LIMIT
+    mid_history_render_chars: int = DEFAULT_TURNKEY_MID_HISTORY_RENDER_CHARS
+    memory_summary_max_chars: int = DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS
     workspace_root: str | None = None
     build_command: str | None = None
     flash_artifact: str | None = None
@@ -149,6 +161,10 @@ class OperatorShell:
             raw_output=self.renderer.raw_output,
             memory_mode=resolve_memory_mode(),
             native_sync_every=resolve_native_sync_every(),
+            recent_turn_detail_limit=resolve_recent_turn_detail_limit(),
+            mid_history_turn_limit=resolve_mid_history_turn_limit(),
+            mid_history_render_chars=resolve_mid_history_render_chars(),
+            memory_summary_max_chars=resolve_memory_summary_max_chars(),
         )
         self._session: PromptSession[str] = self._build_prompt_session()
 
@@ -271,6 +287,38 @@ class OperatorShell:
                 f"Native sync cadence set to {self.context.native_sync_every}."
             )
             return True
+        if command.name == "recent-turn-detail-limit":
+            return self._handle_positive_int_context_command(
+                command,
+                attribute="recent_turn_detail_limit",
+                usage="Usage: /recent-turn-detail-limit <N>",
+                label="Recent turn detail limit",
+                refusal_code="ux/invalid-recent-turn-limit",
+            )
+        if command.name == "mid-history-turn-limit":
+            return self._handle_positive_int_context_command(
+                command,
+                attribute="mid_history_turn_limit",
+                usage="Usage: /mid-history-turn-limit <N>",
+                label="Mid-history turn limit",
+                refusal_code="ux/invalid-mid-history-limit",
+            )
+        if command.name == "mid-history-render-chars":
+            return self._handle_positive_int_context_command(
+                command,
+                attribute="mid_history_render_chars",
+                usage="Usage: /mid-history-render-chars <N>",
+                label="Mid-history render chars",
+                refusal_code="ux/invalid-mid-history-render-chars",
+            )
+        if command.name == "memory-summary-max-chars":
+            return self._handle_positive_int_context_command(
+                command,
+                attribute="memory_summary_max_chars",
+                usage="Usage: /memory-summary-max-chars <N>",
+                label="Memory summary max chars",
+                refusal_code="ux/invalid-memory-summary-max-chars",
+            )
         if command.name == "workspace":
             return self._handle_workspace_command(command)
         if command.name == "build-command":
@@ -398,6 +446,34 @@ class OperatorShell:
         self.renderer.print_info(f"{label} set to {path}.")
         return True
 
+    def _handle_positive_int_context_command(
+        self,
+        command: SlashCommand,
+        *,
+        attribute: str,
+        usage: str,
+        label: str,
+        refusal_code: str,
+    ) -> bool:
+        if len(command.args) != 1:
+            self.renderer.print_error(usage)
+            return True
+        try:
+            value = int(command.args[0])
+        except ValueError:
+            self.renderer.print_refusal(
+                f"Refused [{refusal_code}]: {label.lower()} must be a positive integer."
+            )
+            return True
+        if value <= 0:
+            self.renderer.print_refusal(
+                f"Refused [{refusal_code}]: {label.lower()} must be a positive integer."
+            )
+            return True
+        setattr(self.context, attribute, value)
+        self.renderer.print_info(f"{label} set to {value}.")
+        return True
+
     def _run_guided_command(self, spec: GuidedCommandSpec, command: SlashCommand) -> bool:
         if self.context.board_id is None:
             self.renderer.print_error("Select a board first with `/board <id>`.")
@@ -427,6 +503,10 @@ class OperatorShell:
                     model=self.context.model,
                     memory_mode=self.context.memory_mode,
                     native_sync_every=self.context.native_sync_every,
+                    recent_turn_detail_limit=self.context.recent_turn_detail_limit,
+                    mid_history_turn_limit=self.context.mid_history_turn_limit,
+                    mid_history_render_chars=self.context.mid_history_render_chars,
+                    memory_summary_max_chars=self.context.memory_summary_max_chars,
                     flash_artifact=self.context.flash_artifact,
                     elf=self.context.symbol_artifact,
                     workspace_root=workspace_root,
@@ -452,6 +532,10 @@ class OperatorShell:
                 model=self.context.model,
                 memory_mode=self.context.memory_mode,
                 native_sync_every=self.context.native_sync_every,
+                recent_turn_detail_limit=self.context.recent_turn_detail_limit,
+                mid_history_turn_limit=self.context.mid_history_turn_limit,
+                mid_history_render_chars=self.context.mid_history_render_chars,
+                memory_summary_max_chars=self.context.memory_summary_max_chars,
                 event_sink=self.renderer.emit,
             )
         except BrainConfigError as exc:
@@ -469,6 +553,10 @@ class OperatorShell:
                 model=self.context.model,
                 memory_mode=self.context.memory_mode,
                 native_sync_every=self.context.native_sync_every,
+                recent_turn_detail_limit=self.context.recent_turn_detail_limit,
+                mid_history_turn_limit=self.context.mid_history_turn_limit,
+                mid_history_render_chars=self.context.mid_history_render_chars,
+                memory_summary_max_chars=self.context.memory_summary_max_chars,
                 event_sink=self.renderer.emit,
             )
         except BrainConfigError as exc:
@@ -569,6 +657,12 @@ class OperatorShell:
             task = request.get("task")
             board_id = request.get("board_id")
             native_sync_every = request.get("native_sync_every")
+            recent_turn_detail_limit = request.get("recent_turn_detail_limit")
+            mid_history_turn_limit = request.get("mid_history_turn_limit")
+            mid_history_render_char_limit = request.get("mid_history_render_char_limit")
+            memory_summary_max_chars = request.get("memory_summary_max_chars")
+            provider_native_skill_mode = request.get("provider_native_skill_mode")
+            provider_native_skill_root = request.get("provider_native_skill_root")
             if not isinstance(task, str) or not isinstance(board_id, str):
                 self.renderer.print_refusal(
                     f"Refused [ux/invalid-request]: session `{session_id}` is missing freeform request fields."
@@ -588,6 +682,24 @@ class OperatorShell:
                         ),
                         native_sync_every=native_sync_every
                         if isinstance(native_sync_every, int)
+                        else None,
+                        recent_turn_detail_limit=recent_turn_detail_limit
+                        if isinstance(recent_turn_detail_limit, int)
+                        else None,
+                        mid_history_turn_limit=mid_history_turn_limit
+                        if isinstance(mid_history_turn_limit, int)
+                        else None,
+                        mid_history_render_chars=mid_history_render_char_limit
+                        if isinstance(mid_history_render_char_limit, int)
+                        else None,
+                        memory_summary_max_chars=memory_summary_max_chars
+                        if isinstance(memory_summary_max_chars, int)
+                        else None,
+                        provider_native_skills=provider_native_skill_mode
+                        if isinstance(provider_native_skill_mode, str)
+                        else None,
+                        provider_native_skill_root=provider_native_skill_root
+                        if isinstance(provider_native_skill_root, str)
                         else None,
                         port=request.get("port_override")
                         if isinstance(request.get("port_override"), str)
@@ -621,6 +733,12 @@ class OperatorShell:
         if mode == "benchmark":
             case_id = request.get("case_id")
             native_sync_every = request.get("native_sync_every")
+            recent_turn_detail_limit = request.get("recent_turn_detail_limit")
+            mid_history_turn_limit = request.get("mid_history_turn_limit")
+            mid_history_render_char_limit = request.get("mid_history_render_char_limit")
+            memory_summary_max_chars = request.get("memory_summary_max_chars")
+            provider_native_skill_mode = request.get("provider_native_skill_mode")
+            provider_native_skill_root = request.get("provider_native_skill_root")
             if not isinstance(case_id, str) or not case_id:
                 self.renderer.print_refusal(
                     f"Refused [ux/invalid-request]: benchmark session `{session_id}` has no case_id."
@@ -638,6 +756,24 @@ class OperatorShell:
                     ),
                     native_sync_every=native_sync_every
                     if isinstance(native_sync_every, int)
+                    else None,
+                    recent_turn_detail_limit=recent_turn_detail_limit
+                    if isinstance(recent_turn_detail_limit, int)
+                    else None,
+                    mid_history_turn_limit=mid_history_turn_limit
+                    if isinstance(mid_history_turn_limit, int)
+                    else None,
+                    mid_history_render_chars=mid_history_render_char_limit
+                    if isinstance(mid_history_render_char_limit, int)
+                    else None,
+                    memory_summary_max_chars=memory_summary_max_chars
+                    if isinstance(memory_summary_max_chars, int)
+                    else None,
+                    provider_native_skills=provider_native_skill_mode
+                    if isinstance(provider_native_skill_mode, str)
+                    else None,
+                    provider_native_skill_root=provider_native_skill_root
+                    if isinstance(provider_native_skill_root, str)
                     else None,
                     event_sink=self.renderer.emit,
                 )

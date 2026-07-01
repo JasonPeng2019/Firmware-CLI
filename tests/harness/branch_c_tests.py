@@ -474,6 +474,8 @@ def check_provider_dry_run_prompt_render(
         memory_mode="deterministic",
         native_sync_every=10,
         recent_turn_detail_limit=2,
+        mid_history_turn_limit=6,
+        mid_history_render_chars=4_000,
         memory_summary_max_chars=2_000,
         preload_common_details=True,
         provider_native_skills="auto",

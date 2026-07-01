@@ -104,11 +104,13 @@ probe/serial imports or board/probe shell commands.
 Prompt/memory cost hardening now belongs to the Wave 1 integration substrate,
 not to a future cross-invocation persistence feature. The current implementation
 keeps bootstrap turns large enough for setup, renders compact Tier 0 canonical
-state on ordinary later turns, bounds provider memory to a recent detailed
-window plus hard-limited rolling summary, preloads common `connect` and
-`run_green_check` details, and records rendered-vs-available prompt telemetry
-with section hashes. Wave 2 Module G should consume those prompt/accounting
-surfaces; it should not reintroduce full per-turn schema/memory resends or add
+state on ordinary later turns, bounds provider memory with Tier 1 recent
+details, deterministic Tier 2 mid-history compact facts, and a hard-limited
+Tier 3 rolling summary, preloads common `connect` and `run_green_check` details,
+and records rendered-vs-available prompt telemetry with section hashes. Tier 2
+is deterministically compacted from Tier 1; only Tier 3 may use model-backed
+summary mode. Wave 2 Module G should consume those prompt/accounting surfaces;
+it should not reintroduce full per-turn schema/memory resends or add
 cross-invocation provider-session persistence.
 Provider-native skill projection is also now part of the Wave 1 integration
 substrate. Codex CLI receives run-local `.codex/skills`, Claude CLI receives

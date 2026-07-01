@@ -18,7 +18,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     clear_provider_resume_recovery_request,
     ProviderCapabilities,
     ProviderContinuationPath,
-    ProviderMemoryEntry,
+    ProviderMidHistoryEntry,
     ProviderMemorySummaryResult,
     ProviderProgressUpdate,
     ProviderPromptBundle,
@@ -90,7 +90,7 @@ class ClaudeCLIDecisionProvider:
         *,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         return await run_sync_in_worker_thread(
             self._summarize_memory_sync,
@@ -406,7 +406,7 @@ class ClaudeCLIDecisionProvider:
         self,
         session_state: ProviderSessionState,
         prior_summary_text: str,
-        evicted_entries: tuple[ProviderMemoryEntry, ...],
+        evicted_entries: tuple[ProviderMidHistoryEntry, ...],
     ) -> ProviderMemorySummaryResult:
         last_error: Exception | None = None
         prompt = render_memory_summary_request(

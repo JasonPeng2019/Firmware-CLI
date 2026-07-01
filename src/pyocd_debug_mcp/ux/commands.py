@@ -49,6 +49,10 @@ Slash commands:
   /model <name|default>
   /memory-mode <deterministic|model-summary>
   /native-sync-every <0|N>
+  /recent-turn-detail-limit <N>
+  /mid-history-turn-limit <N>
+  /mid-history-render-chars <N>
+  /memory-summary-max-chars <N>
   /workspace <path|clear>
   /build-command "<cmd>"|clear
   /flash-artifact <path|default>
