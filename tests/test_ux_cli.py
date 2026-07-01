@@ -441,6 +441,19 @@ def test_operator_shell_reads_piped_commands_without_prompt_toolkit(
     assert "Slash commands" in stream.getvalue()
 
 
+def test_operator_shell_accepts_powershell_bom_prefixed_piped_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = io.StringIO()
+
+    monkeypatch.setattr(ux_shell.sys, "stdin", io.StringIO("\xef\xbb\xbf/help\n/quit\n"))
+
+    shell = _make_shell(_make_renderer(stream))
+
+    assert shell.run() == 0
+    assert "Slash commands" in stream.getvalue()
+
+
 def test_parse_shell_input_preserves_raw_arg_text_for_build_command() -> None:
     parsed = parse_shell_input('/build-command "west build -b nucleo_l476rg"')
     assert parsed == SlashCommand(

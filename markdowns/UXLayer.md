@@ -10,8 +10,10 @@
 > **Prototype correction, 2026-06-30:** live progress, developer inspector, and
 > chunked checkpoints are hard requirements for the first capability prototype
 > because they appear in `markdowns/things-to-change.md`. They are not optional
-> UX polish. The broader prototype also remains blocked by the incomplete Branch
-> B free-host/final-governed-decision boundary.
+> UX polish. The Branch B free-host/final-governed-decision boundary is now
+> implemented and validated on the attached `nucleo_l476rg + nrf52840dk`
+> deployment surface; exact `nrf52833dk`, live API-provider parity, and
+> fresh-machine proof remain external validation gaps.
 
 Current prototype focus:
 
@@ -122,6 +124,9 @@ The current repo now ships the Pass 1 UX layer with these implemented pieces:
   - visible evidence summaries after completed provider turns
   - raw-output toggling after completed turns
   - history/show/rerun flows over `runs/<session_id>/...`
+  - non-interactive line-based stdin command scripts for piped `/help`,
+    `/history`, `/prompt`, `/events`, `/quit`, and related shell commands
+  - BOM-prefixed PowerShell stdin normalization before slash-command dispatch
 - pretty one-shot wrappers:
   - `pyocd-debug run ...`
   - `pyocd-debug benchmark ...`

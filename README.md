@@ -54,6 +54,12 @@ The current live status is:
   with both `codex-cli` and `claude-cli` on the attached
   `nucleo_l476rg + nrf52840dk` boards; exact `nrf52833dk`,
   live API-provider parity, and fresh-machine proof remain deferred
+- the final current Wave 1 adversarial audit on this Windows host is green
+  after fixing PowerShell BOM-prefixed slash-command handling in the
+  non-interactive `pyocd-debug` shell; post-fix validation reran the
+  Python-change gate, full suite ladder, provider-native skill proof, Branch C
+  attached-board matrix, and representative `b001` code-writing repair
+  benchmarks on `nucleo_l476rg + nrf52840dk` with both CLI providers
 - credentials-free API-provider simulation is now green through the real
   OpenAI/Anthropic provider factory and turnkey-loop paths. It covers
   request/response handling, OpenAI `previous_response_id` chaining, Anthropic
@@ -142,12 +148,13 @@ Today that means:
 - an open official-pair second-provider validation gap; STM32 Claude CLI proof
   exists, but full scoped-pair closure is not complete
 - deferred second-provider and fresh-machine portability proof work
-- deployment readiness is still open: the repo has not yet been proven on fresh
-  user computers across multiple top-level prompts, each with its own internal
-  provider/tool loop and code-writing repair proof
-- the current attached-board deployment proof has now been run with both local
-  CLI providers on `nucleo_l476rg + nrf52840dk`; official `nrf52833dk`
-  second-provider closure and fresh-machine proof remain pending
+- current attached-board deployment proof has now been run with both local CLI
+  providers on `nucleo_l476rg + nrf52840dk`, including provider-native skill
+  usage, Branch C harness checks, multi-turn governed decisions, and
+  representative code-writing repair benchmarks
+- remaining deployment proof gaps are external to the current attached-board
+  surface: exact official `nrf52833dk` second-provider closure, live
+  API-provider parity, and fresh-machine Windows/macOS portability
 
 The official scoped board pair for the real Phase A / Phase B bench path is
 `nrf52833dk` plus `nucleo_l476rg`.
@@ -286,7 +293,8 @@ Firmware-CLI/
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
     |   |-- README.md
-    |   |-- next-codex-handoff-20260701-wave1-final-audit.md
+    |   |-- r12-context-scaffold-hardening_spec.md
+    |   |-- r12-delta-compact-indexes_spec.md
     |   |-- r12_turnkey_spec.md
     |   |-- r12-prompt-memory-cost-hardening_spec.md
     |   |-- r12-provider-native-skill-bridge_spec.md
@@ -678,10 +686,13 @@ Current limitation:
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
+- R12 context/scaffold hardening hard bar: [markdowns/curr/r12-context-scaffold-hardening_spec.md](./markdowns/curr/r12-context-scaffold-hardening_spec.md)
+- R12 compact delta indexes hard bar: [markdowns/curr/r12-delta-compact-indexes_spec.md](./markdowns/curr/r12-delta-compact-indexes_spec.md)
 - R12 prompt/memory cost hardening hard bar: [markdowns/curr/r12-prompt-memory-cost-hardening_spec.md](./markdowns/curr/r12-prompt-memory-cost-hardening_spec.md)
 - R12 provider-native skill bridge hard bar: [markdowns/curr/r12-provider-native-skill-bridge_spec.md](./markdowns/curr/r12-provider-native-skill-bridge_spec.md)
 - R12 provider-native skill invocation proof: [markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md](./markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
+- Archived July 1 current adversarial audit handoff/process ledger: [markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md](./markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)
 - Archived `P0.0` doc-sync and superpowers audit spec: [markdowns/tmp/curr-archive-20260628/p0-0-doc-sync-superpowers-audit_spec.md](./markdowns/tmp/curr-archive-20260628/p0-0-doc-sync-superpowers-audit_spec.md)

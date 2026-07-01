@@ -78,8 +78,10 @@ the harness, but when run it must be reported honestly as pass/fail.
 
 - `tests/harness/provider_native_skill_usage.py`
 - `tests/test_provider_native_skill_usage_harness.py`
-- `markdowns/curr/next-codex-handoff-20260701-wave1-final-audit.md`
-- possibly current status docs if the proof result changes a published claim
+- current status docs if the proof result changes a published claim
+- archived handoff/process docs under
+  `markdowns/tmp/curr-archive-20260701-current-adversarial-audit/` if later
+  audits need to inspect the completed final-check instructions
 
 ## Verification plan
 

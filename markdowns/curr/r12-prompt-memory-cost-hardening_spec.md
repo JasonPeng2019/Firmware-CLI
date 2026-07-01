@@ -522,6 +522,14 @@ Hardware/live checks after implementation:
   Python-change gate green with full pytest `363 passed`, Pyright `0`
   diagnostics, suite ladder green, attached-board Branch C Claude runs green,
   and representative CLI code-writing repair proof green on the attached boards.
+- The later current adversarial audit archived at
+  `markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md`
+  revalidated the Wave 1 deployment surface after the UX stdin BOM fix:
+  Python-change gate green with full pytest `379 passed`, suite ladder green,
+  focused provider-native hidden-token proof green for both `codex-cli` and
+  `claude-cli`, Branch C attached-board rows green on `nucleo_l476rg +
+  nrf52840dk`, and representative `b001_wrong_boot_text` repair benchmarks
+  green on both attached boards with both local CLI providers.
 
 ## Pending Verification
 
@@ -530,4 +538,3 @@ Hardware/live checks after implementation:
 - Exact official `nrf52833dk` hardware proof when that board is attached.
 - Fresh-machine Windows/macOS deployment proof remains a broader product
   boundary, not a prompt-memory implementation gap.
-- API provider behavior must be proven with simulated credentials-free tests, and later with real credentials when available.

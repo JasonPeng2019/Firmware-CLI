@@ -23,7 +23,7 @@ class SlashCommand:
 
 
 def parse_shell_input(text: str) -> TaskInput | SlashCommand | None:
-    stripped = text.strip()
+    stripped = text.strip().lstrip("\ufeff\xef\xbb\xbf").strip()
     if not stripped:
         return None
     if not stripped.startswith("/"):

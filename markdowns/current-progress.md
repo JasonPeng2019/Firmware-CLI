@@ -161,6 +161,19 @@ hang or crash before reading `/history`, `/prompt`, `/events`, or `/quit`;
 the shell now uses line-based stdin in non-interactive mode and retains
 prompt-toolkit for real TTY sessions.
 
+Current adversarial audit update, 2026-07-01: a later full-product audit found
+one valid operator-shell parser bug. PowerShell can prefix piped stdin with a
+BOM, causing a slash command such as `/help` to be interpreted as task text
+instead of a shell command. The UX command parser now strips BOM prefixes before
+command dispatch, and focused regression coverage lives in `tests/test_ux_cli.py`.
+Post-fix validation reran the Python-change gate (`379 passed`), suite ladder,
+provider-native hidden-token proof for both `codex-cli` and `claude-cli`, Branch
+C attached-board provider/hardware rows on `nucleo_l476rg + nrf52840dk`, and
+representative `b001_wrong_boot_text` repair benchmarks on both attached boards
+with both local CLI providers. The completed handoff/process ledger is archived
+under
+`markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md`.
+
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
 and validated. Agents must not use passing subset tests or narrower branch
@@ -1628,12 +1641,12 @@ completion proof under the current prototype bar:
     - `20260628T212604Z-e86cf36a` (`nrf52840dk`, prompt 1)
     - `20260628T212720Z-c8244c8c` (`nrf52840dk`, prompt 2)
 
-Remaining Branch B hard gap: host-only file/shell/script work must be
-model-native/free, and each provider turn must close with exactly one governed
-board or terminal decision. Until that exists and is tested, Wave 1 is not
-complete.
-- exact `nrf52833dk` Branch B deployment proof is still pending because the
-  attached Nordic board in this session identified as `NRF52840_xxAA_REV2`
+Current Branch B/Wave 1 boundary: the host-only model-native work boundary and
+single governed board-or-terminal decision boundary are implemented and
+validated on the attached `nucleo_l476rg + nrf52840dk` deployment surface. Exact
+`nrf52833dk` deployment proof remains pending because the attached Nordic board
+in this session identified as `NRF52840_xxAA_REV2`; live API-provider parity and
+fresh-machine portability proof also remain external gaps.
 
 For the six-case pilot and full Codex suite above, the turnkey path has also
 now been shown to:

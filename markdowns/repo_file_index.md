@@ -202,7 +202,6 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
-| `next-codex-handoff-20260701-wave1-final-audit.md` | Current handoff for an independent Codex double-check of the Wave 1 product surface, docs, tests, provider behavior, API simulation, and attached-board validation. |
 | `r12-context-scaffold-hardening_spec.md` | Active R12 scaffold-hardening contract and verification record for product/client-owned model-native skills, runtime-copy recovery, tool-detail loading, strict details-before-execution guardrails, prompt ordering/dedupe, and future bug-reporting docs. |
 | `r12-delta-compact-indexes_spec.md` | Active implemented task spec for compact skill/tool indexes in ordinary remote-primary `remote-delta` provider turns without changing memory cadence or full-schema cadence. |
 | `r12-prompt-memory-cost-hardening_spec.md` | Implemented Wave 1 hard-bar spec for compact later-turn prompts, bounded in-run provider memory, focused detail rendering, schema cadence, and API-provider simulation coverage. |

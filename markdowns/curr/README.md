@@ -28,10 +28,6 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12-provider-native-skill-invocation-proof_spec.md` - active proof spec and
   validation record for the focused live Codex/Claude CLI native-skill
   invocation test that closes the remaining provider-native skill evidence gap.
-- `next-codex-handoff-20260701-wave1-final-audit.md` - handoff for a fresh
-  Codex session to independently double-check the Wave 1 product surface,
-  provider-native bridge, prompt/memory hardening, docs, tests, and attached
-  hardware behavior.
 
 ## Active Future Specs
 
@@ -108,6 +104,13 @@ The completed final Wave 1 adversarial double-check process ledger was moved to:
 markdowns/tmp/curr-archive-20260701-wave1-final-doublecheck/
 ```
 
+The completed July 1 current-audit handoff and adversarial-audit process ledger
+were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260701-current-adversarial-audit/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -119,8 +122,7 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ## Verified
 
 - `markdowns/curr/` now contains this index, active/implemented R12 Wave 1
-  specs, the active Wave 2 codebase-map spec, and the current final-audit
-  handoff.
+  specs, and the active Wave 2 codebase-map spec.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
@@ -130,9 +132,10 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   smokes, Branch C attached-board runs, and representative code-writing repair
   benchmarks recorded in the current or archived process ledgers. A focused
   live-provider native-skill invocation proof is also green for both Codex CLI
-  and Claude CLI. The final double-check added and validated non-interactive
-  operator shell smoke coverage for piped `/history`, `/prompt`, and `/events`
-  command scripts.
+  and Claude CLI. The final double-check and later current audit added and
+  validated non-interactive operator shell smoke coverage for piped command
+  scripts, including PowerShell BOM-prefixed slash commands such as `/help`,
+  `/history`, `/prompt`, and `/events`.
 
 ## Pending Verification
 
