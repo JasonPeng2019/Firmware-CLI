@@ -22,6 +22,9 @@ TurnkeyMemoryMode = Literal["deterministic", "model-summary"]
 
 DEFAULT_TURNKEY_MEMORY_MODE: TurnkeyMemoryMode = "deterministic"
 DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 10
+DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT = 2
+DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS = 2_000
+DEFAULT_TURNKEY_PRELOAD_COMMON_DETAILS = True
 
 
 class BrainConfigError(RuntimeError):
@@ -47,6 +50,9 @@ class TurnkeyInvocation:
     serial_read_seconds: float
     memory_mode: TurnkeyMemoryMode
     native_sync_every: int
+    recent_turn_detail_limit: int
+    memory_summary_max_chars: int
+    preload_common_details: bool
     port: str | None = None
     flash_artifact: Path | None = None
     elf: Path | None = None
@@ -182,6 +188,62 @@ def resolve_native_sync_every(native_sync_every_override: int | None = None) -> 
     return value
 
 
+def _resolve_positive_int_env(
+    *,
+    override: int | None,
+    env_name: str,
+    default: int,
+    label: str,
+) -> int:
+    if override is not None:
+        if override <= 0:
+            raise BrainConfigError(f"{label} must be a positive integer.")
+        return override
+    raw_value = (os.environ.get(env_name) or "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise BrainConfigError(f"{env_name} must be a positive integer.") from exc
+    if value <= 0:
+        raise BrainConfigError(f"{env_name} must be > 0.")
+    return value
+
+
+def resolve_recent_turn_detail_limit(override: int | None = None) -> int:
+    return _resolve_positive_int_env(
+        override=override,
+        env_name="PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT",
+        default=DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT,
+        label="recent turn detail limit",
+    )
+
+
+def resolve_memory_summary_max_chars(override: int | None = None) -> int:
+    return _resolve_positive_int_env(
+        override=override,
+        env_name="PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS",
+        default=DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS,
+        label="memory summary max chars",
+    )
+
+
+def resolve_preload_common_details(override: bool | None = None) -> bool:
+    if override is not None:
+        return override
+    raw_value = (os.environ.get("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS") or "").strip().lower()
+    if not raw_value:
+        return DEFAULT_TURNKEY_PRELOAD_COMMON_DETAILS
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+    if raw_value in {"0", "false", "no", "off"}:
+        return False
+    raise BrainConfigError(
+        "PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS must be true/false, yes/no, on/off, or 1/0."
+    )
+
+
 def build_turnkey_invocation(
     *,
     mode: TurnkeyMode,
@@ -193,6 +255,9 @@ def build_turnkey_invocation(
     serial_read_seconds: float,
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
+    recent_turn_detail_limit: int | None = None,
+    memory_summary_max_chars: int | None = None,
+    preload_common_details: bool | None = None,
     port: str | None = None,
     flash_artifact: str | Path | None = None,
     elf: str | Path | None = None,
@@ -225,6 +290,9 @@ def build_turnkey_invocation(
         serial_read_seconds=serial_read_seconds,
         memory_mode=resolve_memory_mode(memory_mode),
         native_sync_every=resolve_native_sync_every(native_sync_every),
+        recent_turn_detail_limit=resolve_recent_turn_detail_limit(recent_turn_detail_limit),
+        memory_summary_max_chars=resolve_memory_summary_max_chars(memory_summary_max_chars),
+        preload_common_details=resolve_preload_common_details(preload_common_details),
         port=(port or None),
         flash_artifact=_normalize_optional_path(flash_artifact),
         elf=_normalize_optional_path(elf),

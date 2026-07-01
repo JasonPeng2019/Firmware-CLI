@@ -78,7 +78,12 @@ from pyocd_debug_mcp.brain.provider_types import (
     provider_turn_record,
     with_provider_resume_recovery_request,
 )
-from pyocd_debug_mcp.brain.skills import SkillManifest, load_skills_for_context, render_skills
+from pyocd_debug_mcp.brain.skills import (
+    SkillManifest,
+    load_skills_for_context,
+    render_skill_digest,
+    render_skills,
+)
 from pyocd_debug_mcp.brain.state import BrainState
 from pyocd_debug_mcp.brain.timeout_runtime import (
     apply_invocation_timeout_policy,
@@ -106,6 +111,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MAX_NO_PROGRESS_STREAK = 3
 MAX_IDENTICAL_BUILD_FAILURES = 2
 MAX_STAGNANT_FIX_CYCLES = 2
+BOOTSTRAP_PROMPT_TARGET_CHARS = 25_000  # PROJECT-DEFINED (spec prompt budget)
+REMOTE_DELTA_PROMPT_TARGET_CHARS = 8_000  # PROJECT-DEFINED (spec prompt budget)
+FINAL_PROMPT_TARGET_CHARS = 4_000  # PROJECT-DEFINED (spec prompt budget)
 MODEL_NATIVE_SKILL_ROOT = REPO_ROOT / "skills" / "model_native"
 GREEN_CHECK_CONTRACT_NAME = "run_green_check"
 GREEN_CHECK_CONTRACT_TEXT = (
@@ -259,6 +267,41 @@ def _workspace_summary(workspace: WorkspaceSession | None) -> str:
     )
 
 
+def _compact_prompt_path(path: Path) -> str:
+    try:
+        relative = path.resolve().relative_to(REPO_ROOT)
+    except ValueError:
+        relative = None
+    display = str(relative or path.name)
+    return f"{display} sha256={hashlib.sha256(str(path).encode('utf-8')).hexdigest()[:12]}"
+
+
+def _provider_session_digest(state: BrainState) -> str:
+    session = state.provider_session_state
+    if session is None:
+        return "(none)"
+    handle = session.native_handle.summary_record() if session.native_handle is not None else None
+    runtime = session.runtime_context
+    runtime_id = "(none)"
+    if runtime is not None:
+        runtime_id = hashlib.sha256(runtime.runtime_root.encode("utf-8")).hexdigest()[:12]
+    handle_id = "(none)"
+    if handle is not None:
+        handle_id = str(
+            handle.get("native_session_id")
+            or handle.get("response_id")
+            or handle.get("remote_id")
+            or "(present)"
+        )
+    return (
+        f"provider={session.provider} mode={session.continuation_mode} "
+        f"path={session.last_continuation_path or '(none)'} "
+        f"handle={handle_id} runtime_hash={runtime_id} "
+        f"memory_recent={len(session.recent_memory_entries)} "
+        f"summary_chars={session.memory_summary.char_count if session.memory_summary else 0}"
+    )
+
+
 def _build_instructions(invocation: TurnkeyInvocation) -> str:
     benchmark_note = (
         "The benchmark prompt may mention a final structured result. In this turnkey client, do not "
@@ -326,7 +369,7 @@ def _render_loaded_compound_action_details(state: BrainState) -> str:
     return "\n".join(blocks)
 
 
-def _build_turn_prompt(
+def _build_full_turn_prompt(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
     state: BrainState,
@@ -396,19 +439,140 @@ def _build_turn_prompt(
     )
 
 
+def _format_short_list(values: object, *, limit: int = 6) -> str:
+    if values is None:
+        return "[]"
+    if isinstance(values, dict):
+        items = sorted(str(key) for key in values)
+    elif isinstance(values, (set, tuple, list)):
+        items = [str(value) for value in values]
+    else:
+        text = str(values).strip()
+        return text if text else "(none)"
+    if not items:
+        return "[]"
+    suffix = "" if len(items) <= limit else f", ...(+{len(items) - limit} more)"
+    return "[" + ", ".join(items[:limit]) + suffix + "]"
+
+
+def _render_progress_digest(state: BrainState, workspace: WorkspaceSession | None) -> str:
+    lines: list[str] = []
+    if state.last_observation_text:
+        lines.append(
+            f"- last_observation={_compact_turn_text(state.last_observation_text, limit=240)}"
+        )
+    if state.last_action_summary:
+        lines.append(f"- last_action={_compact_turn_text(state.last_action_summary, limit=240)}")
+    if state.last_result_text:
+        lines.append(f"- last_result={_compact_turn_text(state.last_result_text, limit=360)}")
+    changed_files = tuple(workspace.changed_files()) if workspace is not None else ()
+    if changed_files:
+        lines.append(f"- changed_files={_format_short_list(changed_files)}")
+    if not lines:
+        return "- no prior provider action has been executed in this run"
+    return "\n".join(lines)
+
+
+def _render_loaded_detail_digest(state: BrainState) -> str:
+    return (
+        f"loaded_governed_tools={_format_short_list(state.loaded_tool_details)}\n"
+        f"loaded_client_actions={_format_short_list(state.loaded_client_action_details)}\n"
+        f"loaded_compound_actions={_format_short_list(state.loaded_compound_action_details)}\n"
+        f"tool_detail_schema_hash={state.loaded_tool_detail_schema_hash or '(none)'}"
+    )
+
+
+def _should_render_loaded_detail_bodies(state: BrainState) -> bool:
+    action_summary = state.last_action_summary or ""
+    if state.iteration <= 1 and (
+        state.loaded_tool_details
+        or state.loaded_client_action_details
+        or state.loaded_compound_action_details
+        or state.model_native_skills
+    ):
+        return True
+    return action_summary.startswith(("load_tool_details(", "details_required(", "load_skills("))
+
+
+def _build_compact_turn_prompt(
+    invocation: TurnkeyInvocation,
+    board: BoardConfig,
+    state: BrainState,
+    workspace: WorkspaceSession | None,
+    client_actions: ClientActionStore | None = None,
+) -> str:
+    verification = state.verification
+    flash_artifact, symbol_artifact = _default_artifacts(invocation, board)
+    if _should_render_loaded_detail_bodies(state):
+        loaded_detail_bodies = "\n\n".join(
+            section
+            for section in (
+                _render_loaded_tool_details(state),
+                _render_loaded_client_action_details(state),
+                _render_loaded_compound_action_details(state),
+                render_model_native_skill_context(state.model_native_skills),
+                render_client_action_prompt_section(client_actions or InMemoryClientActionStore()),
+            )
+            if section.strip()
+        )
+        if not loaded_detail_bodies:
+            loaded_detail_bodies = "No full loaded detail bodies are currently active."
+    else:
+        loaded_detail_bodies = (
+            "Loaded detail bodies were already rendered after the most recent "
+            "detail-load turn. Use the loaded-detail status above; request "
+            "load_tool_details again only if the full body is genuinely needed."
+        )
+    return (
+        "Canonical compact run state (Tier 0; authoritative over provider memory):\n"
+        f"- mode={invocation.mode} case={invocation.case_id or '(none)'} board={board.board_id} iter={state.iteration}/{state.effective_max_iters or invocation.max_iters}\n"
+        f"- session_id={state.session_id or '(none)'} connected={state.session_id is not None}\n"
+        f"- provider_session={_provider_session_digest(state)}\n"
+        f"- workspace={_compact_turn_text(_workspace_summary(workspace), limit=260)}\n"
+        f"- flash_artifact={_compact_prompt_path(flash_artifact)}\n"
+        f"- symbol_artifact={_compact_prompt_path(symbol_artifact)}\n"
+        f"- blocked_action_families={_format_short_list(state.blocked_action_families)}\n"
+        f"- refused_action_families={_format_short_list(state.refused_action_families)}\n"
+        f"- actions_taken={_format_short_list(state.actions_taken, limit=5)}\n\n"
+        "Task contract:\n"
+        f"- task={_compact_turn_text(invocation.task, limit=420)}\n"
+        f"- expected_uart={invocation.expected_uart_substring or '(none)'}\n"
+        f"- expected_symbol={invocation.expected_symbol_name or '(none)'}={invocation.expected_symbol_value_u32 if invocation.expected_symbol_value_u32 is not None else '(none)'}\n"
+        f"- edits={invocation.code_edits_allowed} roots={_format_short_list(invocation.allowed_edit_roots)} recover={invocation.recover_allowed}\n"
+        "- policy: no hardcoded probe/serial/target; no fixed/healthy final until run_green_check succeeds.\n\n"
+        "Loaded detail status:\n"
+        f"{_render_loaded_detail_digest(state)}\n\n"
+        "Progress so far:\n"
+        f"{_render_progress_digest(state, workspace)}\n\n"
+        "Latest evidence:\n"
+        f"- last_classification={state.last_classification or '(none)'}\n"
+        f"- verification={{flash:{verification.flash_ok}, uart:{verification.uart_ok}, symbol:{verification.symbol_ok}, green:{verification.green_check_ok}}}\n"
+        f"- counts={{flash:{state.flash_count}, build:{state.build_count}, recover:{state.recover_count}}}\n\n"
+        "Loaded focused detail bodies:\n"
+        f"{loaded_detail_bodies}\n\n"
+        "Available action kinds:\n"
+        "- server_tool names are in the compact MCP index above; full bodies require loaded details.\n"
+        "- provider-native host work may inspect/edit/build allowed workspace roots before returning.\n"
+        "- meta: load_skills, load_tool_details, run_green_check, wait, run_script, action_batch, finalize.\n"
+        "Return one valid TurnDecision JSON object using the schema already established for this provider session.\n"
+    )
+
+
 def _build_prompt_bundle(
     *,
     invocation: TurnkeyInvocation,
     board: BoardConfig,
     state: BrainState,
     skills_text: str,
+    skill_digest_text: str,
     workspace: WorkspaceSession | None,
     tool_schema_bundle: ToolSchemaBundle,
     client_actions: ClientActionStore | None = None,
 ) -> ProviderPromptBundle:
     return ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
-        skill_context_text="Compact turnkey skill context:\n" + skills_text,
+        skill_context_text="Compact turnkey skill context:\n" + skill_digest_text,
+        bootstrap_skill_context_text="Full bootstrap turnkey skill context:\n" + skills_text,
         tool_schema_text=tool_schema_bundle.rendered_text,
         provider_memory_text=render_provider_memory_text(
             state.provider_session_state
@@ -422,9 +586,18 @@ def _build_prompt_bundle(
                     else _continuation_mode_for_provider(invocation.provider)
                 ),
                 native_sync_every=invocation.native_sync_every,
+                recent_turn_limit=invocation.recent_turn_detail_limit,
+                summary_char_limit=invocation.memory_summary_max_chars,
             )
         ),
-        turn_context_text=_build_turn_prompt(
+        turn_context_text=_build_compact_turn_prompt(
+            invocation,
+            board,
+            state,
+            workspace,
+            client_actions,
+        ),
+        bootstrap_turn_context_text=_build_full_turn_prompt(
             invocation,
             board,
             state,
@@ -450,7 +623,7 @@ def _model_turn_record(
         "committed_session_state": committed_session_state.summary_record(),
         "output_text": provider_turn.output_text,
         "decision": provider_turn.decision.model_dump(mode="json"),
-        "prompt_bundle": prompt_bundle.to_record(),
+        "prompt_bundle": prompt_bundle.to_record(provider_metadata=provider_turn.provider_metadata),
         "compaction": dict(compaction_record or {}),
     }
 
@@ -652,6 +825,63 @@ async def _record_provider_progress_updates(
                 **dict(update.details),
             },
         )
+
+
+async def _record_prompt_budget_warning(
+    *,
+    sink: EventSink | None,
+    records: list[dict[str, object]],
+    invocation: TurnkeyInvocation,
+    state: BrainState,
+    provider_metadata: dict[str, object],
+) -> None:
+    rendered_prompt = provider_metadata.get("rendered_prompt")
+    if not isinstance(rendered_prompt, dict):
+        return
+    rendered_total = rendered_prompt.get("rendered_total_length")
+    if not isinstance(rendered_total, int):
+        return
+    mode = str(provider_metadata.get("prompt_render_mode") or "")
+    if mode == "remote-delta":
+        target = REMOTE_DELTA_PROMPT_TARGET_CHARS
+    elif mode == "bootstrap/full":
+        target = BOOTSTRAP_PROMPT_TARGET_CHARS
+    elif mode == "retry":
+        return
+    else:
+        target = FINAL_PROMPT_TARGET_CHARS
+    if rendered_total <= target:
+        return
+    sections = rendered_prompt.get("sections")
+    largest_section: dict[str, object] | None = None
+    if isinstance(sections, dict):
+        rendered_sections = [
+            cast(dict[str, object], value) for value in sections.values() if isinstance(value, dict)
+        ]
+        if rendered_sections:
+
+            def rendered_length(item: dict[str, object]) -> int:
+                value = item.get("rendered_length")
+                return value if isinstance(value, int) else 0
+
+            largest_section = max(
+                rendered_sections,
+                key=rendered_length,
+            )
+    await _record_brain_event(
+        sink=sink,
+        records=records,
+        invocation=invocation,
+        state=state,
+        event_kind="provider_progress",
+        message="Rendered provider prompt exceeded the target prompt budget.",
+        details={
+            "prompt_render_mode": mode,
+            "rendered_total_length": rendered_total,
+            "target_chars": target,
+            "largest_rendered_section": largest_section,
+        },
+    )
 
 
 def _flash_target_path(invocation: TurnkeyInvocation, board: BoardConfig) -> str:
@@ -961,6 +1191,14 @@ async def _commit_provider_memory(
         "native_sync_every": updated_session.native_sync_every,
         "turns_since_last_memory_sync": updated_session.turns_since_last_memory_sync,
         "compaction_ran": compaction_plan is not None,
+        "summary_mode_invoked": (
+            compaction_plan is not None and current_session.memory_mode == "model-summary"
+        ),
+        "summary_rewrite_count": (
+            summarizer_metadata.get("retry_count", 0)
+            if isinstance(summarizer_metadata, dict)
+            else 0
+        ),
         "compaction_plan": compaction_plan.to_record() if compaction_plan is not None else None,
         "summary_source": (
             updated_session.memory_summary.source
@@ -1466,6 +1704,21 @@ def _load_tool_detail_if_available(
     )
     state.loaded_tool_detail_schema_hash = tool_schema_bundle.schema_hash
     return True
+
+
+def _preload_common_details(
+    state: BrainState,
+    tool_schema_bundle: ToolSchemaBundle,
+) -> tuple[str, ...]:
+    loaded: list[str] = []
+    if "connect" not in state.loaded_tool_details and _load_tool_detail_if_available(
+        "connect", state, tool_schema_bundle
+    ):
+        loaded.append("connect")
+    if GREEN_CHECK_CONTRACT_NAME not in state.loaded_compound_action_details:
+        _load_green_check_detail(state)
+        loaded.append(GREEN_CHECK_CONTRACT_NAME)
+    return tuple(loaded)
 
 
 def _render_client_action_detail(snapshot: ClientActionSnapshot) -> str:
@@ -2276,6 +2529,7 @@ async def _tooling_failure_execution(
         case_kind=invocation.case_kind,
     )
     skills_text = render_skills(selected_skills)
+    skill_digest_text = render_skill_digest(selected_skills)
     workspace = (
         prepare_workspace_session(
             workspace_root=invocation.workspace_root,
@@ -2312,6 +2566,8 @@ async def _tooling_failure_execution(
             memory_mode=invocation.memory_mode,
             continuation_mode=_continuation_mode_for_provider(invocation.provider),
             native_sync_every=invocation.native_sync_every,
+            recent_turn_limit=invocation.recent_turn_detail_limit,
+            summary_char_limit=invocation.memory_summary_max_chars,
             runtime_context=provider_runtime_context,
         ),
         effective_timeout_config=invocation.timeout_config,
@@ -2319,10 +2575,18 @@ async def _tooling_failure_execution(
     )
     prompt_bundle = ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
-        skill_context_text="Compact turnkey skill context:\n" + skills_text,
+        skill_context_text="Compact turnkey skill context:\n" + skill_digest_text,
+        bootstrap_skill_context_text="Full bootstrap turnkey skill context:\n" + skills_text,
         tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because the run failed before MCP startup)",
         provider_memory_text="",
-        turn_context_text=_build_turn_prompt(invocation, board, state, skills_text, workspace),
+        turn_context_text=_build_compact_turn_prompt(invocation, board, state, workspace),
+        bootstrap_turn_context_text=_build_full_turn_prompt(
+            invocation,
+            board,
+            state,
+            skills_text,
+            workspace,
+        ),
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
     )
     brain_events: list[dict[str, object]] = []
@@ -2396,6 +2660,7 @@ async def run_turnkey(
         case_kind=invocation.case_kind,
     )
     skills_text = render_skills(selected_skills)
+    skill_digest_text = render_skill_digest(selected_skills)
     workspace = (
         prepare_workspace_session(
             workspace_root=invocation.workspace_root,
@@ -2432,6 +2697,8 @@ async def run_turnkey(
             memory_mode=invocation.memory_mode,
             continuation_mode=provider.capabilities.continuation_mode,
             native_sync_every=invocation.native_sync_every,
+            recent_turn_limit=invocation.recent_turn_detail_limit,
+            summary_char_limit=invocation.memory_summary_max_chars,
             runtime_context=provider_runtime_context,
         ),
         provider_capabilities=provider.capabilities,
@@ -2488,6 +2755,22 @@ async def run_turnkey(
                 )
             tool_schema_bundle = build_tool_schema_bundle(await client.list_tools())
             state.tool_schema_summary = tool_schema_bundle.to_record()
+            if invocation.preload_common_details:
+                preloaded_details = _preload_common_details(state, tool_schema_bundle)
+                if preloaded_details:
+                    await _record_brain_event(
+                        sink=event_sink,
+                        records=brain_events,
+                        invocation=invocation,
+                        state=state,
+                        event_kind="provider_progress",
+                        message="Preloaded common governed details for the initial provider turn.",
+                        details={
+                            "loaded_details": list(preloaded_details),
+                            "schema_hash": tool_schema_bundle.schema_hash,
+                        },
+                        iteration=0,
+                    )
             iteration = 1
             while iteration <= state.effective_max_iters:
                 state.iteration = iteration
@@ -2496,6 +2779,7 @@ async def run_turnkey(
                     board=board,
                     state=state,
                     skills_text=skills_text,
+                    skill_digest_text=skill_digest_text,
                     workspace=workspace,
                     tool_schema_bundle=tool_schema_bundle,
                     client_actions=client_action_store,
@@ -2526,6 +2810,8 @@ async def run_turnkey(
                         memory_mode=invocation.memory_mode,
                         continuation_mode=provider.capabilities.continuation_mode,
                         native_sync_every=invocation.native_sync_every,
+                        recent_turn_limit=invocation.recent_turn_detail_limit,
+                        summary_char_limit=invocation.memory_summary_max_chars,
                     )
                 )
                 provider_turn: ProviderTurn | None = None
@@ -2646,6 +2932,13 @@ async def run_turnkey(
                         "raw_output": provider_turn.output_text,
                         "decision": provider_turn.decision.model_dump(mode="json"),
                     },
+                )
+                await _record_prompt_budget_warning(
+                    sink=event_sink,
+                    records=brain_events,
+                    invocation=invocation,
+                    state=state,
+                    provider_metadata=provider_turn.provider_metadata,
                 )
                 await _record_model_native_host_boundary(
                     invocation=invocation,
@@ -2872,10 +3165,18 @@ async def run_turnkey(
     if not initial_prompt_text:
         initial_prompt_text = ProviderPromptBundle(
             system_instructions=_build_instructions(invocation),
-            skill_context_text="Compact turnkey skill context:\n" + skills_text,
+            skill_context_text="Compact turnkey skill context:\n" + skill_digest_text,
+            bootstrap_skill_context_text="Full bootstrap turnkey skill context:\n" + skills_text,
             tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because MCP startup did not complete)",
             provider_memory_text="",
-            turn_context_text=_build_turn_prompt(
+            turn_context_text=_build_compact_turn_prompt(
+                invocation,
+                board,
+                state,
+                workspace,
+                client_action_store,
+            ),
+            bootstrap_turn_context_text=_build_full_turn_prompt(
                 invocation,
                 board,
                 state,

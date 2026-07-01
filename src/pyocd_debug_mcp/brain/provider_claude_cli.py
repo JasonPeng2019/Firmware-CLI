@@ -31,6 +31,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     provider_has_local_memory,
     render_memory_summary_request,
     should_inject_native_memory_sync,
+    validate_memory_summary_text,
 )
 from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
@@ -309,6 +310,13 @@ class ClaudeCLIDecisionProvider:
             resumed_remote = current_resume_session_id is not None
             fresh_remote_turn = not resumed_remote
             recovery_record = session_state.metadata.get("resume_recovery_failure")
+            prompt_accounting = prompt_bundle.prompt_accounting(
+                prompt_render_mode=current_prompt_render_mode,
+                rendered_prompt_text=current_prompt,
+                memory_injected=current_memory_injected,
+                static_tool_schema_injected=current_static_tool_schema_injected,
+                decision_schema_injected=current_decision_schema_injected,
+            )
             turn_metadata = build_provider_turn_metadata(
                 capabilities=self.capabilities,
                 continuation_path=continuation_path,
@@ -335,6 +343,7 @@ class ClaudeCLIDecisionProvider:
                         committed_session_id if explicit_new_session_recovery else None
                     ),
                     "resume_recovery_failure": recovery_record,
+                    "rendered_prompt": prompt_accounting,
                 },
             )
             updated_session = (
@@ -431,7 +440,10 @@ class ClaudeCLIDecisionProvider:
                 )
                 continue
             try:
-                summary_text = parse_memory_summary_json(output_text)
+                summary_text = validate_memory_summary_text(
+                    parse_memory_summary_json(output_text),
+                    char_limit=session_state.summary_char_limit,
+                )
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 current_prompt = (

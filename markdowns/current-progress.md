@@ -31,9 +31,10 @@ provider-session/compact-tool-index bridge, Branch C is acceptable for the
 event/timeout-policy slice, and Branch B's free host-work phase followed by one
 final governed board/client/terminal decision is now implemented in code.
 Codex CLI has live proof for that Branch B boundary on the attached
-`nucleo_l476rg + nrf52840dk` pair; Claude CLI code-writing proof is blocked by
-provider quota until the morning reset, and exact official `nrf52833dk` proof
-remains pending.
+`nucleo_l476rg + nrf52840dk` pair. Claude CLI is also no longer blocked on the
+current host for attached-board provider/hardware checks: after local auth was
+restored, Branch C passed on both attached boards. Exact official `nrf52833dk`
+proof remains pending.
 
 Follow-up correction, 2026-06-30: the turnkey MCP tool prompt injection no
 longer repeats full MCP JSON schema bodies. The brain now renders a compact
@@ -57,7 +58,11 @@ auto-loads focused details, records the guardrail, and asks for a fresh provider
 decision. Final validation for that pass: Python-change gate green with Pyright
 `0` and full pytest green; suite preset green; real MCP smoke green; Codex
 host-native/load-details/live multi-turn smokes green; attached-board checks
-green on `nucleo_l476rg` and `nrf52840dk`.
+green on `nucleo_l476rg` and `nrf52840dk`. The remaining loader risk for a
+future product launch is packaging/config drift, not the current design:
+deployable packages must preserve the product/client-owned skill root, runtime
+copy before init/context, read-only installed skill source, and init-script
+preflight that blocks raw probe/serial imports or board/probe shell commands.
 
 Wave 2 planning update, 2026-06-30: client-side codebase-map scaffolding is now
 specified in `markdowns/curr/wave2-codebase-map_spec.md` and assigned to Module
@@ -76,9 +81,10 @@ prompts, `load_tool_details`, invalid-tool-call auto-details, strict
 loaded-detail guardrails before governed tool/script or brain-owned
 compound-action execution, canonical prompt ordering/dedupe for existing context
 surfaces, provider/adapter failure classification, and prompt bundle alias
-cleanup. Remaining scaffold proof gaps are external: Claude login/quota,
-API-provider credentials, exact official `nrf52833dk` proof, and fresh-machine
-deployment.
+cleanup. Remaining scaffold proof gaps are external: API-provider credentials,
+exact official `nrf52833dk` proof, and fresh-machine deployment. Claude CLI
+attached-board proof is green again on this host after authentication was
+restored.
 
 Delta-index follow-up, 2026-06-30: ordinary remote-primary `remote-delta`
 provider turns now include the compact skill context and compact governed-tool
@@ -91,6 +97,38 @@ sync, retry, or explicit/focused detail-loading paths. Verification for this
 follow-up is recorded in
 `markdowns/curr/r12-delta-compact-indexes_spec.md` and
 `markdowns/tmp/curr-archive-20260630-delta-index-final/wave1-delta-index-adversarial-audit_process.md`.
+
+Prompt/memory cost hardening update, 2026-07-01: the turnkey prompt path now
+separates bootstrap/full task context from the compact canonical later-turn
+state. Normal provider turns render a Tier 0 brain-owned digest with task
+contract, loaded-detail status, latest evidence, changed files, blockers, and
+available action kinds, while bootstrap/retry/sync modes keep the larger context
+where it is useful. Provider memory defaults to the last two detailed committed
+turns plus a hard-limited rolling summary, summary-mode prompts are explicitly
+non-actionable, and overlong model summaries are rejected instead of silently
+trimmed. The run artifacts now record rendered-vs-available prompt accounting
+with per-section hashes and explicit `memory_injected`,
+`decision_schema_injected`, and `static_tool_schema_injected` booleans, so
+debugging can distinguish "state exists" from "state was actually sent to the
+provider." Common safe details for `connect` and `run_green_check` preload by
+default to avoid avoidable `details_required` turns; the behavior is
+configurable with `--recent-turn-detail-limit`,
+`--memory-summary-max-chars`, `--no-preload-common-details`, and matching
+`PYOCD_TURNKEY_*` env vars. Follow-up audit during live benchmark repair found
+two additional valid prompt-cost gaps and closed them: loaded detail bodies now
+render only on the preload/detail-load turn or the immediate following
+context-expansion turn, and selected turnkey skill facts render in full only at
+bootstrap/sync while ordinary remote-delta turns carry a compact skill digest.
+Post-fix live b001 repair proof is green on `nucleo_l476rg` and `nrf52840dk`
+with both `codex-cli` and `claude-cli`; ordinary post-detail decision/finalize
+turns in those runs were about 7.3k-7.8k rendered chars with no provider-memory
+or decision-schema injection. Follow-up credentials-free API simulation now
+also exercises the real `openai-api` and `anthropic-api` provider factory plus
+`run_turnkey_with_provider` paths: OpenAI Responses-style
+`previous_response_id` chaining, Anthropic local-memory-only continuation,
+request/response handling, prompt render modes, retry/error surfaces, and
+prompt accounting are covered without live API credentials. This feature still
+does not add cross-invocation provider-session persistence.
 
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
@@ -179,9 +217,11 @@ missing before this merge pass:
 
 What is still missing for broad turnkey closure is exact official-pair
 second-provider proof on an actual `nrf52833dk + nucleo_l476rg` pair,
-API-provider parity proof, and fresh-machine portability proof. Claude CLI is
-no longer globally blocked: later Branch A/B ledger evidence records
-post-refresh attached-board Claude proof on `nucleo_l476rg + nrf52840dk`.
+live API-provider proof, and fresh-machine portability proof. Credentials-free
+API simulation is green through fake SDK clients and real provider-loop code
+paths, but that is not the same as paid/live provider proof. Claude CLI is no
+longer globally blocked: later Branch A/B ledger evidence records post-refresh
+attached-board Claude proof on `nucleo_l476rg + nrf52840dk`.
 
 What is still missing for true user-computer deployment is broader than the
 current prototype gate:
@@ -195,8 +235,8 @@ current prototype gate:
   promised remote handle cannot resume;
 - real code-writing repair proof on the bug-repair cases, with build/flash/green
   evidence and no cross-prompt state leakage;
-- Anthropic API memory-ledger hardening before claiming parity with Claude Code
-  CLI or OpenAI Responses.
+- live Anthropic/OpenAI API proof before claiming parity with Claude Code CLI or
+  OpenAI Responses in production.
 - memory continuity now relies on provider-native resume where available plus
   the compact brain-owned memory ledger; remote-primary providers receive a
   periodic safety sync every 10 provider turns by default, configurable with
@@ -384,7 +424,8 @@ Latest Wave 1 A/B/C merge-back validation on 2026-06-30:
   - Codex CLI no-hardware smoke passed with `load_skills:firmcli-fix-bug`,
     `mcp_tools_used=[]`, `session_id=(none)`, run root
     `runs/turnkey-20260630T084055Z-0a0377bc`
-  - Claude CLI proof remains pending provider quota reset
+  - Claude CLI proof was pending provider quota reset at this point; later
+    attached-board Claude rows are green after auth/quota was restored
   Verification after that correction:
   - suite ladder passed: full pytest `342 passed`, ruff clean, mypy clean,
     `34` R11 benchmark tests passed, and R11 benchmark help rendered

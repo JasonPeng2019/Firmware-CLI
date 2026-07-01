@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 
 from pyocd_debug_mcp.board_config import BoardConfig
@@ -173,3 +174,29 @@ def render_skills(skills: tuple[SkillManifest, ...]) -> str:
             lines.append(f"  avoid: {item}")
         chunks.append("\n".join(lines))
     return "\n".join(chunks)
+
+
+def render_skill_digest(skills: tuple[SkillManifest, ...]) -> str:
+    if not skills:
+        return "(no matching turnkey skills loaded)"
+    lines = ["Turnkey skill digest; full selected skill facts were rendered at bootstrap/sync."]
+    for skill in skills:
+        fingerprint = hashlib.sha256(
+            "\n".join(
+                (
+                    skill.skill_id,
+                    skill.title,
+                    *skill.facts,
+                    *skill.diagnostic_hints,
+                    *skill.verification_checks,
+                    *skill.forbidden_actions,
+                )
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        lines.append(
+            f"- {skill.skill_id}: {skill.title}; "
+            f"facts={len(skill.facts)} hints={len(skill.diagnostic_hints)} "
+            f"verify={len(skill.verification_checks)} avoid={len(skill.forbidden_actions)} "
+            f"hash={fingerprint}"
+        )
+    return "\n".join(lines)

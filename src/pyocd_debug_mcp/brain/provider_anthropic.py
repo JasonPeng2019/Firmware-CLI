@@ -20,6 +20,7 @@ from pyocd_debug_mcp.brain.provider_types import (
     ProviderSessionState,
     ProviderTurn,
     render_memory_summary_request,
+    validate_memory_summary_text,
 )
 from pyocd_debug_mcp.timeouts import PROVIDER_REQUEST_TIMEOUT_SECONDS
 
@@ -133,6 +134,13 @@ class AnthropicDecisionProvider:
                 )
                 continue
             response_id = getattr(response, "id", None)
+            prompt_accounting = prompt_bundle.prompt_accounting(
+                prompt_render_mode=current_prompt_render_mode,
+                rendered_prompt_text=current_prompt,
+                memory_injected=current_memory_injected,
+                static_tool_schema_injected=current_static_tool_schema_injected,
+                decision_schema_injected=current_decision_schema_injected,
+            )
             turn_metadata = build_provider_turn_metadata(
                 capabilities=self.capabilities,
                 continuation_path=continuation_path,
@@ -148,6 +156,7 @@ class AnthropicDecisionProvider:
                 extra={
                     "continuation_explanation": "Anthropic Messages API is stateless on this backend.",
                     "provider_response_id": response_id,
+                    "rendered_prompt": prompt_accounting,
                 },
             )
             return ProviderTurn(
@@ -189,7 +198,10 @@ class AnthropicDecisionProvider:
             )
             output_text = _extract_text(response).strip()
             try:
-                summary_text = parse_memory_summary_json(output_text)
+                summary_text = validate_memory_summary_text(
+                    parse_memory_summary_json(output_text),
+                    char_limit=session_state.summary_char_limit,
+                )
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 current_prompt = (

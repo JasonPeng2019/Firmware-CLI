@@ -8,8 +8,6 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12_turnkey_spec.md` - current R12 turnkey contract. It remains useful, but
   it is subordinate to `markdowns/firmware_agent_build_plan_concrete (10).md`
   and the hard prototype bar in `markdowns/things-to-change.md`.
-- `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
-  `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
 - `r12-context-scaffold-hardening_spec.md` - active R12 scaffold-hardening spec
   and verification record for product/client-owned model-native skills,
   runtime-copy-only recovery, structured skill-load failures,
@@ -19,6 +17,15 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12-delta-compact-indexes_spec.md` - active task spec for including compact
   skill and governed-tool indexes in ordinary `remote-delta` provider turns
   without changing memory cadence or full-schema cadence.
+- `r12-prompt-memory-cost-hardening_spec.md` - implemented Wave 1 hard-bar spec
+  for compact later-turn prompts, bounded tiered in-run provider memory,
+  rendered-vs-available prompt accounting, focused detail rendering, and
+  credentials-free API-provider simulation coverage.
+- `r12-prompt-memory-cost-hardening_process.md` - active implementation and
+  validation ledger for the prompt/memory cost hardening pass.
+- `wave1-full-suite-claude-restored_spec.md` - implemented validation record for
+  the auth-restored Claude CLI attached-board checks and credentials-free
+  OpenAI/Anthropic API-path simulation checks.
 - `next-codex-handoff-20260630.md` - current final-audit handoff for a fresh
   Codex session to independently review the pushed R12 scaffold hardening,
   delta-index prompt work, Wave 1 scope, important code/docs/tests, and live
@@ -26,13 +33,25 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `wave1-final-deployment-adversarial-audit_process.md` - active process
   ledger for the current Wave 1 product-deployment adversarial audit loop.
 
+## Active Future Specs
+
+- `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
+  `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
+- `r12-provider-native-skill-bridge_spec.md` - proposal spec for projecting
+  FirmCLI-owned provider-native skills into Claude/Codex runtime skill layouts,
+  prompting native skill invocation first, and falling back to FirmCLI
+  `load_skills` when native provider behavior is unavailable or unproven. This
+  is intentionally still in `curr` and is not implemented.
+
 Canonical current status now lives in:
 
 - `markdowns/things-to-change.md` - hard prototype acceptance bar.
 - `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
   free-host/governed-decision code boundary and the R12 scaffold-hardening
-  follow-up are implemented, while Claude/exact official-board/API/fresh-machine
-  proof and Wave 2 modules remain pending.
+  follow-up are implemented. Prompt/memory cost hardening and credentials-free
+  API simulation are now part of the Wave 1 hard bar. Live API credentials,
+  exact official-board proof, fresh-machine proof, and Wave 2 modules remain
+  pending.
 - `markdowns/current-progress.md` - current implementation/proof status.
 
 ## Archive
@@ -82,24 +101,25 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 
 ## Verified
 
-- `markdowns/curr/` now contains only this index, the active R12 turnkey
-  contract, the active R12 scaffold-hardening spec/verification record, the
-  active delta-index task spec, the active Wave 2 codebase-map spec, the
-  current final-audit handoff, and the active Wave 1 final-deployment audit
-  process ledger.
+- `markdowns/curr/` now contains this index, active/implemented R12 Wave 1
+  specs and process ledgers, the active Wave 2 codebase-map spec, the active
+  provider-native skill bridge proposal, the current final-audit handoff, and
+  the active Wave 1 final-deployment audit process ledger.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
-- R12 scaffold hardening is implemented and validated by the final Python-change
-  gate, suite ladder, Codex live smokes, and attached-board hardware runs
-  recorded in the archived process ledgers.
+- R12 scaffold hardening and prompt/memory cost hardening are implemented and
+  validated by Python-change gates, suite ladders, focused fake-provider/API
+  simulation tests, Codex/Claude CLI live smokes, and attached-board hardware
+  runs recorded in the current or archived process ledgers.
 
 ## Pending Verification
 
-- Branch B's free-host-work / governed-decision boundary and the R12 scaffold
-  hardening are implemented and Codex/hardware-smoked.
-- Remaining proof gaps are external: Claude login/quota, API credentials, exact
-  official-board proof, and fresh-machine deployment.
+- Branch B's free-host-work / governed-decision boundary, R12 scaffold
+  hardening, and R12 prompt/memory cost hardening are implemented and
+  attached-board/API-simulated.
+- Remaining proof gaps are external: live API credentials, exact official-board
+  proof, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.
 - Wave 2 progress/inspector, checkpoints, scoped green approval, static
   context/cache reuse, codebase-map scaffolding, and cleanup guard work remains

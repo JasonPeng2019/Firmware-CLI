@@ -32,9 +32,12 @@ Current prototype amendment:
   tightened and is summarized in `markdowns/current-progress.md`. The old
   `read_file`/`replace_file`/`run_build` governed action compatibility layer is
   deleted, and `load_skills` loads model-native workflow context between
-  provider turns. A no-hardware Codex CLI `load_skills` smoke is green at
-  `runs/turnkey-20260630T084055Z-0a0377bc`. Claude CLI code-writing proof,
-  exact official `nrf52833dk` proof, and Wave 2 prototype modules remain
+  provider turns. A no-hardware Codex CLI `load_skills` smoke is green in the
+  current run archive. Claude CLI attached-board proof is also green again on
+  the retained `nucleo_l476rg + nrf52840dk` bench after auth restoration.
+  Prompt/memory cost hardening and credentials-free API-path simulation are now
+  part of the Wave 1 validation bar. Exact official `nrf52833dk`, live API
+  provider proof, fresh-machine proof, and Wave 2 prototype modules remain
   pending. Wave 2 codebase-map scaffolding is now specified in
   `markdowns/curr/wave2-codebase-map_spec.md`, but not implemented.
 - Product polish, remote hosting, broad backend expansion, and shipped UI

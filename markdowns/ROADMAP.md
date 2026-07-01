@@ -20,9 +20,14 @@
 > skill-load failures, `load_tool_details`, strict loaded-detail guardrails
 > before governed tool/script or brain-owned compound-action execution,
 > invalid-tool-call auto-details, prompt ordering/dedupe, provider/adapter
-> failure classification, and prompt bundle alias cleanup. Full closure still
-> requires Claude/API proof, exact official `nrf52833dk` proof, fresh-machine
-> proof, and the remaining Wave 2
+> failure classification, prompt bundle alias cleanup, and prompt/memory cost
+> hardening. Ordinary later provider turns now use compact canonical state,
+> bounded in-run memory, focused detail rendering, compact skill digests, and
+> rendered-vs-available prompt accounting. Credentials-free OpenAI/Anthropic
+> API-path simulation is green through the real provider factory/turnkey-loop
+> code paths, but live API-provider proof still requires credentials/credits.
+> Full closure still requires live API proof, exact official `nrf52833dk` proof,
+> fresh-machine proof, and the remaining Wave 2
 > prototype-required modules. See
 > `current-progress.md` and `things-to-change.md`.
 >

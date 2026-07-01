@@ -40,7 +40,10 @@ from pyocd_debug_mcp.brain.config import (
     build_turnkey_invocation,
     load_provider_config,
     resolve_memory_mode,
+    resolve_memory_summary_max_chars,
     resolve_native_sync_every,
+    resolve_preload_common_details,
+    resolve_recent_turn_detail_limit,
 )
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey, run_turnkey_with_provider
@@ -1070,9 +1073,9 @@ def test_provider_session_state_serialization_and_deterministic_compaction() -> 
     assert record["memory_mode"] == "deterministic"
     recent_memory_entries = cast(list[dict[str, object]], record["recent_memory_entries"])
     memory_summary = require_mapping(record["memory_summary"])
-    assert len(recent_memory_entries) == 4
-    assert recent_memory_entries[0]["turn_index"] == 3
-    assert memory_summary["covered_through_turn"] == 2
+    assert len(recent_memory_entries) == 2
+    assert recent_memory_entries[0]["turn_index"] == 5
+    assert memory_summary["covered_through_turn"] == 4
     assert memory_summary["source"] == "deterministic"
 
 
@@ -1096,6 +1099,125 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     assert not hasattr(bundle, "render_native_delta_text")
     assert not hasattr(bundle, "render_native_sync_text")
     assert bundle.render_retry_text("retry now") == "turn context\n\ndecision schema\n\nretry now"
+    accounting = bundle.prompt_accounting(
+        prompt_render_mode="remote-delta",
+        rendered_prompt_text=bundle.render_remote_delta_text(),
+        memory_injected=False,
+        static_tool_schema_injected=True,
+        decision_schema_injected=False,
+    )
+    assert accounting["rendered_total_length"] == len(bundle.render_remote_delta_text())
+    assert accounting["memory_available_length"] == len("memory block")
+    assert accounting["memory_rendered_length"] == 0
+    assert accounting["memory_injected"] is False
+    assert accounting["static_tool_schema_injected"] is True
+    assert accounting["decision_schema_injected"] is False
+    assert accounting["decision_schema_rendered_length"] == 0
+    sections = require_mapping(accounting["sections"])
+    memory_section = require_mapping(sections["provider_memory"])
+    assert memory_section["available_length"] == len("memory block")
+    assert memory_section["rendered"] is False
+
+
+@pytest.mark.anyio
+async def test_run_turnkey_preloads_common_details_without_executing_tools() -> None:
+    client = FakeClient({})
+    invocation = build_turnkey_invocation(
+        mode="benchmark",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Inspect the already-loaded common details, then stop.",
+        model=None,
+        max_iters=1,
+        serial_read_seconds=3.0,
+    )
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Common details are visible.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="No board action needed.",
+                    summary="Stopped after preload inspection.",
+                ),
+            )
+        ]
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert client.calls == []
+    assert "connect" in execution.state.loaded_tool_details
+    assert "run_green_check" in execution.state.loaded_compound_action_details
+    assert "## connect" in provider.turn_prompts[0]
+    assert "Brain-owned compound action `run_green_check`" in provider.turn_prompts[0]
+    assert any(
+        event["event_kind"] == "provider_progress"
+        and "Preloaded common governed details" in str(event["message"])
+        for event in execution.brain_events
+    )
+
+
+@pytest.mark.anyio
+async def test_run_turnkey_does_not_repeat_loaded_detail_bodies_after_use() -> None:
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to nRF52833 DK via probe TEST123. session_id=sess-1",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    provider = FakeProvider(
+        [
+            load_tool_details_decision("connect"),
+            TurnDecision(
+                observation_summary="Use the loaded connect schema.",
+                classification="healthy",
+                action=ServerToolAction(tool_name="connect", arguments={}),
+            ),
+            TurnDecision(
+                observation_summary="Stop after proving the details were not resent forever.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Prompt detail bodies are bounded.",
+                    summary="Connected once.",
+                ),
+            ),
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Connect once, then stop.",
+        model=None,
+        max_iters=3,
+        serial_read_seconds=0.1,
+        preload_common_details=False,
+    )
+
+    execution = await run_turnkey(
+        invocation,
+        provider=provider,
+        client_factory=cast(Any, lambda: client),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert "## connect" in provider.turn_prompts[1]
+    assert "## connect" not in provider.turn_prompts[2]
+    assert "Loaded detail bodies were already rendered" in provider.turn_prompts[2]
 
 
 def test_tool_schema_bundle_filters_and_orders_curated_tools() -> None:
@@ -1192,6 +1314,7 @@ def test_run_turnkey_blocks_server_tool_until_details_are_loaded(
         model="gpt-test",
         max_iters=3,
         serial_read_seconds=1.0,
+        preload_common_details=False,
     )
     provider = FakeProvider(
         [
@@ -1441,16 +1564,28 @@ def test_run_turnkey_finalize_updates_state_and_memory_action_summary(
 def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_MODE", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", raising=False)
 
     assert resolve_memory_mode() == "deterministic"
     assert resolve_native_sync_every() == 10
+    assert resolve_recent_turn_detail_limit() == 2
+    assert resolve_memory_summary_max_chars() == 2_000
+    assert resolve_preload_common_details() is True
     assert DEFAULT_NATIVE_SYNC_EVERY == 10
 
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_MODE", "model-summary")
     monkeypatch.setenv("PYOCD_TURNKEY_NATIVE_SYNC_EVERY", "7")
+    monkeypatch.setenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", "3")
+    monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", "2500")
+    monkeypatch.setenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", "false")
 
     assert resolve_memory_mode() == "model-summary"
     assert resolve_native_sync_every() == 7
+    assert resolve_recent_turn_detail_limit() == 3
+    assert resolve_memory_summary_max_chars() == 2_500
+    assert resolve_preload_common_details() is False
 
 
 def test_memory_compaction_triggers_on_recent_memory_char_limit() -> None:
@@ -1856,6 +1991,205 @@ def test_run_turnkey_returns_structured_tooling_failure_for_provider_turn_errors
     assert (execution.run_root / "run-metadata" / "turnkey_state.json").exists()
     assert (execution.run_root / "logs" / "brain_events.jsonl").exists()
     assert "provider exploded" in execution.result.summary
+
+
+@pytest.mark.anyio
+async def test_openai_api_provider_factory_turnkey_loop_smoke(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    captured_requests: list[dict[str, object]] = []
+
+    class _FakeResponses:
+        def __init__(self) -> None:
+            self._outputs = deque(
+                (
+                    {
+                        "id": "resp-connect",
+                        "decision": {
+                            "observation_summary": "Connect through the API provider.",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "server_tool",
+                                "tool_name": "connect",
+                                "arguments": {},
+                            },
+                        },
+                    },
+                    {
+                        "id": "resp-final",
+                        "decision": {
+                            "observation_summary": "Finalize after the API-backed turn loop.",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "OpenAI API provider loop simulated successfully.",
+                                "summary": "API provider loop completed.",
+                            },
+                        },
+                    },
+                )
+            )
+
+        def create(self, **kwargs: object) -> object:
+            captured_requests.append(dict(kwargs))
+            output = self._outputs.popleft()
+            return SimpleNamespace(
+                id=output["id"],
+                output_text=json.dumps(output["decision"]),
+            )
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            assert api_key == "test-openai-key"
+            assert timeout == 300.0
+            self.responses = _FakeResponses()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_openai.OpenAI", _FakeOpenAI)
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'nRF52833 DK' via probe TEST123. session_id=sess-api",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    monkeypatch.setattr(loop_mod, "LocalMCPClient", lambda **_kwargs: client)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="openai-api",
+        board_id="nrf52833dk",
+        task="Exercise the OpenAI-compatible API provider path.",
+        model="gpt-test",
+        max_iters=3,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey_with_provider(
+        invocation,
+        provider_config=BrainProviderConfig(
+            provider="openai-api",
+            api_key="test-openai-key",
+            model="gpt-test",
+        ),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls[0] == ("connect", {"board_id": "nrf52833dk"})
+    assert len(captured_requests) == 2
+    assert "previous_response_id" not in captured_requests[0]
+    assert captured_requests[1]["previous_response_id"] == "resp-connect"
+    first_metadata = require_mapping(execution.model_turns[0]["provider_metadata"])
+    second_metadata = require_mapping(execution.model_turns[1]["provider_metadata"])
+    assert first_metadata["prompt_render_mode"] == "bootstrap/full"
+    assert second_metadata["prompt_render_mode"] == "remote-delta"
+    second_accounting = require_mapping(second_metadata["rendered_prompt"])
+    assert second_accounting["memory_injected"] is False
+    assert second_accounting["decision_schema_injected"] is False
+
+
+@pytest.mark.anyio
+async def test_anthropic_api_provider_factory_turnkey_loop_smoke(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    captured_messages: list[str] = []
+
+    class _FakeMessages:
+        def __init__(self) -> None:
+            self._outputs = deque(
+                (
+                    {
+                        "id": "msg-connect",
+                        "decision": {
+                            "observation_summary": "Connect through the Anthropic provider.",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "server_tool",
+                                "tool_name": "connect",
+                                "arguments": {},
+                            },
+                        },
+                    },
+                    {
+                        "id": "msg-final",
+                        "decision": {
+                            "observation_summary": "Finalize after local memory is injected.",
+                            "classification": "healthy",
+                            "action": {
+                                "kind": "finalize",
+                                "final_status": "diagnosed_only",
+                                "classification": "healthy",
+                                "root_cause": "Anthropic API provider loop simulated successfully.",
+                                "summary": "API provider loop completed.",
+                            },
+                        },
+                    },
+                )
+            )
+
+        def create(self, **kwargs: object) -> object:
+            captured_messages.append(str(kwargs["messages"][0]["content"]))  # type: ignore[index]
+            output = self._outputs.popleft()
+            return SimpleNamespace(
+                id=output["id"],
+                content=[SimpleNamespace(type="text", text=json.dumps(output["decision"]))],
+            )
+
+    class _FakeAnthropic:
+        def __init__(self, *, api_key: str, timeout: float) -> None:
+            assert api_key == "test-anthropic-key"
+            assert timeout == 300.0
+            self.messages = _FakeMessages()
+
+    monkeypatch.setattr("pyocd_debug_mcp.brain.provider_anthropic.Anthropic", _FakeAnthropic)
+    client = FakeClient(
+        {
+            "connect": [
+                ToolTextResult(
+                    tool_name="connect",
+                    text="Connected to board 'nRF52833 DK' via probe TEST123. session_id=sess-anth",
+                )
+            ],
+            "disconnect": [ToolTextResult(tool_name="disconnect", text="Disconnected.")],
+        }
+    )
+    monkeypatch.setattr(loop_mod, "LocalMCPClient", lambda **_kwargs: client)
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="anthropic-api",
+        board_id="nrf52833dk",
+        task="Exercise the Anthropic-compatible API provider path.",
+        model="claude-test",
+        max_iters=3,
+        serial_read_seconds=0.1,
+    )
+
+    execution = await run_turnkey_with_provider(
+        invocation,
+        provider_config=BrainProviderConfig(
+            provider="anthropic-api",
+            api_key="test-anthropic-key",
+            model="claude-test",
+        ),
+    )
+
+    assert execution.result.final_status == "diagnosed_only"
+    assert client.calls[0] == ("connect", {"board_id": "nrf52833dk"})
+    assert len(captured_messages) == 2
+    assert "Provider session memory" not in captured_messages[0]
+    assert "Provider session memory" in captured_messages[1]
+    first_metadata = require_mapping(execution.model_turns[0]["provider_metadata"])
+    second_metadata = require_mapping(execution.model_turns[1]["provider_metadata"])
+    assert first_metadata["continuation_path"] == "local-memory-only"
+    assert second_metadata["memory_injected"] is True
 
 
 def _resume_failure_record() -> ProviderResumeFailureRecord:
@@ -2600,7 +2934,8 @@ def test_run_turnkey_load_skills_injects_context_on_next_turn(
 
     assert execution.result.final_status == "diagnosed_only"
     assert len(provider.turn_prompts) == 2
-    assert "No model-native workflow skills loaded." in provider.turn_prompts[0]
+    assert "Core skill body." not in provider.turn_prompts[0]
+    assert "Wrapper skill body." not in provider.turn_prompts[0]
     assert "Core skill body." in provider.turn_prompts[1]
     assert "Wrapper skill body." in provider.turn_prompts[1]
     state = execution.state.model_native_skills
@@ -2696,6 +3031,7 @@ def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
         code_edits_allowed=True,
         allowed_edit_roots=("src",),
         recover_allowed=False,
+        preload_common_details=False,
     )
     provider = FakeProvider(
         [

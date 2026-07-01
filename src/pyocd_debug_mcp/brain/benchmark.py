@@ -286,6 +286,9 @@ async def run_case_async(
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
+    recent_turn_detail_limit: int | None = None,
+    memory_summary_max_chars: int | None = None,
+    preload_common_details: bool | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -315,6 +318,9 @@ async def run_case_async(
         serial_read_seconds=serial_read_seconds,
         memory_mode=memory_mode,
         native_sync_every=native_sync_every,
+        recent_turn_detail_limit=recent_turn_detail_limit,
+        memory_summary_max_chars=memory_summary_max_chars,
+        preload_common_details=preload_common_details,
         flash_artifact=prepared.flash_artifact,
         elf=prepared.symbol_artifact,
         workspace_root=prepared.workspace.workspace_root,
@@ -458,6 +464,9 @@ def run_case(
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
+    recent_turn_detail_limit: int | None = None,
+    memory_summary_max_chars: int | None = None,
+    preload_common_details: bool | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -472,6 +481,9 @@ def run_case(
             serial_read_seconds=serial_read_seconds,
             memory_mode=memory_mode,
             native_sync_every=native_sync_every,
+            recent_turn_detail_limit=recent_turn_detail_limit,
+            memory_summary_max_chars=memory_summary_max_chars,
+            preload_common_details=preload_common_details,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -489,6 +501,9 @@ def run_suite(
     serial_read_seconds: float = benchmark_support.DEFAULT_SERIAL_READ_SECONDS,
     memory_mode: TurnkeyMemoryMode | None = None,
     native_sync_every: int | None = None,
+    recent_turn_detail_limit: int | None = None,
+    memory_summary_max_chars: int | None = None,
+    preload_common_details: bool | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -503,6 +518,9 @@ def run_suite(
             serial_read_seconds=serial_read_seconds,
             memory_mode=memory_mode,
             native_sync_every=native_sync_every,
+            recent_turn_detail_limit=recent_turn_detail_limit,
+            memory_summary_max_chars=memory_summary_max_chars,
+            preload_common_details=preload_common_details,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -523,6 +541,14 @@ def build_parser() -> argparse.ArgumentParser:
     case_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
     case_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     case_parser.add_argument("--native-sync-every", type=int)
+    case_parser.add_argument("--recent-turn-detail-limit", type=int)
+    case_parser.add_argument("--memory-summary-max-chars", type=int)
+    case_parser.add_argument(
+        "--no-preload-common-details",
+        action="store_false",
+        dest="preload_common_details",
+        default=None,
+    )
     case_parser.add_argument(
         "--serial-read-seconds",
         type=float,
@@ -537,6 +563,14 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS)
     suite_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     suite_parser.add_argument("--native-sync-every", type=int)
+    suite_parser.add_argument("--recent-turn-detail-limit", type=int)
+    suite_parser.add_argument("--memory-summary-max-chars", type=int)
+    suite_parser.add_argument(
+        "--no-preload-common-details",
+        action="store_false",
+        dest="preload_common_details",
+        default=None,
+    )
     suite_parser.add_argument(
         "--serial-read-seconds",
         type=float,
@@ -563,6 +597,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_iters=args.max_iters,
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
+                recent_turn_detail_limit=args.recent_turn_detail_limit,
+                memory_summary_max_chars=args.memory_summary_max_chars,
+                preload_common_details=args.preload_common_details,
                 serial_read_seconds=args.serial_read_seconds,
                 timeout_config=timeout_config,
                 timeout_proposal=timeout_proposal,
@@ -578,6 +615,9 @@ def main(argv: list[str] | None = None) -> int:
             max_iters=args.max_iters,
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
+            recent_turn_detail_limit=args.recent_turn_detail_limit,
+            memory_summary_max_chars=args.memory_summary_max_chars,
+            preload_common_details=args.preload_common_details,
             serial_read_seconds=args.serial_read_seconds,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,

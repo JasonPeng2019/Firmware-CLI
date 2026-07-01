@@ -496,16 +496,17 @@ Last pass results to independently rerun, not trust:
     `runs/20260630T202123Z-c21d0a10`
   - `nrf52840dk`: `9 passed`, run root
     `runs/20260630T202328Z-f4d44973`
+- Claude CLI attached-board Branch C harness after local auth was restored:
+  - `nucleo_l476rg`: `9 passed`, run root
+    `runs/20260630T224604Z-331dd567`
+  - `nrf52840dk`: `9 passed`, run root
+    `runs/20260630T224845Z-07590327`
 - Artifact spot-check from those Codex runs:
   - turn 1: `load_tool_details(connect,get_board_info)`;
   - turn 2: `action_batch(connect,get_board_info)`;
   - turn 3: `finalize`;
   - remote-delta turns had `static_tool_schema_injected=true`,
     `memory_injected=false`, and `decision_schema_injected=false`.
-- Claude CLI attached-board attempts:
-  - hardware preconditions passed;
-  - provider blocked with `Not logged in - Please run /login`;
-  - no valid Claude provider decision reached hardware.
 - Process cleanup audit:
   - no new matching leftover processes beyond the audit shell.
 
@@ -513,7 +514,6 @@ Last pass results to independently rerun, not trust:
 
 These are real gaps unless the next session proves otherwise:
 
-- Claude CLI proof requires local Claude login/quota availability.
 - OpenAI/Anthropic API-provider parity requires credentials and model config.
 - Exact official `nrf52833dk` proof requires that board to be attached; the
   current attached Nordic board has usually been `nrf52840dk`.
@@ -532,6 +532,11 @@ These are real gaps unless the next session proves otherwise:
 - Do not add generic host execution to the brain or MCP server.
 - Do not make `.codex/skills` or `.claude/skills` the product skill root.
 - Do not allow provider recovery to mutate installed product skill packages.
+- Treat loader launch risk as packaging/config drift: clean installs must still
+  use a client-owned product skill root, copy source skills into per-session
+  runtime directories before init/context, keep installed source read-only, and
+  retain init-script preflight against raw probe/serial imports or board/probe
+  shell commands.
 - Do not execute a governed tool/script/compound action in the same step that
   auto-loaded its missing details.
 - Do not put `finalize` inside `action_batch`.

@@ -17,8 +17,13 @@ must be removed, not merely schema-hidden or refused. `read_file`,
 any branch/module. The model-native `load_skills` context-expansion decision is
 now part of the current prototype scope, and the R12 scaffold hardening has
 landed so compact indexes are discovery-only until details are loaded. Full
-closure still requires Claude/API proof, exact official `nrf52833dk` proof,
-fresh-machine proof, and the remaining Wave 2 modules.
+closure still requires live API-provider proof, exact official `nrf52833dk`
+proof, fresh-machine proof, and the remaining Wave 2 modules.
+Credentials-free OpenAI/Anthropic API-path simulation is now part of the Wave 1
+hard bar and is green through the real provider factory/turnkey-loop code
+paths. Claude CLI is now attached-board proven again on the current
+`nucleo_l476rg + nrf52840dk` rig, but that retained-Nordic proof does not
+replace exact official-pair proof on `nrf52833dk + nucleo_l476rg`.
 
 The goal is not to make the code unusual. Each branch should use normal,
 concrete Python modules, dataclasses/Pydantic models only where they fit, and
@@ -76,8 +81,9 @@ SERIAL:
 Current integration note, 2026-06-30: Wave 1 A and C are acceptable for their
 prototype slices, and Branch B's free-host/final-governed-decision code boundary
 has now been corrected. Codex CLI proof on `nucleo_l476rg + nrf52840dk` is real
-attached-board evidence, but it does not replace the blocked Claude CLI rerun,
-exact official `nrf52833dk`, API-provider parity, or fresh-machine proof.
+attached-board evidence, and a later auth-restored Claude CLI Branch C rerun is
+also green on that attached pair. Those attached-board rows do not replace exact
+official `nrf52833dk`, API-provider parity, or fresh-machine proof.
 Wave 2 Module G now also includes the codebase-map specification in
 `markdowns/curr/wave2-codebase-map_spec.md`; that feature is planning-only until
 implemented and validated on a rebuilt Wave 2 branch/module pass. The
@@ -89,6 +95,21 @@ runtime-copy-only skill repair, structured skill-load failures,
 tool/script or brain-owned compound-action execution, invalid-tool-call
 auto-details, canonical ordering/dedupe for existing prompt surfaces, failure
 classification, and prompt bundle alias cleanup.
+The loader-specific launch risk is not the current Wave 1 design; it is drift in
+packaging/config. A deployable package must keep the product skill root
+client-owned, never default it back to `.codex/skills` or `.claude/skills`, copy
+skills into per-session runtime directories before init/context, keep installed
+skill source read-only, and retain init-script preflight against raw
+probe/serial imports or board/probe shell commands.
+Prompt/memory cost hardening now belongs to the Wave 1 integration substrate,
+not to a future cross-invocation persistence feature. The current implementation
+keeps bootstrap turns large enough for setup, renders compact Tier 0 canonical
+state on ordinary later turns, bounds provider memory to a recent detailed
+window plus hard-limited rolling summary, preloads common `connect` and
+`run_green_check` details, and records rendered-vs-available prompt telemetry
+with section hashes. Wave 2 Module G should consume those prompt/accounting
+surfaces; it should not reintroduce full per-turn schema/memory resends or add
+cross-invocation provider-session persistence.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -324,7 +345,9 @@ Cross-branch dependency:
   auto-details, current prompt ordering/dedupe, provider/adapter failure
   classification, and prompt bundle alias cleanup. It does not implement
   codebase-map generation, map maintenance, actual product skills, or global bug
-  reporting.
+  reporting. Wave 2 and launch packaging must consume this substrate as-is: do
+  not reintroduce `.codex`/`.claude` as product skill roots, source-package
+  mutation by providers, or init-script paths that can directly touch hardware.
 
 Should not own:
 
@@ -727,6 +750,13 @@ into the other branch, or into final integration.
 - Branch A now scopes persistent sessions to "where available": native/session
   continuation for providers that support it, client-owned history where that is
   the provider model, and explicitly labeled fallback behavior for CLI providers.
+- Branch A/Wave 1 integration now includes compact later-turn prompts, bounded
+  in-run provider memory, common detail preload, and rendered-vs-available
+  prompt telemetry. It still does not include cross-invocation provider-session
+  persistence.
+- Wave 1 validation must include the prompt/memory hardening tests and
+  credentials-free OpenAI/Anthropic API-path simulation checks. Live API calls
+  remain a separate credential/credit-dependent proof boundary.
 - Branch B now explicitly preserves the closed-server boundary: model-native
   host work stays outside governed actions, board/server-native work stays
   gated, and UART write is treated as hardware-stack work.
@@ -766,12 +796,17 @@ into the other branch, or into final integration.
   `b001_wrong_boot_text` proof is green on `nucleo_l476rg + nrf52840dk`, and a
   Codex CLI no-hardware `load_skills` smoke is green at
   `runs/turnkey-20260630T084055Z-0a0377bc`. Later scaffold-hardening Codex
-  live smokes and attached-board checks are also green. Claude/API proof, exact
-  official `nrf52833dk` proof, and fresh-machine proof remain pending.
+  live smokes and attached-board checks are also green. Claude CLI Branch C
+  attached-board rows are green after auth restoration on `nucleo_l476rg` and
+  retained `nrf52840dk`. Prompt/memory cost hardening and credentials-free
+  OpenAI/Anthropic API-path simulation are green through the real provider
+  factory/turnkey-loop code paths. Live API proof, exact official
+  `nrf52833dk` proof, and fresh-machine proof remain pending.
 - Branch C behavior is acceptable for the Wave 1 C slice in the current
   merge-back
   candidate through session/client-scoped timeout state, brain-only server
   timeout sync, and event-spine hooks. The current proof is live on the attached
   `nucleo_l476rg + nrf52840dk` pair with both local CLI providers; exact
-  official `nrf52833dk`, API-provider parity, and fresh-machine proof remain
-  pending/deferred.
+  official `nrf52833dk`, live API-provider parity, and fresh-machine proof
+  remain pending/deferred. Credentials-free API simulation is green but is not
+  a substitute for paid/live provider proof.

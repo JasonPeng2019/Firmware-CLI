@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import hashlib
 from typing import Literal, Protocol, cast
 
 from pyocd_debug_mcp.brain.actions import TurnDecision
@@ -24,11 +25,21 @@ ProviderRemoteStrategy = Literal[
 ProviderMemoryMode = Literal["deterministic", "model-summary"]
 ProviderResumeRecoveryChoice = Literal["retry", "new-session-from-memory", "abort"]
 ProviderMemoryResultStatus = Literal["success", "failure", "refusal", "block", "unknown"]
+ProviderPromptRenderMode = Literal[
+    "bootstrap/full",
+    "remote-delta",
+    "remote-sync",
+    "retry",
+    "summary-mode",
+    "decision-after-compaction",
+]
 
-DEFAULT_RECENT_TURN_LIMIT = 4  # PROJECT-DEFINED (hybrid memory recent-turn window)
+DEFAULT_RECENT_TURN_LIMIT = 2  # PROJECT-DEFINED (detailed recent-turn window)
 DEFAULT_RECENT_RENDER_CHAR_LIMIT = 8_000  # PROJECT-DEFINED (recent-memory prompt cap)
-DEFAULT_SUMMARY_CHAR_LIMIT = 4_000  # PROJECT-DEFINED (compacted-summary prompt cap)
+DEFAULT_SUMMARY_CHAR_LIMIT = 2_000  # PROJECT-DEFINED (compacted-summary prompt cap)
 DEFAULT_NATIVE_SYNC_EVERY = 10  # PROJECT-DEFINED (remote safety-sync cadence)
+DEFAULT_MEMORY_SUMMARY_TRIGGER_TURNS = 8  # PROJECT-DEFINED (summary-mode cadence target)
+DEFAULT_MEMORY_SUMMARY_TRIGGER_CHARS = 8_000  # PROJECT-DEFINED (summary-mode size target)
 RESUME_RECOVERY_ACTION_METADATA_KEY = "resume_recovery_action"  # PROJECT-DEFINED
 RESUME_RECOVERY_FAILURE_METADATA_KEY = "resume_recovery_failure"  # PROJECT-DEFINED
 
@@ -466,15 +477,25 @@ class ProviderPromptBundle:
     turn_context_text: str
     turn_decision_schema_text: str
     skill_context_text: str = ""
+    bootstrap_turn_context_text: str | None = None
+    bootstrap_skill_context_text: str | None = None
 
     def _join_user_sections(self, *sections: str) -> str:
         return "\n\n".join(section for section in (part.strip() for part in sections) if section)
 
+    @property
+    def bootstrap_context_text(self) -> str:
+        return self.bootstrap_turn_context_text or self.turn_context_text
+
+    @property
+    def bootstrap_skill_text(self) -> str:
+        return self.bootstrap_skill_context_text or self.skill_context_text
+
     def render_bootstrap_text(self, *, include_memory: bool = True) -> str:
         sections = [
-            self.skill_context_text.strip(),
+            self.bootstrap_skill_text.strip(),
             self.tool_schema_text.strip(),
-            self.turn_context_text.strip(),
+            self.bootstrap_context_text.strip(),
         ]
         if include_memory and self.provider_memory_text.strip():
             sections.append(self.provider_memory_text.strip())
@@ -498,6 +519,24 @@ class ProviderPromptBundle:
             correction_note,
         )
 
+    def render_for_mode(
+        self,
+        mode: str,
+        *,
+        include_memory: bool = True,
+        correction_note: str | None = None,
+    ) -> str:
+        if mode == "remote-delta":
+            return self.render_remote_delta_text()
+        if mode == "remote-sync":
+            return self.render_remote_sync_text(include_memory=include_memory)
+        if mode == "retry":
+            return self.render_retry_text(
+                correction_note
+                or "Your previous reply was invalid. Return only one JSON object that matches the schema exactly."
+            )
+        return self.render_bootstrap_text(include_memory=include_memory)
+
     def user_prompt_text(self, *, include_memory: bool = True) -> str:
         return self.render_bootstrap_text(include_memory=include_memory)
 
@@ -507,15 +546,109 @@ class ProviderPromptBundle:
             f"{self.render_bootstrap_text(include_memory=include_memory).strip()}\n"
         )
 
-    def to_record(self) -> dict[str, object]:
+    def prompt_accounting(
+        self,
+        *,
+        prompt_render_mode: str,
+        rendered_prompt_text: str | None = None,
+        memory_injected: bool,
+        static_tool_schema_injected: bool,
+        decision_schema_injected: bool,
+    ) -> dict[str, object]:
+        rendered_text = rendered_prompt_text
+        if rendered_text is None:
+            rendered_text = self.render_for_mode(
+                prompt_render_mode,
+                include_memory=memory_injected,
+            )
+        available_sections = {
+            "system_instructions": self.system_instructions,
+            "skill_context": self.skill_context_text,
+            "bootstrap_skill_context": self.bootstrap_skill_text,
+            "tool_schema": self.tool_schema_text,
+            "provider_memory": self.provider_memory_text,
+            "turn_context": self.turn_context_text,
+            "bootstrap_turn_context": self.bootstrap_context_text,
+            "turn_decision_schema": self.turn_decision_schema_text,
+        }
+        rendered_sections = {
+            "system_instructions": "",
+            "skill_context": (
+                ""
+                if prompt_render_mode in {"bootstrap/full", "remote-sync"}
+                and self.bootstrap_skill_text != self.skill_context_text
+                else self.skill_context_text
+            ),
+            "bootstrap_skill_context": (
+                self.bootstrap_skill_text
+                if prompt_render_mode in {"bootstrap/full", "remote-sync"}
+                and self.bootstrap_skill_text != self.skill_context_text
+                else ""
+            ),
+            "tool_schema": self.tool_schema_text if static_tool_schema_injected else "",
+            "provider_memory": self.provider_memory_text if memory_injected else "",
+            "turn_context": (
+                ""
+                if prompt_render_mode in {"bootstrap/full", "remote-sync"}
+                and self.bootstrap_context_text != self.turn_context_text
+                else self.turn_context_text
+            ),
+            "bootstrap_turn_context": (
+                self.bootstrap_context_text
+                if prompt_render_mode in {"bootstrap/full", "remote-sync"}
+                and self.bootstrap_context_text != self.turn_context_text
+                else ""
+            ),
+            "turn_decision_schema": (
+                self.turn_decision_schema_text if decision_schema_injected else ""
+            ),
+        }
         return {
+            "prompt_render_mode": prompt_render_mode,
+            "memory_injected": memory_injected,
+            "decision_schema_injected": decision_schema_injected,
+            "static_tool_schema_injected": static_tool_schema_injected,
+            "rendered_total_length": len(rendered_text),
+            "available_total_length": sum(len(text) for text in available_sections.values()),
+            "sections": {
+                name: _prompt_section_record(
+                    available_text=available_text,
+                    rendered_text=rendered_sections.get(name, ""),
+                )
+                for name, available_text in available_sections.items()
+            },
+            "memory_available_length": len(self.provider_memory_text),
+            "memory_rendered_length": (len(self.provider_memory_text) if memory_injected else 0),
+            "decision_schema_available_length": len(self.turn_decision_schema_text),
+            "decision_schema_rendered_length": (
+                len(self.turn_decision_schema_text) if decision_schema_injected else 0
+            ),
+            "static_tool_schema_available_length": len(self.tool_schema_text),
+            "static_tool_schema_rendered_length": (
+                len(self.tool_schema_text) if static_tool_schema_injected else 0
+            ),
+        }
+
+    def to_record(
+        self,
+        *,
+        provider_metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        record: dict[str, object] = {
             "system_instruction_length": len(self.system_instructions),
             "skill_context_length": len(self.skill_context_text),
+            "bootstrap_skill_context_length": len(self.bootstrap_skill_text),
             "tool_schema_length": len(self.tool_schema_text),
             "provider_memory_length": len(self.provider_memory_text),
             "turn_context_length": len(self.turn_context_text),
+            "bootstrap_turn_context_length": len(self.bootstrap_context_text),
             "turn_decision_schema_length": len(self.turn_decision_schema_text),
         }
+        if provider_metadata is not None:
+            rendered_prompt = provider_metadata.get("rendered_prompt")
+            if isinstance(rendered_prompt, dict):
+                record["rendered_prompt"] = rendered_prompt
+        return record
 
 
 @dataclass(frozen=True)
@@ -569,6 +702,8 @@ def make_provider_session_state(
     memory_mode: ProviderMemoryMode = "deterministic",
     continuation_mode: ProviderContinuationMode = "local-primary",
     native_sync_every: int = DEFAULT_NATIVE_SYNC_EVERY,
+    recent_turn_limit: int = DEFAULT_RECENT_TURN_LIMIT,
+    summary_char_limit: int = DEFAULT_SUMMARY_CHAR_LIMIT,
     runtime_context: ProviderRuntimeContext | None = None,
     metadata: dict[str, object] | None = None,
 ) -> ProviderSessionState:
@@ -578,6 +713,8 @@ def make_provider_session_state(
         memory_mode=memory_mode,
         continuation_mode=continuation_mode,
         native_sync_every=native_sync_every,
+        recent_turn_limit=recent_turn_limit,
+        summary_char_limit=summary_char_limit,
         runtime_context=runtime_context,
         metadata=dict(metadata or {}),
     )
@@ -706,17 +843,23 @@ def render_provider_memory_text(session_state: ProviderSessionState) -> str:
         and session_state.memory_summary.summary_text.strip()
     ):
         sections.append(
-            "Compacted prior turn facts:\n" + session_state.memory_summary.summary_text.strip()
+            "Tier 3 rolling summary (model/deterministic, non-authoritative):\n"
+            + session_state.memory_summary.summary_text.strip()
         )
     recent_text = render_recent_memory_entries(
         session_state.recent_memory_entries,
         char_limit=session_state.recent_render_char_limit,
     )
     if recent_text:
-        sections.append("Recent committed turn facts:\n" + recent_text)
+        sections.append("Tier 1 recent committed turn facts (brain-authored):\n" + recent_text)
     if not sections:
         return ""
-    return "\n\n".join(("Provider session memory:", *sections))
+    return "\n\n".join(
+        (
+            "Provider session memory (bounded; Tier 0 canonical run state is rendered separately and wins on conflict):",
+            *sections,
+        )
+    )
 
 
 def should_inject_native_memory_sync(session_state: ProviderSessionState) -> bool:
@@ -804,8 +947,9 @@ def apply_summary_compaction(
     summary_text: str,
     source: str,
 ) -> ProviderSessionState:
-    normalized_summary = _trim_summary_text(
-        summary_text, char_limit=session_state.summary_char_limit
+    normalized_summary = validate_memory_summary_text(
+        summary_text,
+        char_limit=session_state.summary_char_limit,
     )
     if plan.evicted_entries:
         covered_through_turn = plan.evicted_entries[-1].turn_index
@@ -845,7 +989,7 @@ def render_memory_summary_request(
     summary_char_limit: int,
 ) -> str:
     lines = [
-        "Compact the prior firmware-debugging turn history into one durable summary.",
+        "SUMMARY MODE ONLY. Compact the prior firmware-debugging turn history into one durable Tier 3 summary.",
         "",
         "Return exactly one JSON object with this shape:",
         '{"summary_text": "<compact summary>"}',
@@ -854,6 +998,8 @@ def render_memory_summary_request(
         f"- Keep summary_text at or under {summary_char_limit} characters.",
         "- Preserve only durable facts that matter for future diagnosis and repair.",
         "- Prefer concrete observations, hypotheses, actions, results, and verification deltas.",
+        "- Treat the brain-rendered canonical state in later decision turns as authoritative if this summary ever conflicts.",
+        "- Do not propose, repeat, or execute a governed board/client action in summary mode.",
         "- Do not restate tool schemas, system rules, or the current-turn prompt.",
         "- Do not mention that you are summarizing; output only factual memory content.",
         "",
@@ -864,6 +1010,31 @@ def render_memory_summary_request(
         render_recent_memory_entries(evicted_entries, char_limit=24_000) or "(none)",
     ]
     return "\n".join(lines)
+
+
+def validate_memory_summary_text(text: str, *, char_limit: int) -> str:
+    value = text.strip()
+    if not value:
+        raise ValueError("memory summary must be non-empty")
+    if len(value) > char_limit:
+        raise ValueError(
+            f"memory summary exceeded hard limit ({len(value)} > {char_limit} characters)"
+        )
+    return value
+
+
+def _prompt_section_record(*, available_text: str, rendered_text: str) -> dict[str, object]:
+    return {
+        "available_length": len(available_text),
+        "available_hash": _text_hash(available_text),
+        "rendered": bool(rendered_text.strip()),
+        "rendered_length": len(rendered_text),
+        "rendered_hash": _text_hash(rendered_text),
+    }
+
+
+def _text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _trim_text(text: str | None, limit: int) -> str:

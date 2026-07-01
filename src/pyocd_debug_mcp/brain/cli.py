@@ -36,6 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
     run_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     run_parser.add_argument("--native-sync-every", type=int)
+    run_parser.add_argument("--recent-turn-detail-limit", type=int)
+    run_parser.add_argument("--memory-summary-max-chars", type=int)
+    run_parser.add_argument(
+        "--no-preload-common-details",
+        action="store_false",
+        dest="preload_common_details",
+        default=None,
+    )
     run_parser.add_argument("--workspace-root")
     run_parser.add_argument("--build-command")
     run_parser.add_argument(
@@ -57,6 +65,14 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--serial-read-seconds", type=float, default=3.0)
     benchmark_parser.add_argument("--memory-mode", choices=["deterministic", "model-summary"])
     benchmark_parser.add_argument("--native-sync-every", type=int)
+    benchmark_parser.add_argument("--recent-turn-detail-limit", type=int)
+    benchmark_parser.add_argument("--memory-summary-max-chars", type=int)
+    benchmark_parser.add_argument(
+        "--no-preload-common-details",
+        action="store_false",
+        dest="preload_common_details",
+        default=None,
+    )
     _add_planning_hook_arguments(benchmark_parser)
     return parser
 
@@ -96,6 +112,9 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         serial_read_seconds=args.serial_read_seconds,
         memory_mode=getattr(args, "memory_mode", None),
         native_sync_every=getattr(args, "native_sync_every", None),
+        recent_turn_detail_limit=getattr(args, "recent_turn_detail_limit", None),
+        memory_summary_max_chars=getattr(args, "memory_summary_max_chars", None),
+        preload_common_details=getattr(args, "preload_common_details", None),
         port=args.port,
         flash_artifact=args.flash_artifact,
         elf=args.elf,
@@ -136,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
                 iteration_estimate=iteration_estimate,
                 memory_mode=args.memory_mode,
                 native_sync_every=args.native_sync_every,
+                recent_turn_detail_limit=args.recent_turn_detail_limit,
+                memory_summary_max_chars=args.memory_summary_max_chars,
+                preload_common_details=args.preload_common_details,
             )
             benchmark_support.print_case_summary(report)
             return 0 if report.score_report.outcome_label == "full_success" else 1
@@ -151,6 +173,9 @@ def main(argv: list[str] | None = None) -> int:
             iteration_estimate=iteration_estimate,
             memory_mode=args.memory_mode,
             native_sync_every=args.native_sync_every,
+            recent_turn_detail_limit=args.recent_turn_detail_limit,
+            memory_summary_max_chars=args.memory_summary_max_chars,
+            preload_common_details=args.preload_common_details,
         )
         for report in reports:
             benchmark_support.print_case_summary(report)

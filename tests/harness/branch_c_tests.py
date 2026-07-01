@@ -22,7 +22,7 @@ from pyocd_debug_mcp.brain.app import run_freeform_task
 from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation, TurnkeyProviderKind
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EVENT_KINDS
-from pyocd_debug_mcp.brain.loop import _build_instructions, _build_turn_prompt, load_board
+from pyocd_debug_mcp.brain.loop import _build_full_turn_prompt, _build_instructions, load_board
 from pyocd_debug_mcp.brain.mcp_client import LocalMCPClient
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
 from pyocd_debug_mcp.brain.provider_types import ProviderPromptBundle, make_provider_session_state
@@ -468,6 +468,9 @@ def check_provider_dry_run_prompt_render(
         serial_read_seconds=3.0,
         memory_mode="deterministic",
         native_sync_every=10,
+        recent_turn_detail_limit=2,
+        memory_summary_max_chars=2_000,
+        preload_common_details=True,
         port=args.port,
     )
     state = BrainState(
@@ -481,7 +484,9 @@ def check_provider_dry_run_prompt_render(
         effective_max_iters=invocation.max_iters,
     )
     instructions = _build_instructions(invocation)
-    turn_prompt = _build_turn_prompt(invocation, board, state, skills_text="(none)", workspace=None)
+    turn_prompt = _build_full_turn_prompt(
+        invocation, board, state, skills_text="(none)", workspace=None
+    )
     if "effective_timeouts=" not in turn_prompt:
         return CheckResult(
             check_name, FAIL, "rendered prompt is missing the Branch C effective_timeouts line"

@@ -50,7 +50,12 @@ The current live status is:
   provider/hardware Branch C harness checks and explicit two-turn CLI smokes
   with both `codex-cli` and `claude-cli` on the attached
   `nucleo_l476rg + nrf52840dk` boards; exact `nrf52833dk`,
-  API-provider parity, and fresh-machine proof remain deferred
+  live API-provider parity, and fresh-machine proof remain deferred
+- credentials-free API-provider simulation is now green through the real
+  OpenAI/Anthropic provider factory and turnkey-loop paths. It covers
+  request/response handling, OpenAI `previous_response_id` chaining, Anthropic
+  local-memory continuation, prompt render modes, retries/errors, and prompt
+  accounting without requiring unavailable API credits.
 - the new `pyocd-debug` shell is now implemented on top of the same shared
   turnkey loop with:
   - structured brain events
@@ -276,6 +281,9 @@ Firmware-CLI/
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
     |   |-- README.md
     |   |-- r12_turnkey_spec.md
+    |   |-- r12-prompt-memory-cost-hardening_spec.md
+    |   |-- r12-prompt-memory-cost-hardening_process.md
+    |   |-- r12-provider-native-skill-bridge_spec.md
     |   `-- wave2-codebase-map_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
@@ -318,6 +326,13 @@ Firmware-CLI/
     `deterministic` or `model-summary`
   - `PYOCD_TURNKEY_NATIVE_SYNC_EVERY` for native-session safety-sync cadence
     (default `10`; `0` disables periodic sync injection)
+  - `PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT` for the detailed recent provider
+    memory window (default `2`)
+  - `PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS` for the hard limit on compacted
+    provider memory summaries (default `2000`)
+  - `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS` to enable/disable preloading common
+    governed-action details such as `connect` and `run_green_check` (default
+    enabled)
   - `OPENAI_API_KEY` for the native OpenAI API provider
   - `ANTHROPIC_API_KEY` for the native Anthropic API provider
 - With a board id set, the MCP server resolves that board's facts (target,
@@ -507,6 +522,12 @@ Turnkey provider rules:
   than Claude Code-style session resume.
 - provider continuity is unified across all backends:
   - the brain always persists compact local turn-fact memory
+  - ordinary later turns render compact canonical state and focused loaded
+    details rather than repeating the full bootstrap task body, full decision
+    schema, and full provider memory
+  - selected turnkey skill facts render in full at bootstrap/sync, while
+    ordinary remote-delta turns use a compact skill digest with IDs, counts, and
+    hashes
   - remote-primary providers periodically receive that compact memory as a
     safety sync; the default is every 10 provider turns, configurable with
     `--native-sync-every` / `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
@@ -531,8 +552,15 @@ Turnkey provider rules:
 - turnkey memory controls are optional:
   - `--memory-mode deterministic|model-summary`
   - `--native-sync-every N` (`10` by default; `0` disables periodic sync)
+  - `--recent-turn-detail-limit N` (`2` by default)
+  - `--memory-summary-max-chars N` (`2000` by default)
+  - `--no-preload-common-details` to disable default `connect` and
+    `run_green_check` detail preload
   - `.env`:
-    `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`
+    `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`,
+    `PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT`,
+    `PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS`,
+    `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS`
 
 Windows PowerShell:
 
@@ -625,6 +653,7 @@ Current limitation:
 - Roadmap: [markdowns/ROADMAP.md](./markdowns/ROADMAP.md)
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
+- R12 prompt/memory cost hardening hard bar: [markdowns/curr/r12-prompt-memory-cost-hardening_spec.md](./markdowns/curr/r12-prompt-memory-cost-hardening_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)

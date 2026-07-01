@@ -11,7 +11,11 @@ ONLY INCLUDE for the first capability prototype:
 1. Persistent session and model memory.
    - Current direction: use provider-native resume where available plus the
      compact brain-owned provider-memory ledger. Remote-primary providers sync
-     that compact memory every 10 provider turns by default.
+     that compact memory every 10 provider turns by default. The July 1 prompt
+     cost hardening keeps cross-invocation provider-session persistence out of
+     scope, but now bounds in-run memory with a two-turn detailed window, a
+     hard-limited rolling summary, compact Tier 0 canonical state on every
+     decision turn, and rendered-vs-available prompt telemetry.
 2. Free host work with a final governed board-decision boundary.
 3. Compact real tool-metadata index in the prompt.
 4. Basic timeout hardening and timeout audit fixes.
@@ -36,6 +40,10 @@ ONLY INCLUDE for the first capability prototype:
    auto-details, strict loaded-detail guardrails before governed tool/script or
    brain-owned compound-action execution, and canonical prompt ordering/dedupe
    for the context surfaces that already exist.
+   Later-turn prompt cost hardening is now implemented for the current
+   turnkey path: bootstrap/full turns may carry the large setup context, while
+   ordinary later turns receive compact state plus focused loaded details and
+   telemetry rather than repeated full schema/memory bundles.
 15. Client-side `codebase_map.md` for Wave 2 model-native code work. On first
    workspace boot the provider authors a codebase map from a deterministic
    inventory skeleton; every provider turn gets the skill index, available-tool
@@ -76,10 +84,22 @@ Prototype acceptance contract:
   governed client script, or brain-owned compound action before its details are
   loaded in the session, the brain blocks execution, auto-loads the focused
   details, records the guardrail, and asks for a fresh decision. Full
-  product-suite closure is still pending because Claude/API proof, exact
-  official `nrf52833dk` proof, fresh-machine proof, and the Wave 2
-  prototype-priority modules remain required. Wave 2 codebase-map scaffolding is
-  now specified in `markdowns/curr/wave2-codebase-map_spec.md`, not implemented.
+  product-suite closure is still pending because API proof, exact official
+  `nrf52833dk` proof, fresh-machine proof, and the Wave 2 prototype-priority
+  modules remain required. Claude CLI is no longer a basic provider/hardware
+  blocker in this environment: after local auth was restored, the Branch C
+  harness passed on both attached boards (`nucleo_l476rg` and retained
+  `nrf52840dk`). That attached-board Claude proof still does not replace exact
+  official-pair proof on `nrf52833dk + nucleo_l476rg`. Wave 2 codebase-map
+  scaffolding is now specified in `markdowns/curr/wave2-codebase-map_spec.md`,
+  not implemented. The prompt/memory cost hardening spec at
+  `markdowns/curr/r12-prompt-memory-cost-hardening_spec.md` is now a Wave 1
+  validation requirement: bootstrap/full prompt rendering, ordinary compact
+  `remote-delta` state, bounded in-run memory, focused detail rendering,
+  rendered-vs-available prompt telemetry, and credentials-free API-path
+  simulation must stay green before Wave 1 can be called complete. Live API
+  calls still depend on credentials/credits, and exact official `nrf52833dk`
+  proof remains an external hardware boundary.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -696,8 +716,9 @@ Implemented in the 2026-06-30 Branch B hard-bar correction for the current
 turnkey prototype: `read_file`, `replace_file`, and `run_build` are structurally
 removed from governed decisions, host work is provider-native, `load_skills` is
 the model-native context-expansion decision, and the brain observes workspace
-changes at governed boundaries. Remaining proof gap: Claude quota reset and
-exact official-board live reruns still need the morning handoff.
+changes at governed boundaries. Later attached-board Claude proof is green after
+auth/quota restoration; remaining proof gaps are exact official-board live
+reruns, API-provider parity, and fresh-machine deployment proof.
 
 ---
 
@@ -3479,6 +3500,14 @@ prefix that holds the index, safety lines, and tool definitions from entry #1.
 - **Runtime repair only.** Installed skills are client-owned and read-only;
   provider edits are limited to the session/runtime copy. Durable source-skill
   fixes are maintainer work outside the run.
+- **Launch risk is packaging/config drift, not the current loader design.** The
+  implemented Wave 1 loader boundary is the intended product stance: product
+  skills come from a client-owned root, are copied into a per-session runtime
+  directory before init/context, and preflight blocks init scripts that import
+  probe/serial stacks or invoke board/probe commands directly. The remaining
+  launch risk is accidentally shipping a package/config that points the product
+  skill root back at `.codex/skills` or `.claude/skills`, mutates installed
+  source packages, or omits the init-script preflight on a clean install.
 - **Safety lines are never on-demand-only.** `forbidden_actions` must always be
   in context; only the diagnostic/verification detail is pullable.
 - **Selection stays deterministic.** `load_skills_for_context` is unchanged; only
@@ -3499,7 +3528,10 @@ scaffold-hardening pass in
 root, runtime-copy init/context, structured failures/recovery, prompt
 ordering/dedupe, tool-detail loading, and strict loaded-detail guardrails before
 governed tool/script or brain-owned compound-action execution. Wave 2 still owns
-codebase-map injection from entry #25 and cache-assisted reuse.
+codebase-map injection from entry #25 and cache-assisted reuse. Pre-launch
+packaging must preserve this loader boundary on clean installs: no `.codex` or
+`.claude` product-skill default, no provider writes to installed skill source,
+and no raw hardware/probe init bypass through skill init scripts.
 
 ---
 

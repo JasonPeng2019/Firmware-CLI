@@ -335,11 +335,19 @@ def test_operator_cli_parser_supports_memory_controls() -> None:
             "model-summary",
             "--native-sync-every",
             "6",
+            "--recent-turn-detail-limit",
+            "2",
+            "--memory-summary-max-chars",
+            "1800",
+            "--no-preload-common-details",
         ]
     )
 
     assert args.memory_mode == "model-summary"
     assert args.native_sync_every == 6
+    assert args.recent_turn_detail_limit == 2
+    assert args.memory_summary_max_chars == 1800
+    assert args.preload_common_details is False
 
 
 def _make_renderer(stream: io.StringIO | None = None) -> UXRenderer:

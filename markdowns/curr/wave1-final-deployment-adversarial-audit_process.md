@@ -41,7 +41,6 @@ R12 scaffold-hardening contract, and the delta compact-index follow-up.
 
 ## TODO
 
-- Claude CLI proof after local `claude` authentication/login is restored.
 - OpenAI/Anthropic API-provider parity proof when API credentials and model
   configuration are available.
 - Exact official `nrf52833dk` destructive recover/reference Stage 0 proof using
@@ -53,7 +52,8 @@ R12 scaffold-hardening contract, and the delta compact-index follow-up.
 - Wave 2 modules D/E/F/G/H remain prototype-required but are not part of the
   implemented Wave 1 product slice unless a current doc or code path falsely
   claims they are done.
-- Claude CLI proof may be blocked by local provider login/quota.
+- Claude CLI proof was initially blocked by local provider login, then rerun
+  successfully after the CLI session became authenticated.
 - OpenAI/Anthropic API-provider parity depends on credentials and model config.
 - Exact official `nrf52833dk` proof depends on which Nordic board is physically
   attached in this session.
@@ -103,8 +103,9 @@ Adversarial audit plan:
    - audit for broad hidden failures or swallowed cleanup/provider exceptions
      that would make deployment evidence untrustworthy.
 6. Product/docs:
-   - ensure current docs distinguish Wave 1 from Wave 2, Codex proof from
-     Claude/API proof, retained `nrf52840dk` from official `nrf52833dk`, and
+   - ensure current docs distinguish Wave 1 from Wave 2, CLI-provider proof
+     from live API-provider proof, credentials-free API simulation from paid
+     API calls, retained `nrf52840dk` from official `nrf52833dk`, and
      non-hardware proof from live board proof;
    - ensure active `curr` docs index this audit and do not leave completed
      process ledgers competing with current status.
@@ -165,9 +166,10 @@ Audit execution and classification:
   steady state. Live artifacts show the bootstrap turn creates a thread and
   turns 2-3 use `resumed_thread=true`, `prompt_render_mode=remote-delta`, and
   the same thread id.
-- External boundary: Claude CLI rows reach hardware preconditions but the local
-  CLI returns `Not logged in - Please run /login`; no valid Claude provider
-  decision reaches hardware in this environment.
+- Resolved boundary: Claude CLI rows initially reached hardware preconditions
+  but failed on local provider auth (`Not logged in - Please run /login`).
+  After auth was restored, both attached-board Claude CLI rows passed and valid
+  Claude provider decisions reached hardware.
 - External boundary: official `nrf52833dk` row sees the Nordic probe, but the
   current Branch C harness precondition does not pass the destructive
   `--recover-test` and explicit reference-firmware Stage 0 inputs required by
@@ -212,11 +214,16 @@ Audit execution and classification:
   `memory_injected=false`, and `static_tool_schema_injected=true`; action chain
   was `load_tool_details`, then `action_batch(connect,get_board_info)`, then
   `finalize`.
-- Claude CLI Branch C attempts:
-  `runs/wave1-final-branch-c-nucleo-claude.log` and
-  `runs/wave1-final-branch-c-nrf52840-claude.log` both passed hardware
-  preconditions and hardware-only checks, then skipped/fail provider rows
-  because `claude-cli` reported `Not logged in - Please run /login`.
+- Claude CLI Branch C after auth restored, Nucleo board:
+  `uv run python -m tests.harness.branch_c_tests --board-id nucleo_l476rg --provider claude-cli --provider-timeout-seconds 240`
+  passed `9 passed, 0 failed, 0 skipped`; log
+  `runs/wave1-claude-auth-restored-nucleo.log`; run root
+  `runs/20260630T224604Z-331dd567`.
+- Claude CLI Branch C after auth restored, retained Nordic board:
+  `uv run python -m tests.harness.branch_c_tests --board-id nrf52840dk --provider claude-cli --provider-timeout-seconds 240`
+  passed `9 passed, 0 failed, 0 skipped`; log
+  `runs/wave1-claude-auth-restored-nrf52840.log`; run root
+  `runs/20260630T224845Z-07590327`.
 - Official `nrf52833dk` Branch C attempt:
   `runs/wave1-final-branch-c-nrf52833-codex.log` passed deterministic checks,
   probe visibility, and Codex provider dry-run; it failed Stage 0 preconditions
@@ -232,7 +239,6 @@ Audit execution and classification:
 
 ## Pending verification
 
-- Claude CLI after local login.
 - API providers with credentials.
 - Exact official `nrf52833dk` destructive Stage 0 proof.
 - Fresh-machine proof.
