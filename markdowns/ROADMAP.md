@@ -1249,7 +1249,7 @@ This item builds the premium product tier on top of the proven substrate.
 
 ### Definition of done
 
-`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work freely on the host, request governed board actions only when needed, avoid unbounded waits, stream progress, validate fixes with scoped evidence, use cache/static-context efficiency including codebase-map scaffolding for workflow skill turns and significant code edits, checkpoint long UART/build/client-action streams, and clean up provider/MCP/pyOCD/serial/board sessions. A narrower subset is not done.
+`R12` is done when the turnkey CLI can drive the full loop on either board and demonstrates a meaningful premium advantage. The current prototype definition of "meaningful" is not shipped-product polish; it is proof that the model can keep context through provider sessions plus brain-owned memory and periodic native safety sync, do substantial host-side work freely on the host, request governed board actions only when needed, avoid unbounded waits, stream progress, validate fixes with scoped evidence, use cache/static-context efficiency including codebase-map scaffolding for workflow skill turns and significant code edits, checkpoint long UART/build/client-action streams through a brain-mediated mid-tool observation buffer, and clean up provider/MCP/pyOCD/serial/board sessions. A narrower subset is not done.
 
 ### What it does not include
 
@@ -1487,12 +1487,14 @@ Corrected schedule:
     - `markdowns/tmp/curr-archive-20260628/p0_foundation_spec.md`
     - `markdowns/tmp/curr-archive-20260628/p0_foundation_process.md`
   - deliverables:
-    - `brain/decision_types.py`
-    - expanded `brain/provider_types.py`
+    - `src/pyocd_debug_mcp/brain/decision_types.py`
+    - expanded `src/pyocd_debug_mcp/brain/provider_types.py`
     - shared turnkey timeout config/update shapes in `timeouts.py`
-    - minimal `brain/client_actions.py`
-    - compatibility-preserving hook points in `brain/actions.py`,
-      `brain/loop.py`, and `brain/cli.py`
+    - minimal `src/pyocd_debug_mcp/brain/client_actions.py`
+    - compatibility-preserving hook points in
+      `src/pyocd_debug_mcp/brain/actions.py`,
+      `src/pyocd_debug_mcp/brain/loop.py`, and
+      `src/pyocd_debug_mcp/brain/cli.py`
 - Wave 1:
   - Branch A: provider session + compact tool-index prompt; acceptable prototype bridge
   - Branch B: action boundary + batches + client actions; free-host/final-
@@ -1515,7 +1517,9 @@ Corrected schedule:
 - serial merge-back: A, corrected B, and C merge into Wave 0 one at a time
 - Wave 2 hard-bar modules, not current git branches:
   - Module D: progress UI + inspector
-  - Module E: stream checkpoints
+  - Module E: stream checkpoints, now specified as provider-visible
+    mid-tool observation buffers in
+    `markdowns/curr/wave2-midtool-checkpoints_spec.md`
   - Module F: scoped green approval
   - Module G: static context efficiency, codebase-map scaffolding, and
     cache-assisted reuse
@@ -1548,10 +1552,12 @@ Parallelization rule:
 - when Wave 0 changes during an active parallel wave, merge `P-Wave-0` into each
   active target branch one at a time, run that branch's checks, and push it
   before continuing feature work
-- Long-lived branches should not broadly edit `brain/loop.py`,
-  `brain/actions.py`, `brain/cli.py`, or `server.py`; use the ownership matrix
-  in `markdowns/R12_P_SPLIT.md` and keep shared-file edits as tiny integration
-  patches.
+- Long-lived branches should not broadly edit
+  `src/pyocd_debug_mcp/brain/loop.py`,
+  `src/pyocd_debug_mcp/brain/actions.py`,
+  `src/pyocd_debug_mcp/brain/cli.py`, or `src/pyocd_debug_mcp/server.py`; use
+  the ownership matrix in `markdowns/R12_P_SPLIT.md` and keep shared-file edits
+  as tiny integration patches.
 
 ### Phase A: Foundation Setup
 

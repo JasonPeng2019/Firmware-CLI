@@ -71,6 +71,18 @@ G static-context work. It is not implemented. The spec requires first-boot
 injection once for workflow skill turns, and a bounded map-maintenance subturn
 after provider-native file changes before the next governed action is trusted.
 
+Wave 2 planning update, 2026-07-01: provider-visible mid-tool checkpoint
+buffers are now specified in
+`markdowns/curr/wave2-midtool-checkpoints_spec.md` and assigned to Module E
+stream-checkpoint work. The current implementation does not have this feature:
+long server/client actions still resolve as whole request/response waits, even
+though some services poll internally and the operator shell renders coarse
+provider/tool progress events. The Wave 2 target is a generic
+brain-mediated observation buffer for UART/build/client-action streams so the
+provider can inspect null reads, bad reads, partial output, stalls, and early
+errors before final timeout, then return a bounded continue/cancel/narrow-adjust
+checkpoint verdict.
+
 Scaffold-hardening implementation update, 2026-06-30: the current Branch B
 model-native skill/tool prompt scaffold now implements the product-boundary work
 required before Wave 2 builds on it. The active contract is

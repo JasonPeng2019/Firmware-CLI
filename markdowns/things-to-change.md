@@ -25,7 +25,11 @@ ONLY INCLUDE for the first capability prototype:
 6. Batches, `wait`, and UART write.
 7. Client actions / model-authored scripts.
 8. Progress output and developer inspector.
-9. Stream checkpoints for UART/build/client-action flows.
+9. Stream checkpoints for UART/build/client-action flows. Wave 2 Module E is
+   now specified in `markdowns/curr/wave2-midtool-checkpoints_spec.md`: the
+   target is a generic brain-mediated mid-tool observation buffer for
+   null-read, bad-read, partial-output, stall, and early-error signals, not a
+   board-presence special case.
 10. Scoped green approval via model-made flipped tests.
 11. Prompt incentive for targeted debug prints.
 12. Proof escalation ladder for expensive live validation.
@@ -133,7 +137,10 @@ Prototype acceptance contract:
   shell regression and smoke proof so piped multi-command scripts can exercise
   `/history`, `/prompt`, and `/events` without a Windows console. Live API calls
   still depend on credentials/credits, and exact official `nrf52833dk` proof
-  remains an external hardware boundary.
+  remains an external hardware boundary. Wave 2 Module E checkpoint-buffer
+  design is now captured in
+  `markdowns/curr/wave2-midtool-checkpoints_spec.md`; it is planning-only and
+  not implemented.
 
 # Later MVP / Nice-To-Have Priority
 
@@ -2802,8 +2809,11 @@ this change. Avoid the worker/job layer for now.
 
 ### What the change is
 
-For the stream-like operations only, run the operation as short chunks and allow the
-model to request early termination through a structured checkpoint decision.
+For the stream-like operations only, run the operation as short chunks or as an
+internal checkpoint-capable job, append observations to a brain/server-owned
+buffer, and allow the model to request early termination through a structured
+checkpoint decision. The provider must see checkpoint context through the brain,
+not by polling raw server tools directly while another tool is running.
 
 The control shape is:
 
@@ -2814,6 +2824,14 @@ brain occasionally asks the model for a checkpoint decision
 model may request termination through a structured response
 brain owns/applies the cancel flag and stops between chunks
 ```
+
+The Wave 2 design anchor is
+`markdowns/curr/wave2-midtool-checkpoints_spec.md`. It requires the checkpoint
+record to capture job/action identity, elapsed time, latest chunks, no-data or
+null-read counters, bad-read/stall/early-error markers, and cleanup state.
+Normal operator UX should show concise progress and important checkpoint
+conclusions; developer/inspector UX should expose the detailed buffer and
+provider checkpoint verdicts.
 
 The model should not write a raw shared-memory flag. The model emits a structured
 checkpoint response; the brain validates it and updates brain-owned cancellation
@@ -2939,9 +2957,11 @@ on the same missing include and continuing will not help."
 
 ### Status
 
-Proposal only. Not yet specced, not yet implemented. Scoped companion to entries
-#7, #14, #19, and #20: bounded waits, visible stream progress, developer inspection,
-and model-requested early termination for stream-friendly operations only.
+Proposal only. Now specced in
+`markdowns/curr/wave2-midtool-checkpoints_spec.md`; not yet implemented.
+Scoped companion to entries #7, #14, #19, and #20: bounded waits, visible
+stream progress, developer inspection, and model-requested early termination
+for stream-friendly operations only.
 
 ---
 

@@ -22,7 +22,10 @@ Current prototype focus:
   decision
 - structured decision files/objects as the source of truth for brain actions
 - an inspector mode for prompt/brain/provider/server debugging
-- chunked checkpoints for UART reads, builds, and long client actions
+- chunked checkpoints for UART reads, builds, and long client actions. The Wave
+  2 Module E target is now a brain-mediated mid-tool observation buffer, not a
+  board-presence special case; see
+  `markdowns/curr/wave2-midtool-checkpoints_spec.md`.
 
 ## Non-Negotiable First Change
 
@@ -134,9 +137,32 @@ The current repo now ships the Pass 1 UX layer with these implemented pieces:
   - `pyocd-debug show <session_id>`
   - `pyocd-debug rerun <session_id>`
 
+### Current Operator Visibility
+
+Current `pyocd-debug-brain run` is the headless product/automation surface and
+prints the final result block only. Current `pyocd-debug` is the operator shell
+and renders more live information:
+
+- run start and session context;
+- provider progress events, including developer-style lines such as
+  `provider [provider_request] Dispatching Codex CLI turn.`;
+- tool start and completion lines with short result excerpts;
+- Evidence Summary panels after provider turns, sourced from structured
+  observation/classification/hypothesis/strategy/next-action fields rather than
+  hidden chain-of-thought;
+- raw provider output when `/raw on`, `/raw last`, or the one-shot renderer's
+  final raw-output policy is active;
+- final Run Result panels and artifact/history commands.
+
+Final-product direction: normal operator mode should keep concise live progress
+and evidence summaries, but provider-dispatch internals and detailed
+checkpoint/provider buffers should move behind verbose or inspector output.
+
 What is deliberately **not** implemented yet:
 
 - token-by-token provider streaming
+- provider-visible mid-tool checkpoint buffers for UART/build/client-action
+  streams
 - live reconnection into an already-running session
 - any MCP server API changes
 - any benchmark schema/corpus changes
@@ -349,10 +375,11 @@ experience.
 The current barebones CLI is intentionally thin. The important product logic
 already lives elsewhere:
 
-- `brain/cli.py` is only the entrypoint and final printer
-- `brain/loop.py` owns the real orchestration loop
-- `brain/mcp_client.py` owns local MCP server startup and tool calls
-- `brain/benchmark.py` owns turnkey benchmark execution
+- `src/pyocd_debug_mcp/brain/cli.py` is only the entrypoint and final printer
+- `src/pyocd_debug_mcp/brain/loop.py` owns the real orchestration loop
+- `src/pyocd_debug_mcp/brain/mcp_client.py` owns local MCP server startup and
+  tool calls
+- `src/pyocd_debug_mcp/brain/benchmark.py` owns turnkey benchmark execution
 
 This separation is good and should be preserved.
 
@@ -812,8 +839,13 @@ Exit criteria:
   observations
 - UART reads, builds/external commands, and long client actions can emit
   checkpoint chunks
-- checkpoint turns can return a bounded continue/cancel verdict, while ordinary
-  model prose during those checkpoint turns is ignored by the brain
+- checkpoint turns can return a bounded continue/cancel/narrow-adjust verdict,
+  while ordinary model prose during those checkpoint turns is ignored by the
+  brain
+- checkpoint details follow
+  `markdowns/curr/wave2-midtool-checkpoints_spec.md`: generic mid-tool
+  observation buffer, brain-mediated provider verdicts, real cleanup state on
+  cancellation, concise normal UX, and detailed inspector UX
 
 ### Phase 4: Add The Interactive Shell
 

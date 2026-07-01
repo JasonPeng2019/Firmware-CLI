@@ -72,6 +72,11 @@ The current live status is:
   - evidence summaries
   - history/show/rerun flows
   - raw-provider-output visibility after completed turns
+- Wave 2 Module E mid-tool checkpoint buffers are now specified in
+  `markdowns/curr/wave2-midtool-checkpoints_spec.md`; they are not implemented
+  yet. The target is a generic brain-mediated checkpoint observation buffer for
+  UART/build/client-action streams so providers can inspect null reads, bad
+  reads, stalls, partial output, and early errors before final timeout.
 - `claude-cli` is no longer globally blocked on this host:
   - STM32 freeform and `k001` benchmark proof now exist through the local
     Claude CLI path
@@ -300,7 +305,8 @@ Firmware-CLI/
     |   |-- r12-tier2-memory-bridge_spec.md
     |   |-- r12-provider-native-skill-bridge_spec.md
     |   |-- r12-provider-native-skill-invocation-proof_spec.md
-    |   `-- wave2-codebase-map_spec.md
+    |   |-- wave2-codebase-map_spec.md
+    |   `-- wave2-midtool-checkpoints_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
 
@@ -710,6 +716,7 @@ Current limitation:
 - R12 provider-native skill invocation proof: [markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md](./markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md)
 - R12 provider-native UX CLI controls gap record: [markdowns/curr/r12-provider-native-ux-cli-controls_spec.md](./markdowns/curr/r12-provider-native-ux-cli-controls_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
+- Wave 2 mid-tool checkpoint buffer spec: [markdowns/curr/wave2-midtool-checkpoints_spec.md](./markdowns/curr/wave2-midtool-checkpoints_spec.md)
 - Archived July 1 current adversarial audit handoff/process ledger: [markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md](./markdowns/tmp/curr-archive-20260701-current-adversarial-audit/wave1-current-adversarial-audit_process.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)

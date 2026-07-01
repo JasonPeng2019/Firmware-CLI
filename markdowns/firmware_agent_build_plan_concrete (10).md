@@ -903,8 +903,11 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
     prompt the model to consult it before new files or significant code edits,
     and run a bounded map-maintenance turn after provider-native file changes
     before trusting the next governed action.
-13. **Add chunked stream checkpoints only where payoff is high.** Implement checkpoint/cancel handling for
-    UART reads, builds/external commands, and long client actions. Do not broaden this prototype into the
+13. **Add chunked stream checkpoints only where payoff is high.** Implement a
+    brain-mediated checkpoint observation buffer plus checkpoint/cancel handling
+    for UART reads, builds/external commands, and long client actions, so the
+    provider can inspect null reads, bad reads, stalls, partial output, and
+    early errors before final timeout. Do not broaden this prototype into the
     pyOCD worker/job layer.
 
 **Exit criteria:** `pyocd-debug-brain` still runs the full loop turnkey on the scoped pair (`nrf52833dk` +

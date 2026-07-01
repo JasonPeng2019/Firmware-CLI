@@ -38,8 +38,10 @@ Rule of thumb:
 - every branch starts from the current Wave 0 branch
 - every finished wave merges back into Wave 0 before the next wave starts
 - the next wave starts only after the prior wave's required dependencies land
-- broad edits to `brain/loop.py`, `brain/actions.py`, `brain/cli.py`, and
-  `server.py` are serialized integration work
+- broad edits to `src/pyocd_debug_mcp/brain/loop.py`,
+  `src/pyocd_debug_mcp/brain/actions.py`,
+  `src/pyocd_debug_mcp/brain/cli.py`, and `src/pyocd_debug_mcp/server.py` are
+  serialized integration work
 - no branch, wave, or validation report is complete unless every relevant
   `things-to-change.md` prototype-priority item is mapped to code, tests, and
   run evidence
@@ -87,7 +89,12 @@ official `nrf52833dk`, API-provider parity, or fresh-machine proof.
 Wave 2 Module G now also includes the codebase-map specification in
 `markdowns/curr/wave2-codebase-map_spec.md`; that feature is planning-only until
 implemented and validated on a rebuilt Wave 2 branch/module pass. The
-prerequisite scaffold hardening at
+provider-visible mid-tool checkpoint-buffer design for Wave 2 Module E is now
+specified in `markdowns/curr/wave2-midtool-checkpoints_spec.md`; it is also
+planning-only until implemented. Module E must treat checkpointing as a generic
+brain-mediated observation buffer for UART/build/client-action streams, not as a
+special board-presence poller or raw provider access to server tools.
+The prerequisite scaffold hardening at
 `markdowns/curr/r12-context-scaffold-hardening_spec.md` has landed:
 product/client-owned model-native skills rather than `.codex/skills`,
 runtime-copy-only skill repair, structured skill-load failures,
@@ -222,9 +229,9 @@ Modules:
 5. `src/pyocd_debug_mcp/brain/client_actions.py`
    - empty/minimal client-action store shape only
 6. Tiny hook points in:
-   - `brain/loop.py`
-   - `brain/actions.py`
-   - `brain/cli.py`
+   - `src/pyocd_debug_mcp/brain/loop.py`
+   - `src/pyocd_debug_mcp/brain/actions.py`
+   - `src/pyocd_debug_mcp/brain/cli.py`
 
 P0 should not implement the full features. It should preserve current behavior
 and add tests for parsing/serialization and no-op hooks.
@@ -485,15 +492,29 @@ Should not own:
 Serial order inside Module E:
 
 1. `stream_checkpoints.py`
-   - checkpoint records
-   - continue/cancel verdict
-   - stall policy
+   - checkpoint job and record schema
+   - provider checkpoint verdict: continue/cancel/narrow adjustment
+   - stall, null-read, bad-read, partial-output, early-error, and no-new-data
+     policy
+   - bounded provider checkpoint turn that cannot start unrelated board work
 2. Build/external-command chunking:
    - `workspace.py`
+   - stdout/stderr chunks, stall markers, early compiler/tool errors, and
+     process cleanup status on cancellation
 3. UART read chunking:
-   - UART read path emits chunks and observes cancellation
+   - UART read path emits chunks, null-read/no-data observations, expected-match
+     or unexpected-output markers, and observes cancellation
 4. Client-action chunking:
-   - `client_actions.py` emits chunks and observes cancellation
+   - `client_actions.py` emits chunks/checkpoints, exposes progress to the
+     brain, and observes cancellation
+5. UX/artifact integration:
+   - normal operator progress shows concise checkpoint state
+   - developer/inspector output shows checkpoint buffers, provider verdicts,
+     prompt snippets, and final cleanup state
+
+Design anchor:
+
+- `markdowns/curr/wave2-midtool-checkpoints_spec.md`
 
 Cross-branch dependency:
 
@@ -688,10 +709,10 @@ branch.
 
 Owns:
 
-- final wiring in `brain/loop.py`
-- final wiring in `brain/actions.py`
-- final wiring in `brain/cli.py`
-- final server wrapper cleanup in `server.py`
+- final wiring in `src/pyocd_debug_mcp/brain/loop.py`
+- final wiring in `src/pyocd_debug_mcp/brain/actions.py`
+- final wiring in `src/pyocd_debug_mcp/brain/cli.py`
+- final server wrapper cleanup in `src/pyocd_debug_mcp/server.py`
 - wiring already-implemented proof-ladder and artifact-cache hooks where the
   shared integration files would otherwise create parallel-branch conflicts
 - acceptance tests/docs cleanup
@@ -769,6 +790,10 @@ into the other branch, or into final integration.
   in-run provider memory, common detail preload, and rendered-vs-available
   prompt telemetry. It still does not include cross-invocation provider-session
   persistence.
+- Wave 2 Module E now has an active design spec at
+  `markdowns/curr/wave2-midtool-checkpoints_spec.md`. The feature remains
+  unimplemented; current code still has whole request/response waits for long
+  server/client actions rather than provider-visible checkpoint buffers.
 - Wave 1 validation must include the prompt/memory hardening tests and
   credentials-free OpenAI/Anthropic API-path simulation checks. Live API calls
   remain a separate credential/credit-dependent proof boundary.

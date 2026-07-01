@@ -43,6 +43,9 @@ active current-step truth, not historical process ledgers or branch proof notes.
 
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
+- `wave2-midtool-checkpoints_spec.md` - active Wave 2 Module E spec for a
+  brain-mediated mid-tool checkpoint observation buffer over
+  UART/build/client-action streams.
 
 Canonical current status now lives in:
 
@@ -147,7 +150,8 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ## Verified
 
 - `markdowns/curr/` now contains this index, active/implemented R12 Wave 1
-  specs, and the active Wave 2 codebase-map spec.
+  specs, and active Wave 2 specs for codebase-map scaffolding and mid-tool
+  checkpoint buffers.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
@@ -177,6 +181,10 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   new valid spec or product gaps. The full non-hardware suite ladder, focused
   Wave 1 tests, provider-native projection tests, operator shell smoke, and
   live no-hardware Codex/Claude hidden-token native-skill proof were green.
+- Completed Wave 1 specs remain in `curr/` as regression contracts until the
+  team intentionally archives them behind a canonical Wave 1 closure/index
+  record. They are no longer process ledgers, but they are still useful hard-bar
+  references while Wave 2 branches build on the Wave 1 substrate.
 
 ## Pending Verification
 
@@ -189,6 +197,6 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - Remaining proof gaps are external: live API credentials, exact official-board
   proof beyond the attached board set, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.
-- Wave 2 progress/inspector, checkpoints, scoped green approval, static
-  context/cache reuse, codebase-map scaffolding, and cleanup guard work remains
-  hard prototype scope.
+- Wave 2 progress/inspector, mid-tool checkpoint buffers, scoped green approval,
+  static context/cache reuse, codebase-map scaffolding, and cleanup guard work
+  remains hard prototype scope.
