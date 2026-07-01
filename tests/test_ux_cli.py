@@ -392,6 +392,55 @@ def test_operator_shell_falls_back_to_dummy_output_without_console(
     assert shell._session is not None
 
 
+def test_operator_shell_falls_back_when_patch_stdout_has_no_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoConsoleError(RuntimeError):
+        pass
+
+    class BrokenPatchStdout:
+        def __enter__(self) -> object:
+            raise NoConsoleError("no console")
+
+        def __exit__(self, *args: object) -> bool:
+            return False
+
+    prompts = iter(["/quit"])
+    calls: list[dict[str, object]] = []
+
+    def fake_prompt_session(*args: object, **kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return SimpleNamespace(prompt=lambda *p_args, **p_kwargs: next(prompts))
+
+    monkeypatch.setattr(ux_shell.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(ux_shell, "_NO_CONSOLE_ERRORS", (NoConsoleError,))
+    monkeypatch.setattr(ux_shell, "patch_stdout", lambda: BrokenPatchStdout())
+    monkeypatch.setattr(ux_shell, "PromptSession", fake_prompt_session)
+
+    shell = _make_shell()
+
+    assert shell.run() == 0
+    assert calls[0] == {}
+    assert isinstance(calls[1]["output"], ux_shell.DummyOutput)
+
+
+def test_operator_shell_reads_piped_commands_without_prompt_toolkit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = io.StringIO()
+
+    def fail_patch_stdout() -> object:
+        raise AssertionError("pipe mode should not call prompt_toolkit patch_stdout")
+
+    monkeypatch.setattr(ux_shell.sys, "stdin", io.StringIO("/help\n/quit\n"))
+    monkeypatch.setattr(ux_shell, "patch_stdout", fail_patch_stdout)
+
+    shell = _make_shell(_make_renderer(stream))
+
+    assert shell.run() == 0
+    assert "Slash commands" in stream.getvalue()
+
+
 def test_parse_shell_input_preserves_raw_arg_text_for_build_command() -> None:
     parsed = parse_shell_input('/build-command "west build -b nucleo_l476rg"')
     assert parsed == SlashCommand(

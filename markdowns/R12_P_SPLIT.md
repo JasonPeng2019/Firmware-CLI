@@ -119,7 +119,10 @@ behavior inside the brain or reverting product skill source to global
 `.codex`/`.claude` folders. Wave 1 validation must also run the focused
 `tests/harness/provider_native_skill_usage.py` proof: each CLI provider must
 consume a run-local projected proof skill, return the hidden token through a
-valid `TurnDecision`, and avoid `load_skills` fallback.
+valid `TurnDecision`, and avoid `load_skills` fallback. The final Wave 1
+double-check also requires non-interactive operator shell smoke coverage:
+piped command scripts must run through `pyocd-debug` without a Windows console
+and still support history/artifact commands for multi-user-prompt validation.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 

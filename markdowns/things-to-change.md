@@ -123,9 +123,12 @@ Prototype acceptance contract:
   token from the skill body without `load_skills` fallback. The proof is
   recorded in `markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md`
   and report files under `runs/provider-native-skill-usage/`; the suite ladder
-  report is `runs/r12-provider-native-skill-invocation-proof-suite.txt`. Live
-  API calls still depend on credentials/credits, and exact official
-  `nrf52833dk` proof remains an external hardware boundary.
+  report is `runs/r12-provider-native-skill-invocation-proof-suite.txt`.
+  The final Wave 1 adversarial double-check added a non-interactive operator
+  shell regression and smoke proof so piped multi-command scripts can exercise
+  `/history`, `/prompt`, and `/events` without a Windows console. Live API calls
+  still depend on credentials/credits, and exact official `nrf52833dk` proof
+  remains an external hardware boundary.
 
 # Later MVP / Nice-To-Have Priority
 

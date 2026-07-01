@@ -124,13 +124,15 @@ python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset 
 - Live Codex CLI native skill invocation proof passed:
   `runs/provider-native-skill-usage/codex-cli-provider-native-skill-usage.json`.
   The provider returned a valid `finalize` `TurnDecision`, `fallback_used=false`,
-  and included proof token `FIRMCLI_NATIVE_SKILL_USAGE_CODEX_CLI_800ec6ac`.
+  and included latest proof token
+  `FIRMCLI_NATIVE_SKILL_USAGE_CODEX_CLI_cb3d90b2`.
 - Live Claude CLI native skill invocation proof passed:
   `runs/provider-native-skill-usage/claude-cli-provider-native-skill-usage.json`.
   The provider returned a valid `finalize` `TurnDecision`, `fallback_used=false`,
   included `Skill(firmcli-native-usage-proof)` in the allowlist, and included
-  proof token `FIRMCLI_NATIVE_SKILL_USAGE_CLAUDE_CLI_a45466f8`.
+  latest proof token `FIRMCLI_NATIVE_SKILL_USAGE_CLAUDE_CLI_d96026c2`.
 - Python-change gate passed after the harness type-boundary fix:
-  Ruff check/fix, Ruff format, Pyright `0`, and `376 passed`.
+  Ruff check/fix, Ruff format, Pyright `0`, and `378 passed` in the final
+  double-check pass.
 - FirmCLI suite ladder passed:
   `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite --report-path runs\r12-provider-native-skill-invocation-proof-suite.txt`.

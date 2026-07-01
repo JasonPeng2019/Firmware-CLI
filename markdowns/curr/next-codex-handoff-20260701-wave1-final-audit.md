@@ -6,11 +6,9 @@ Use this document to double-check the latest `P-Wave-0` work one last time.
 Do not treat this handoff as proof. Treat it as a map of what to read, what to
 audit, and which tests to rerun or spot-check.
 
-Latest pushed commit at handoff time:
-
-```text
-1b0844c Implement provider-native skills and Wave 1 audit
-```
+Latest pushed branch at handoff time: `P-Wave-0`. Verify the exact tip with
+`git log -1 --oneline` after pulling; this handoff is intended to live on the
+pushed branch tip rather than name a stale pre-amend hash.
 
 ## Mission
 
@@ -78,6 +76,7 @@ Then read these archived evidence ledgers if you need the prior proof trail:
 3. `markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/r12-provider-native-skill-bridge_probe_notes.md`
 4. `markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/wave1-full-product-suite-provider-native_spec.md`
 5. `markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/wave1-adversarial-audit-loop_process.md`
+6. `markdowns/tmp/curr-archive-20260701-wave1-final-doublecheck/wave1-final-adversarial-doublecheck_process.md`
 
 Read `superpowers/*.md` for repo workflow guidance if you need to understand
 the intended engineering discipline or doc-sync rules.
@@ -178,25 +177,30 @@ for future scope, but it is not part of the current Wave 1 green claim.
 
 ## Known Validation Evidence To Re-Inspect
 
-Recent green run roots from the previous pass:
+Recent green run roots from the final double-check pass:
 
-- Branch C `nucleo_l476rg + codex-cli`: `20260701T082515Z-50b0ca3d`
-- Branch C `nucleo_l476rg + claude-cli`: `20260701T082653Z-b8965681`
-- Branch C `nrf52840dk + codex-cli`: `20260701T082917Z-ecbbce11`
-- Branch C `nrf52840dk + claude-cli`: `20260701T083110Z-9d9836cf`
-- Code-writing `nucleo_l476rg + codex-cli`: `20260701T083254Z-987cf201`
-- Code-writing `nucleo_l476rg + claude-cli`: `20260701T083805Z-ad7caba6`
-- Code-writing `nrf52840dk + codex-cli`: `20260701T084025Z-552f6748`
-- Code-writing `nrf52840dk + claude-cli`: `20260701T084536Z-120d39a4`
+- Full Branch C matrix before the operator-shell fix:
+  - `nucleo_l476rg + codex-cli`: `20260701T094215Z-a7c60ba2`
+  - `nucleo_l476rg + claude-cli`: `20260701T094359Z-c0698acd`
+  - `nrf52840dk + codex-cli`: `20260701T094620Z-777b35ef`
+  - `nrf52840dk + claude-cli`: `20260701T094836Z-11a0994e`
+- Real code-writing repair benchmarks before the operator-shell fix:
+  - `nucleo_l476rg + codex-cli`: `20260701T095114Z-0e7c5c9a`
+  - `nucleo_l476rg + claude-cli`: `20260701T095526Z-e74ecc95`
+  - `nrf52840dk + codex-cli`: `20260701T095859Z-56a8a95a`
+  - `nrf52840dk + claude-cli`: `20260701T100506Z-78df81c0`
+- Compact post-fix hardware/provider rechecks, after the only code change:
+  - `nucleo_l476rg + codex-cli`: `20260701T101703Z-9013fd9e`
+  - `nrf52840dk + claude-cli`: `20260701T101646Z-b1a06423`
 
 Focused live-provider native-skill invocation proof:
 
 - Codex CLI report:
   `runs/provider-native-skill-usage/codex-cli-provider-native-skill-usage.json`
-  with token `FIRMCLI_NATIVE_SKILL_USAGE_CODEX_CLI_800ec6ac`.
+  with latest token `FIRMCLI_NATIVE_SKILL_USAGE_CODEX_CLI_cb3d90b2`.
 - Claude CLI report:
   `runs/provider-native-skill-usage/claude-cli-provider-native-skill-usage.json`
-  with token `FIRMCLI_NATIVE_SKILL_USAGE_CLAUDE_CLI_a45466f8`.
+  with latest token `FIRMCLI_NATIVE_SKILL_USAGE_CLAUDE_CLI_d96026c2`.
 
 Expected native-skill invocation proof behavior:
 
@@ -221,6 +225,34 @@ Latest focused native-skill proof closure:
   -> Ruff, format, Pyright `0`, and `376 passed`.
 - `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite --report-path runs\r12-provider-native-skill-invocation-proof-suite.txt`
   -> suite ladder green.
+
+Latest final double-check evidence after the operator-shell fix:
+
+- `python .codex\skills\python-change\scripts\run_python_change_checks.py --continue-on-error`
+  -> Ruff, format, Pyright `0`, and `378 passed`.
+- `python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset suite --report-path runs\wave1-final-doublecheck-suite-ladder-after-ux-fix.txt`
+  -> suite ladder green.
+- Focused simulated API/provider pytest selection -> `32 passed, 78 deselected`.
+- `"/history`n/prompt`n/events`n/quit`n" | uv run pyocd-debug`
+  -> completed without a no-console crash/hang; captured in
+  `runs/wave1-final-doublecheck-operator-pipe-smoke.txt`.
+- `uv run python tests\harness\provider_native_skill_usage.py --provider codex-cli --provider claude-cli --timeout-seconds 180 --report-root runs\provider-native-skill-usage`
+  -> both providers passed with `fallback_used=false`.
+- `uv run python tests\harness\branch_c_tests.py --board-id nucleo_l476rg --provider codex-cli --provider-timeout-seconds 300 --fail-on-skip`
+  -> `9 passed`, run root `20260701T101703Z-9013fd9e`.
+- `uv run python tests\harness\branch_c_tests.py --board-id nrf52840dk --provider claude-cli --provider-timeout-seconds 300 --fail-on-skip`
+  -> `9 passed`, run root `20260701T101646Z-b1a06423`.
+
+Final adversarial finding from this pass:
+
+- VALID and fixed: `pyocd-debug` could crash or hang in piped/non-console mode
+  because `patch_stdout()` failed before reading operator commands. The shell
+  now uses line-based stdin when launched non-interactively and keeps
+  prompt-toolkit for real TTY sessions. Regression tests live in
+  `tests/test_ux_cli.py`.
+- Non-blocking boundary: provider-native skill proof is behavioral, not vendor
+  telemetry that exposes an internal loader event. Do not overclaim live API
+  native-skill execution.
 
 For each code-writing run, inspect these files under that run root:
 

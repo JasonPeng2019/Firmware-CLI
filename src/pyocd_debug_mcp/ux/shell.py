@@ -153,7 +153,9 @@ class OperatorShell:
         self._session: PromptSession[str] = self._build_prompt_session()
 
     @staticmethod
-    def _build_prompt_session() -> PromptSession[str]:
+    def _build_prompt_session(*, force_dummy_output: bool = False) -> PromptSession[str]:
+        if force_dummy_output:
+            return PromptSession(output=DummyOutput())
         try:
             return PromptSession()
         except _NO_CONSOLE_ERRORS:
@@ -161,15 +163,38 @@ class OperatorShell:
 
     def run(self) -> int:
         self.renderer.print_info("pyocd-debug interactive shell. Use `/help` for commands.")
-        with patch_stdout():
-            while True:
-                try:
-                    text = self._session.prompt(self.context.prompt_text())
-                except (EOFError, KeyboardInterrupt):
-                    self.renderer.print_info("Exiting shell.")
-                    return 0
-                if not self._handle_input(text):
-                    return 0
+        if self._should_read_stdin_lines():
+            return self._run_stdin_lines()
+        while True:
+            try:
+                text = self._prompt_once()
+            except (EOFError, KeyboardInterrupt):
+                self.renderer.print_info("Exiting shell.")
+                return 0
+            if not self._handle_input(text):
+                return 0
+
+    def _prompt_once(self) -> str:
+        try:
+            with patch_stdout():
+                return self._session.prompt(self.context.prompt_text())
+        except _NO_CONSOLE_ERRORS:
+            self._session = self._build_prompt_session(force_dummy_output=True)
+            return self._session.prompt(self.context.prompt_text())
+
+    @staticmethod
+    def _should_read_stdin_lines() -> bool:
+        try:
+            return not sys.stdin.isatty()
+        except Exception:
+            return False
+
+    def _run_stdin_lines(self) -> int:
+        for text in sys.stdin:
+            if not self._handle_input(text.rstrip("\r\n")):
+                return 0
+        self.renderer.print_info("Exiting shell.")
+        return 0
 
     def _handle_input(self, text: str) -> bool:
         try:

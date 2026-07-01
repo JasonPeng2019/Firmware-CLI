@@ -155,6 +155,11 @@ appeared only in the skill body, and did not fall back to `load_skills`. Reports
 `runs/provider-native-skill-usage/codex-cli-provider-native-skill-usage.json`
 and
 `runs/provider-native-skill-usage/claude-cli-provider-native-skill-usage.json`.
+The final Wave 1 adversarial double-check also fixed an operator-shell
+portability issue where piped/non-console `pyocd-debug` command scripts could
+hang or crash before reading `/history`, `/prompt`, `/events`, or `/quit`;
+the shell now uses line-based stdin in non-interactive mode and retains
+prompt-toolkit for real TTY sessions.
 
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,

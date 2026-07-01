@@ -102,6 +102,12 @@ provider-native full-suite validation record were moved to:
 markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/
 ```
 
+The completed final Wave 1 adversarial double-check process ledger was moved to:
+
+```text
+markdowns/tmp/curr-archive-20260701-wave1-final-doublecheck/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -124,7 +130,9 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   smokes, Branch C attached-board runs, and representative code-writing repair
   benchmarks recorded in the current or archived process ledgers. A focused
   live-provider native-skill invocation proof is also green for both Codex CLI
-  and Claude CLI.
+  and Claude CLI. The final double-check added and validated non-interactive
+  operator shell smoke coverage for piped `/history`, `/prompt`, and `/events`
+  command scripts.
 
 ## Pending Verification
 
