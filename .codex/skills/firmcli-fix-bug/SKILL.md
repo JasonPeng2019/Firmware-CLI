@@ -18,22 +18,26 @@ legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 3. State the root cause in one or two sentences.
 4. For anything beyond a trivial one-file fix, create or update `markdowns/curr/slug_spec.md`. Use the helper if needed:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py spec bug-slug --task "bug summary"`
-5. If the fix changes Python code or Python-facing project config, read and use `.codex/skills/python-change/SKILL.md` before editing. Its validation gate is required in addition to the FirmCLI ladder.
+5. Use `firmcli-spec-loop` as the bug-fix backbone for nontrivial fixes:
+   - If `firmcli-fix-bug` was invoked standalone, run `firmcli-spec-loop` against the bug spec after the repro/root-cause step and keep iterating until the scoped bug fix is clean or blocked on hardware/provider credentials/a human decision.
+   - If `firmcli-fix-bug` was invoked from an already-active `firmcli-spec-loop`, do not recursively start another full loop for the same spec. Make the smallest correct fix under this workflow, then return control to the parent loop so it can rerun build, review, and suite from the top.
+   - If `firmcli-fix-bug` was invoked from `firmcli-test-suite`, create or update the narrow bug spec, fix the bug, then require the caller to run the affected `firmcli-spec-loop` and restart the full suite before reporting green.
+6. If the fix changes Python code or Python-facing project config, read and use `.codex/skills/python-change/SKILL.md` before editing. Its validation gate is required in addition to the FirmCLI ladder.
    Once repo-wide Pyright is green, the Python-change gate requires full
    `uv run pyright --outputjson` success; any Pyright failure is part of the bug
    loop and must be fixed before reporting success.
-6. Implement the smallest change in the correct layer.
-7. Add or extend a regression guard so the bug cannot silently return.
-8. Sync every doc the fix touched in the same unit of work.
-9. Run the validation ladder and any targeted repro checks:
+7. Implement the smallest change in the correct layer.
+8. Add or extend a regression guard so the bug cannot silently return.
+9. Sync every doc the fix touched in the same unit of work.
+10. Run the validation ladder and any targeted repro checks:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add targeted commands with `--command`
-10. After every provider/hardware/MCP/pyOCD/serial/long-running repro or validation command, attempt normal product cleanup first, then audit for leftover spawned provider, MCP, pyOCD, serial, validation, or board-debug processes. Clean up only processes this fix pass spawned or can identify by precise provenance. If a spawned process, locked probe, open serial port, or connected debug session remains, treat that as part of the bug unless proven to be an unrelated user process.
-11. For Python changes, also run the Python-change script unless already run after the final edit:
+11. After every provider/hardware/MCP/pyOCD/serial/long-running repro or validation command, attempt normal product cleanup first, then audit for leftover spawned provider, MCP, pyOCD, serial, validation, or board-debug processes. Clean up only processes this fix pass spawned or can identify by precise provenance. If a spawned process, locked probe, open serial port, or connected debug session remains, treat that as part of the bug unless proven to be an unrelated user process.
+12. For Python changes, also run the Python-change script unless already run after the final edit:
    - `python .codex/skills/python-change/scripts/run_python_change_checks.py`
-12. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
-13. For hardware-only proof, stop at the hand-off and do not claim the live result.
+13. Self-review against the same gates as `firmcli-review`. If you still have must-fix findings, loop until clean or until you hit a hardware or decision boundary.
+14. For hardware-only proof, stop at the hand-off and do not claim the live result.
 
 ## Closeout
 
-Report the root cause, the fix, the regression guard, docs synced, the three verification buckets, the hardware hand-off, and any surfaced conflicts or ambiguities.
+Report the root cause, the fix, the regression guard, docs synced, the spec-loop path used or the parent-loop hand-back, the three verification buckets, the hardware hand-off, and any surfaced conflicts or ambiguities.

@@ -38,13 +38,26 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `r12-openai-native-sync-metadata_spec.md` - implemented narrow audit-gap spec
   and validation record for truthful OpenAI remote-primary metadata during
   periodic native memory safety sync.
+- `wave1-post-abc-addons-inventory.md` - current audit inventory of the R12 /
+  Wave 1 add-ons, archived fixes, validation/proof additions, and active
+  Wave 1 gap specs discovered across `curr/` and `markdowns/tmp/`.
 
 ## Active Future Specs
 
-- `wave1-5-interactive-session-hardening_spec.md` - active proposal spec for
-  making the `pyocd-debug` operator shell keep one parent agent session across
-  consecutive user prompts, with provider handle/memory carryover, prompt-scoped
-  child runs, explicit reset/fork controls, and no silent fresh-session fallback.
+- `wave1-5-A-interactive-session-hardening_spec.md` - active proposal spec for
+  making one `pyocd-debug` interactive shell behave like one persistent
+  provider session, with provider handle/memory carryover across prompts,
+  `/session`, `/new`, `/forget`, and no silent fresh-session fallback.
+- `wave1-6-B-actions-spec.md` - active proposal spec for the Branch B
+  client-action/native-skill-sync implementation gap: repo-local `.codex` /
+  `.claude` skill authoring surfaces, `sync_skills`, `skill_ok`, deterministic
+  validation, canonical client-owned registry sync, API fallback, and native
+  client-action script registration without script bodies in `TurnDecision`.
+- `wave1-7-UX-dev-provider-visible-status_spec.md` - active proposal spec for a
+  narrow Wave 1 developer-only bridge that exposes provider-visible
+  status/reasoning text and brain heartbeats during provider turns, while
+  leaving normal-user streaming, interrupt cleanup, partial-work review, and
+  full inspector UX to Wave 2 Module D/H.
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
 - `wave2-midtool-checkpoints_spec.md` - active Wave 2 Module E spec for a
@@ -207,8 +220,15 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - Exact official `nrf52833dk` proof remains pending.
 - Cross-prompt interactive provider continuity remains planning-only: the
   current shell preserves settings/history, but not provider handles or compact
-  memory across separate user prompts. The proposed Wave 1.5 fix is
-  `wave1-5-interactive-session-hardening_spec.md`.
+  memory across separate user prompts. The proposed Wave 1.5-A fix is
+  `wave1-5-A-interactive-session-hardening_spec.md`.
+- `wave1-6-B-actions-spec.md` records the Branch B implementation gap where
+  pre-registered `run_script` works but native provider-created skills/scripts
+  are not yet synced, validated, registered, and exposed through API fallback.
+- `wave1-7-UX-dev-provider-visible-status_spec.md` records the proposed Wave 1.7
+  developer trace bridge for provider-visible status/reasoning text; it is not
+  implemented and does not replace the broader Wave 2 Module D/H stream,
+  interrupt, cleanup, and inspector work.
 - Wave 2 progress/inspector, mid-tool checkpoint buffers, scoped green approval,
   static context/cache reuse, codebase-map scaffolding, and cleanup guard work
   remains hard prototype scope.

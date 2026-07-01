@@ -12,7 +12,7 @@ legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 
 ## Workflow
 
-1. Treat `firmcli-spec-loop` as the execution backbone. For the whole process and for every meaningful sub-step, drive work through the same spec-build-review loop instead of hand-rolling build/review steps.
+1. Treat `firmcli-spec-loop` as the execution backbone. For the whole process and for every meaningful sub-step, drive work through the same spec-build-review loop instead of hand-rolling build/review steps. `firmcli-write-process` is the top-level orchestrator: it uses `firmcli-spec-loop` for scoped implementation, `firmcli-fix-bug` for every real repair, and `firmcli-test-suite` as the final deployment gate.
 2. Run the spec phase first with `firmcli-specs` or the spec phase inside `firmcli-spec-loop`. Create or update the spec before the first build pass and again whenever the process scope, acceptance surface, deployment scenario, or design constraints materially change.
 3. Create or update the process ledger:
    - `python .codex/skills/firmcli-workflow-core/scripts/scaffold_workflow_doc.py process process-slug --task "process summary"`
@@ -37,7 +37,7 @@ legacy workflow behavior needed by Codex belongs in this `SKILL.md`.
 6. After each meaningful sub-step, run the non-hardware ladder as an extra smoke gate when the targeted spec loop did not already cover the needed checks:
    - `python .codex/skills/firmcli-workflow-core/scripts/run_check_ladder.py --preset default`
    - add targeted `--command` entries as needed
-7. Do not advance to the next sub-step until the current sub-step is spec-loop-clean or blocked only on explicit hardware proof or a human decision.
+7. Do not advance to the next sub-step until the current sub-step is spec-loop-clean or blocked only on explicit hardware proof or a human decision. A sub-step is not clean if Ruff, Pyright, pytest, the non-hardware ladder, targeted smoke checks, docs, or cleanup/process-hygiene checks are red for the touched surface.
 
 ## Final test gate
 
@@ -78,7 +78,7 @@ If the final suite exposes any real bug, missing coverage that can be implemente
 2. Route the issue through `firmcli-fix-bug`.
 3. Rerun the affected `firmcli-spec-loop` if the fix changed feature behavior or acceptance criteria.
 4. Restart the final `firmcli-test-suite` from the beginning, not just the failed row.
-5. Repeat for every issue until the full suite runs green from one end to the other, or until the only remaining boundary is explicit hardware proof, provider quota/credentials, or a human decision.
+5. Repeat for every issue until the full suite runs green from one end to the other after the last fix, or until the only remaining boundary is explicit hardware proof, provider quota/credentials, or a human decision.
 
 Leftover spawned processes, locked probes, open serial ports, or still-connected
 debug sessions count as final-suite failures. Route reproducible cleanup bugs
@@ -86,7 +86,7 @@ through `firmcli-fix-bug`; if cleanup cannot be proven because of an interrupt o
 environment limitation, stop with an explicit deployment ambiguity and a cleanup
 runbook.
 
-Do not report the process as complete after a partial rerun. A green final gate means the whole suite passed in one clean end-to-end pass after the last fix.
+Do not report the process as complete after a partial rerun. A green final gate means the whole suite passed in one clean end-to-end pass after the last fix, with all applicable Python-change gates, full Pyright, pytest, smoke checks, docs, and cleanup checks green for the final tree.
 
 ## Stop conditions
 
