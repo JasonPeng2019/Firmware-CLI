@@ -36,6 +36,9 @@ brain/runtime:
 - board-aware skills tree
 - sibling turnkey benchmark runner
 - compact MCP tool-index prompting sourced from the local server metadata plus a curated response-semantics overlay
+- provider-native FirmCLI workflow skill projection into run-local
+  `.codex/skills` and `.claude/skills` views for CLI providers, with
+  deterministic `load_skills` fallback for API providers
 
 The current live status is:
 
@@ -196,7 +199,9 @@ Firmware-CLI/
 |-- skills/
 |   |-- README.md
 |   |-- common/
-|   `-- mcu_families/
+|   |-- mcu_families/
+|   |-- model_native/
+|   `-- provider_native/
 |-- playbooks/
 |   `-- turnkey/
 |-- tests/
@@ -333,6 +338,10 @@ Firmware-CLI/
   - `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS` to enable/disable preloading common
     governed-action details such as `connect` and `run_green_check` (default
     enabled)
+  - `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS` for provider-native skill bridge
+    mode: `auto` (default), `off`, or `require`
+  - `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT` to override the shipped
+    provider-native skill source root
   - `OPENAI_API_KEY` for the native OpenAI API provider
   - `ANTHROPIC_API_KEY` for the native Anthropic API provider
 - With a board id set, the MCP server resolves that board's facts (target,
@@ -556,11 +565,25 @@ Turnkey provider rules:
   - `--memory-summary-max-chars N` (`2000` by default)
   - `--no-preload-common-details` to disable default `connect` and
     `run_green_check` detail preload
+  - `--provider-native-skills auto|off|require` to control run-local native
+    skill projection for CLI providers
+  - `--provider-native-skill-root PATH` to override shipped provider-native
+    skill packages
   - `.env`:
     `PYOCD_TURNKEY_MEMORY_MODE`, `PYOCD_TURNKEY_NATIVE_SYNC_EVERY`,
     `PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT`,
     `PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS`,
-    `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS`
+    `PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS`,
+    `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS`,
+    `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT`
+- provider-native skill projection is CLI-provider-only:
+  - Codex CLI receives a run-local `.codex/skills/<skill_id>` view and is
+    prompted to prefer `$<skill_id>` or explicit native skill requests
+  - Claude CLI receives a run-local `.claude/skills/<skill_id>` view and the
+    provider command includes `--allowedTools Skill(<skill-id>)`
+  - OpenAI API and Anthropic API stay fallback-only and use
+    `load_skills(skill_ids=[...])`
+  - no global user `.codex`, `.claude`, or `.agents` folders are written
 
 Windows PowerShell:
 
@@ -654,6 +677,7 @@ Current limitation:
 - Current progress ledger: [markdowns/current-progress.md](./markdowns/current-progress.md)
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
 - R12 prompt/memory cost hardening hard bar: [markdowns/curr/r12-prompt-memory-cost-hardening_spec.md](./markdowns/curr/r12-prompt-memory-cost-hardening_spec.md)
+- R12 provider-native skill bridge hard bar: [markdowns/curr/r12-provider-native-skill-bridge_spec.md](./markdowns/curr/r12-provider-native-skill-bridge_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)

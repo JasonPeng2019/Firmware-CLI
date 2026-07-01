@@ -68,6 +68,13 @@ class ProviderCapabilities:
     resume_requires_stable_workdir: bool = False
     supports_transactional_fork: bool = False
     supports_partial_streaming: bool = False
+    supports_native_skills: bool = False
+    native_skill_layout: str | None = None
+    native_skill_invocation_style: str | None = None
+    native_skill_probe_status: str | None = None
+    native_skill_probe_details: dict[str, object] = field(default_factory=dict)
+    supports_native_loop_skill: bool = False
+    supports_native_subagents: bool = False
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -80,6 +87,13 @@ class ProviderCapabilities:
             "resume_requires_stable_workdir": self.resume_requires_stable_workdir,
             "supports_transactional_fork": self.supports_transactional_fork,
             "supports_partial_streaming": self.supports_partial_streaming,
+            "supports_native_skills": self.supports_native_skills,
+            "native_skill_layout": self.native_skill_layout,
+            "native_skill_invocation_style": self.native_skill_invocation_style,
+            "native_skill_probe_status": self.native_skill_probe_status,
+            "native_skill_probe_details": dict(self.native_skill_probe_details),
+            "supports_native_loop_skill": self.supports_native_loop_skill,
+            "supports_native_subagents": self.supports_native_subagents,
         }
 
 
@@ -477,8 +491,11 @@ class ProviderPromptBundle:
     turn_context_text: str
     turn_decision_schema_text: str
     skill_context_text: str = ""
+    native_skill_context_text: str = ""
     bootstrap_turn_context_text: str | None = None
     bootstrap_skill_context_text: str | None = None
+    native_skill_projection: dict[str, object] | None = None
+    native_skill_tool_allowlist: tuple[str, ...] = ()
 
     def _join_user_sections(self, *sections: str) -> str:
         return "\n\n".join(section for section in (part.strip() for part in sections) if section)
@@ -494,6 +511,7 @@ class ProviderPromptBundle:
     def render_bootstrap_text(self, *, include_memory: bool = True) -> str:
         sections = [
             self.bootstrap_skill_text.strip(),
+            self.native_skill_context_text.strip(),
             self.tool_schema_text.strip(),
             self.bootstrap_context_text.strip(),
         ]
@@ -505,6 +523,7 @@ class ProviderPromptBundle:
     def render_remote_delta_text(self) -> str:
         return self._join_user_sections(
             self.skill_context_text,
+            self.native_skill_context_text,
             self.tool_schema_text,
             self.turn_context_text,
         )
@@ -514,6 +533,7 @@ class ProviderPromptBundle:
 
     def render_retry_text(self, correction_note: str) -> str:
         return self._join_user_sections(
+            self.native_skill_context_text,
             self.turn_context_text,
             self.turn_decision_schema_text,
             correction_note,
@@ -565,6 +585,7 @@ class ProviderPromptBundle:
             "system_instructions": self.system_instructions,
             "skill_context": self.skill_context_text,
             "bootstrap_skill_context": self.bootstrap_skill_text,
+            "native_skill_context": self.native_skill_context_text,
             "tool_schema": self.tool_schema_text,
             "provider_memory": self.provider_memory_text,
             "turn_context": self.turn_context_text,
@@ -585,6 +606,7 @@ class ProviderPromptBundle:
                 and self.bootstrap_skill_text != self.skill_context_text
                 else ""
             ),
+            "native_skill_context": self.native_skill_context_text,
             "tool_schema": self.tool_schema_text if static_tool_schema_injected else "",
             "provider_memory": self.provider_memory_text if memory_injected else "",
             "turn_context": (
@@ -627,6 +649,10 @@ class ProviderPromptBundle:
             "static_tool_schema_rendered_length": (
                 len(self.tool_schema_text) if static_tool_schema_injected else 0
             ),
+            "native_skill_context_available_length": len(self.native_skill_context_text),
+            "native_skill_context_rendered_length": len(self.native_skill_context_text),
+            "native_skill_projection": dict(self.native_skill_projection or {}),
+            "native_skill_tool_allowlist": list(self.native_skill_tool_allowlist),
         }
 
     def to_record(
@@ -638,12 +664,17 @@ class ProviderPromptBundle:
             "system_instruction_length": len(self.system_instructions),
             "skill_context_length": len(self.skill_context_text),
             "bootstrap_skill_context_length": len(self.bootstrap_skill_text),
+            "native_skill_context_length": len(self.native_skill_context_text),
             "tool_schema_length": len(self.tool_schema_text),
             "provider_memory_length": len(self.provider_memory_text),
             "turn_context_length": len(self.turn_context_text),
             "bootstrap_turn_context_length": len(self.bootstrap_context_text),
             "turn_decision_schema_length": len(self.turn_decision_schema_text),
         }
+        if self.native_skill_projection is not None:
+            record["native_skill_projection"] = dict(self.native_skill_projection)
+        if self.native_skill_tool_allowlist:
+            record["native_skill_tool_allowlist"] = list(self.native_skill_tool_allowlist)
         if provider_metadata is not None:
             rendered_prompt = provider_metadata.get("rendered_prompt")
             if isinstance(rendered_prompt, dict):

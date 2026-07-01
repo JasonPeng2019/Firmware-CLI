@@ -66,6 +66,13 @@ def resolve_skills_root() -> Path:
     )
 
 
+def resolve_provider_native_skills_root() -> Path:
+    return _resolve_root(
+        repo_relative=("skills", "provider_native"),
+        packaged_relative=("skills", "provider_native"),
+    )
+
+
 def resolve_turnkey_playbooks_root() -> Path:
     return _resolve_root(
         repo_relative=("playbooks", "turnkey"),

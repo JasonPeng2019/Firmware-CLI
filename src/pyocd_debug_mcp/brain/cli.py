@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--native-sync-every", type=int)
     run_parser.add_argument("--recent-turn-detail-limit", type=int)
     run_parser.add_argument("--memory-summary-max-chars", type=int)
+    run_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    run_parser.add_argument("--provider-native-skill-root")
     run_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -67,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--native-sync-every", type=int)
     benchmark_parser.add_argument("--recent-turn-detail-limit", type=int)
     benchmark_parser.add_argument("--memory-summary-max-chars", type=int)
+    benchmark_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    benchmark_parser.add_argument("--provider-native-skill-root")
     benchmark_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -115,6 +119,8 @@ async def _run_freeform(args: argparse.Namespace) -> TurnkeyExecution:
         recent_turn_detail_limit=getattr(args, "recent_turn_detail_limit", None),
         memory_summary_max_chars=getattr(args, "memory_summary_max_chars", None),
         preload_common_details=getattr(args, "preload_common_details", None),
+        provider_native_skills=getattr(args, "provider_native_skills", None),
+        provider_native_skill_root=getattr(args, "provider_native_skill_root", None),
         port=args.port,
         flash_artifact=args.flash_artifact,
         elf=args.elf,
@@ -158,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
+                provider_native_skills=args.provider_native_skills,
+                provider_native_skill_root=args.provider_native_skill_root,
             )
             benchmark_support.print_case_summary(report)
             return 0 if report.score_report.outcome_label == "full_success" else 1
@@ -176,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
             recent_turn_detail_limit=args.recent_turn_detail_limit,
             memory_summary_max_chars=args.memory_summary_max_chars,
             preload_common_details=args.preload_common_details,
+            provider_native_skills=args.provider_native_skills,
+            provider_native_skill_root=args.provider_native_skill_root,
         )
         for report in reports:
             benchmark_support.print_case_summary(report)

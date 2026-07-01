@@ -28,6 +28,7 @@ from pyocd_debug_mcp.brain.config import (
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EventSink
 from pyocd_debug_mcp.brain.loop import TurnkeyExecution, run_turnkey_with_provider
+from pyocd_debug_mcp.brain.provider_native_skills import ProviderNativeSkillMode
 from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 DEFAULT_MAX_ITERS = 18
@@ -289,6 +290,8 @@ async def run_case_async(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -321,6 +324,8 @@ async def run_case_async(
         recent_turn_detail_limit=recent_turn_detail_limit,
         memory_summary_max_chars=memory_summary_max_chars,
         preload_common_details=preload_common_details,
+        provider_native_skills=provider_native_skills,
+        provider_native_skill_root=provider_native_skill_root,
         flash_artifact=prepared.flash_artifact,
         elf=prepared.symbol_artifact,
         workspace_root=prepared.workspace.workspace_root,
@@ -467,6 +472,8 @@ def run_case(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -484,6 +491,8 @@ def run_case(
             recent_turn_detail_limit=recent_turn_detail_limit,
             memory_summary_max_chars=memory_summary_max_chars,
             preload_common_details=preload_common_details,
+            provider_native_skills=provider_native_skills,
+            provider_native_skill_root=provider_native_skill_root,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -504,6 +513,8 @@ def run_suite(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -521,6 +532,8 @@ def run_suite(
             recent_turn_detail_limit=recent_turn_detail_limit,
             memory_summary_max_chars=memory_summary_max_chars,
             preload_common_details=preload_common_details,
+            provider_native_skills=provider_native_skills,
+            provider_native_skill_root=provider_native_skill_root,
             event_sink=event_sink,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,
@@ -543,6 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
     case_parser.add_argument("--native-sync-every", type=int)
     case_parser.add_argument("--recent-turn-detail-limit", type=int)
     case_parser.add_argument("--memory-summary-max-chars", type=int)
+    case_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    case_parser.add_argument("--provider-native-skill-root")
     case_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -565,6 +580,8 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument("--native-sync-every", type=int)
     suite_parser.add_argument("--recent-turn-detail-limit", type=int)
     suite_parser.add_argument("--memory-summary-max-chars", type=int)
+    suite_parser.add_argument("--provider-native-skills", choices=["off", "auto", "require"])
+    suite_parser.add_argument("--provider-native-skill-root")
     suite_parser.add_argument(
         "--no-preload-common-details",
         action="store_false",
@@ -600,6 +617,8 @@ def main(argv: list[str] | None = None) -> int:
                 recent_turn_detail_limit=args.recent_turn_detail_limit,
                 memory_summary_max_chars=args.memory_summary_max_chars,
                 preload_common_details=args.preload_common_details,
+                provider_native_skills=args.provider_native_skills,
+                provider_native_skill_root=args.provider_native_skill_root,
                 serial_read_seconds=args.serial_read_seconds,
                 timeout_config=timeout_config,
                 timeout_proposal=timeout_proposal,
@@ -618,6 +637,8 @@ def main(argv: list[str] | None = None) -> int:
             recent_turn_detail_limit=args.recent_turn_detail_limit,
             memory_summary_max_chars=args.memory_summary_max_chars,
             preload_common_details=args.preload_common_details,
+            provider_native_skills=args.provider_native_skills,
+            provider_native_skill_root=args.provider_native_skill_root,
             serial_read_seconds=args.serial_read_seconds,
             timeout_config=timeout_config,
             timeout_proposal=timeout_proposal,

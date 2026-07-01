@@ -56,6 +56,11 @@ from pyocd_debug_mcp.brain.model_native_skills import (
     render_model_native_skill_context,
 )
 from pyocd_debug_mcp.brain.provider_factory import create_decision_provider
+from pyocd_debug_mcp.brain.provider_native_skills import (
+    ProviderNativeSkillError,
+    ProviderNativeSkillProjection,
+    prepare_provider_native_skill_projection,
+)
 from pyocd_debug_mcp.brain.provider_types import (
     advance_memory_sync_state,
     append_memory_entry,
@@ -190,6 +195,7 @@ def _build_request_payload(
     invocation: TurnkeyInvocation,
     board: BoardConfig,
     selected_skills: tuple[SkillManifest, ...],
+    native_skill_projection: ProviderNativeSkillProjection | None = None,
 ) -> dict[str, object]:
     flash_artifact, symbol_artifact = _default_artifacts(invocation, board)
     return {
@@ -224,6 +230,9 @@ def _build_request_payload(
         "expected_symbol_name": invocation.expected_symbol_name,
         "expected_symbol_value_u32": invocation.expected_symbol_value_u32,
         "selected_skill_ids": [skill.skill_id for skill in selected_skills],
+        "provider_native_skills": (
+            native_skill_projection.to_record() if native_skill_projection is not None else None
+        ),
     }
 
 
@@ -568,11 +577,16 @@ def _build_prompt_bundle(
     workspace: WorkspaceSession | None,
     tool_schema_bundle: ToolSchemaBundle,
     client_actions: ClientActionStore | None = None,
+    native_skill_projection: ProviderNativeSkillProjection | None = None,
 ) -> ProviderPromptBundle:
+    native_skill_context_text = (
+        native_skill_projection.prompt_text() if native_skill_projection is not None else ""
+    )
     return ProviderPromptBundle(
         system_instructions=_build_instructions(invocation),
         skill_context_text="Compact turnkey skill context:\n" + skill_digest_text,
         bootstrap_skill_context_text="Full bootstrap turnkey skill context:\n" + skills_text,
+        native_skill_context_text=native_skill_context_text,
         tool_schema_text=tool_schema_bundle.rendered_text,
         provider_memory_text=render_provider_memory_text(
             state.provider_session_state
@@ -606,6 +620,14 @@ def _build_prompt_bundle(
             client_actions,
         ),
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+        native_skill_projection=(
+            native_skill_projection.to_record() if native_skill_projection is not None else None
+        ),
+        native_skill_tool_allowlist=(
+            native_skill_projection.claude_allowed_tools
+            if native_skill_projection is not None
+            else ()
+        ),
     )
 
 
@@ -1350,6 +1372,19 @@ def _prepare_provider_runtime_context(
             "resume_requires_stable_workdir": resume_requires_stable_workdir,
             "provider_runtime_root": str(runtime_root),
         },
+    )
+
+
+def _prepare_native_skill_projection(
+    invocation: TurnkeyInvocation,
+    provider_runtime_context: ProviderRuntimeContext,
+) -> ProviderNativeSkillProjection:
+    return prepare_provider_native_skill_projection(
+        provider=invocation.provider,
+        mode=invocation.provider_native_skills,
+        source_root=invocation.provider_native_skill_root,
+        runtime_root=Path(provider_runtime_context.runtime_root),
+        working_directory=Path(provider_runtime_context.working_directory),
     )
 
 
@@ -2553,6 +2588,20 @@ async def _tooling_failure_execution(
         if invocation.provider == "claude-cli" and workspace is not None
         else None,
     )
+    native_skill_projection: ProviderNativeSkillProjection | None = None
+    try:
+        native_skill_projection = _prepare_native_skill_projection(
+            invocation,
+            provider_runtime_context,
+        )
+        request_payload["provider_native_skills"] = native_skill_projection.to_record()
+    except ProviderNativeSkillError as exc:
+        request_payload["provider_native_skills"] = {
+            "provider": invocation.provider,
+            "mode": invocation.provider_native_skills,
+            "status": "unavailable",
+            "error": str(exc),
+        }
     state = BrainState(
         run_mode=invocation.mode,
         board_id=board.board_id,
@@ -2577,6 +2626,9 @@ async def _tooling_failure_execution(
         system_instructions=_build_instructions(invocation),
         skill_context_text="Compact turnkey skill context:\n" + skill_digest_text,
         bootstrap_skill_context_text="Full bootstrap turnkey skill context:\n" + skills_text,
+        native_skill_context_text=(
+            native_skill_projection.prompt_text() if native_skill_projection is not None else ""
+        ),
         tool_schema_text="Curated MCP tool index (compact):\n(tool metadata unavailable because the run failed before MCP startup)",
         provider_memory_text="",
         turn_context_text=_build_compact_turn_prompt(invocation, board, state, workspace),
@@ -2588,6 +2640,16 @@ async def _tooling_failure_execution(
             workspace,
         ),
         turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+        native_skill_projection=(
+            native_skill_projection.to_record()
+            if native_skill_projection is not None
+            else cast(dict[str, object], request_payload["provider_native_skills"])
+        ),
+        native_skill_tool_allowlist=(
+            native_skill_projection.claude_allowed_tools
+            if native_skill_projection is not None
+            else ()
+        ),
     )
     brain_events: list[dict[str, object]] = []
     await _record_brain_event(
@@ -2684,6 +2746,21 @@ async def run_turnkey(
         if provider.capabilities.resume_requires_stable_workdir and workspace is not None
         else None,
     )
+    try:
+        native_skill_projection = _prepare_native_skill_projection(
+            invocation,
+            provider_runtime_context,
+        )
+    except ProviderNativeSkillError as exc:
+        if invocation.provider_native_skills == "require":
+            return await _tooling_failure_execution(
+                invocation,
+                summary=f"Blocked [turnkey/provider-native-skills-unavailable]: {exc}",
+                root_cause=str(exc),
+                event_sink=event_sink,
+            )
+        raise
+    request_payload["provider_native_skills"] = native_skill_projection.to_record()
     state = BrainState(
         run_mode=invocation.mode,
         board_id=board.board_id,
@@ -2783,6 +2860,7 @@ async def run_turnkey(
                     workspace=workspace,
                     tool_schema_bundle=tool_schema_bundle,
                     client_actions=client_action_store,
+                    native_skill_projection=native_skill_projection,
                 )
                 if not initial_prompt_text:
                     initial_prompt_text = prompt_bundle.full_prompt_text()
@@ -3176,6 +3254,7 @@ async def run_turnkey(
                 workspace,
                 client_action_store,
             ),
+            native_skill_context_text=native_skill_projection.prompt_text(),
             bootstrap_turn_context_text=_build_full_turn_prompt(
                 invocation,
                 board,
@@ -3185,6 +3264,8 @@ async def run_turnkey(
                 client_action_store,
             ),
             turn_decision_schema_text=f"TurnDecision JSON schema:\n{decision_schema_text()}",
+            native_skill_projection=native_skill_projection.to_record(),
+            native_skill_tool_allowlist=native_skill_projection.claude_allowed_tools,
         ).full_prompt_text()
 
     execution = TurnkeyExecution(

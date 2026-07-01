@@ -201,9 +201,13 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
-| `next-codex-handoff-20260630.md` | Current final-audit handoff for checking the dirty Wave 1 delta-index work, R12 scaffold hardening, important source/test files, and live validation plan. |
 | `r12-context-scaffold-hardening_spec.md` | Active R12 scaffold-hardening contract and verification record for product/client-owned model-native skills, runtime-copy recovery, tool-detail loading, strict details-before-execution guardrails, prompt ordering/dedupe, and future bug-reporting docs. |
 | `r12-delta-compact-indexes_spec.md` | Active implemented task spec for compact skill/tool indexes in ordinary remote-primary `remote-delta` provider turns without changing memory cadence or full-schema cadence. |
+| `r12-prompt-memory-cost-hardening_spec.md` | Implemented Wave 1 hard-bar spec for compact later-turn prompts, bounded in-run provider memory, focused detail rendering, schema cadence, and API-provider simulation coverage. |
+| `r12-prompt-memory-cost-hardening_process.md` | Active process ledger for prompt/memory cost hardening implementation and validation status. |
+| `r12-provider-native-skill-bridge_spec.md` | Implemented Wave 1 hard-bar spec for projecting FirmCLI-owned workflow skills into run-local provider-native CLI views with deterministic `load_skills` fallback for API providers. |
+| `r12-provider-native-skill-bridge_process.md` | Active process ledger for provider-native skill bridge implementation and validation status. |
+| `r12-provider-native-skill-bridge_probe_notes.md` | Phase 0 no-hardware proof notes for Codex `.codex/skills` and Claude `.claude/skills` plus `Skill(...)` allowance behavior. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
 

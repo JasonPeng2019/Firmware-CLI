@@ -19,7 +19,12 @@ from typing import Callable, get_args
 
 from pyocd_debug_mcp.brain.actions import AllowedServerToolName, decision_schema_text
 from pyocd_debug_mcp.brain.app import run_freeform_task
-from pyocd_debug_mcp.brain.config import BrainProviderConfig, TurnkeyInvocation, TurnkeyProviderKind
+from pyocd_debug_mcp.brain.config import (
+    BrainProviderConfig,
+    TurnkeyInvocation,
+    TurnkeyProviderKind,
+    resolve_provider_native_skill_root,
+)
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
 from pyocd_debug_mcp.brain.events import EVENT_KINDS
 from pyocd_debug_mcp.brain.loop import _build_full_turn_prompt, _build_instructions, load_board
@@ -471,6 +476,8 @@ def check_provider_dry_run_prompt_render(
         recent_turn_detail_limit=2,
         memory_summary_max_chars=2_000,
         preload_common_details=True,
+        provider_native_skills="auto",
+        provider_native_skill_root=resolve_provider_native_skill_root(),
         port=args.port,
     )
     state = BrainState(

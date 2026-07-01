@@ -110,6 +110,13 @@ window plus hard-limited rolling summary, preloads common `connect` and
 with section hashes. Wave 2 Module G should consume those prompt/accounting
 surfaces; it should not reintroduce full per-turn schema/memory resends or add
 cross-invocation provider-session persistence.
+Provider-native skill projection is also now part of the Wave 1 integration
+substrate. Codex CLI receives run-local `.codex/skills`, Claude CLI receives
+run-local `.claude/skills` plus `--allowedTools Skill(...)`, and API providers
+use deterministic `load_skills` fallback. Wave 2 Module G should consume this
+native projection/fallback split instead of reimplementing provider skill
+behavior inside the brain or reverting product skill source to global
+`.codex`/`.claude` folders.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -757,6 +764,10 @@ into the other branch, or into final integration.
 - Wave 1 validation must include the prompt/memory hardening tests and
   credentials-free OpenAI/Anthropic API-path simulation checks. Live API calls
   remain a separate credential/credit-dependent proof boundary.
+- Wave 1 validation must also include provider-native skill bridge checks:
+  projection to `.codex/skills` and `.claude/skills`, Claude
+  `--allowedTools Skill(...)`, fallback `load_skills`, prompt accounting,
+  projection metadata, and no writes to global provider folders.
 - Branch B now explicitly preserves the closed-server boundary: model-native
   host work stays outside governed actions, board/server-native work stays
   gated, and UART write is treated as hardware-stack work.

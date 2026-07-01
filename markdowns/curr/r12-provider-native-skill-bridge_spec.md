@@ -1,4 +1,5 @@
-> STATUS: PROPOSAL - not authority, pending reconciliation with build_plan_concrete and user sign-off.
+> STATUS: IMPLEMENTED IN CURRENT PASS - Wave 1 hard-bar feature, pending full
+> product-suite hardware/API validation after code/doc sync.
 
 # R12 Provider-Native Skill Bridge Spec
 
@@ -112,10 +113,12 @@ Current code:
 - `load_skills` is a `TurnDecision` context-expansion action handled by
   `ModelNativeSkillRegistry`, with runtime copies, structured failures, and
   prompt injection on the next turn.
-- The repo currently has data-only diagnostic YAML skills under `skills/common`
-  and `skills/mcu_families`. The checkout does not yet contain a real
+- The repo previously had data-only diagnostic YAML skills under
+  `skills/common` and `skills/mcu_families`, with no shipped
   `skills/model_native` or provider-native skill package library for this
-  feature.
+  feature. This implementation pass adds `firmcli-firmware-debug` as both a
+  deterministic model-native fallback skill and a provider-native projected
+  skill.
 
 Other docs and current status:
 
@@ -287,7 +290,23 @@ After discovery, update this spec before writing bridge code:
 Before the first CLI provider turn, FirmCLI creates a runtime projection under
 the provider runtime working directory.
 
-Initial candidate runtime layout before Phase 0 discovery:
+Phase 0 discovery result:
+
+- Claude Code CLI `2.1.76`: `working-dir/.claude/skills/<skill>/SKILL.md`
+  works in `claude --print --output-format json` when the FirmCLI command also
+  passes `--allowedTools Skill(<skill-id>)`. Direct `/skill-id` invocation and
+  natural-language skill requests both returned the burner-skill token in JSON
+  output. `--json-schema` mode hung in the probe and is rejected for this pass.
+- Codex CLI `0.142.2`: `working-dir/.codex/skills/<skill>/SKILL.md` works in
+  `codex exec` noninteractive mode. `.agents/skills` also worked locally, but
+  `.codex/skills` is the selected projection layout because it matches the
+  user's requested native `.codex` behavior and avoids relying on older
+  ambiguous `.agents` wording.
+- API providers are fallback-only: they receive the compact native-skill index
+  and can request FirmCLI `load_skills`, but no `.codex` or `.claude` runtime
+  projection is attempted.
+
+Implemented runtime layout:
 
 ```text
 <provider_runtime>/
@@ -297,19 +316,7 @@ Initial candidate runtime layout before Phase 0 discovery:
         SKILL.md
         references/
         scripts/
-  .agents/
-    skills/
-      <skill_id>/
-        SKILL.md
-        references/
-        scripts/
   .codex/
-    skills/
-      <skill_id>/
-        SKILL.md
-        references/
-        scripts/
-  <isolated_codex_home>/
     skills/
       <skill_id>/
         SKILL.md
@@ -347,7 +354,21 @@ projection files may be regenerated for a run. If a provider wants to repair a
 skill, it may only edit a FirmCLI runtime copy that the brain explicitly exposes
 for repair; source packages remain unchanged.
 
-### 4. Provider Capability Probing
+### 4. Provider Capability Probing And Current Implementation
+
+The initial implementation records the Phase 0 probe result in provider
+capabilities and run projection metadata. It does not rerun a live burner probe
+before every hardware run; it uses the proven local CLI layouts and conservative
+mode behavior:
+
+- `off`: no projection and no native skill prompt.
+- `auto`: CLI providers project active packages when available; unsupported
+  providers fall back to `load_skills`; missing packages are non-fatal.
+- `require`: unsupported providers or missing active packages fail before the
+  provider turn with a visible provider-native-skills failure.
+
+Future live probe caching can replace the static Phase 0 evidence fields, but
+must preserve the same fail-closed semantics.
 
 Add provider-native skill capability fields to `ProviderCapabilities`, for
 example:
@@ -503,33 +524,31 @@ Hard boundaries:
 
 ### 9. Files Expected To Change
 
-Primary code files:
+Primary code files changed:
 
 - `src/pyocd_debug_mcp/brain/provider_types.py`
-  - Add provider-native skill capability fields and prompt accounting sections.
+  - Added provider-native skill capability fields, prompt accounting sections,
+    and prompt bundle rendering for native skill indexes.
 
 - `src/pyocd_debug_mcp/brain/provider_codex_cli.py`
-  - Probe Codex native skill support in `codex exec` mode.
-  - Project Codex runtime skill view before calls.
-  - Record projection/probe metadata.
+  - Records Codex native skill capability metadata and run projection metadata.
 
 - `src/pyocd_debug_mcp/brain/provider_claude_cli.py`
-  - Probe Claude native skill support in `claude --print` mode.
-  - Project Claude runtime skill view before calls.
-  - Record projection/probe metadata.
+  - Records Claude native skill capability metadata, run projection metadata,
+    and passes `--allowedTools Skill(...)` for projected skills.
 
 - `src/pyocd_debug_mcp/brain/loop.py`
-  - Build native skill index and include it in prompt bundles.
-  - Initialize projection before first provider turn.
-  - Preserve fallback instructions and artifact metadata.
+  - Builds native skill indexes, initializes projection before first provider
+    turn, preserves fallback instructions, and records projection metadata in
+    request payloads and prompt accounting.
 
 - `src/pyocd_debug_mcp/brain/config.py`
-  - Add CLI/env config for native skill bridge mode: `off`, `auto`, `require`.
-  - Add optional provider-native skill root override if packaging requires it.
+  - Added env/config support for `off`, `auto`, `require`, and the optional
+    provider-native skill root override.
 
 - new provider-native-skill bridge module under the brain package, recommended
   name `provider_native_skills.py`
-  - Own manifests, validation, projection, hashing, capability probe records,
+  - Owns manifests, validation, projection, hashing, capability probe records,
     and prompt-index rendering.
 
 Likely docs:
@@ -540,12 +559,10 @@ Likely docs:
 - `markdowns/R12_P_SPLIT.md` or `markdowns/things-to-change.md` if this is
   accepted as a new hard-bar item.
 
-Likely tests:
+Tests added or updated:
 
-- a new focused provider-native-skill test module
+- `tests/test_provider_native_skills.py`
 - `tests/test_r12_turnkey.py`
-- `tests/test_r12_turnkey_merge.py`
-- `tests/test_branch_c_harness.py`
 
 ## Board-Facts-As-Data And Origin Tags
 
@@ -568,20 +585,16 @@ manifest applicability, board config, or task/case data.
 
 ## Documentation Plan
 
-Before implementation:
+Current status:
 
-- Keep this file as the proposal spec.
-- Add it to `markdowns/curr/README.md` as an active proposal.
-- Do not edit the build plan until the user accepts this as a hard-bar change.
-
-During implementation:
-
-- Update `skills/README.md` with the distinction between diagnostic YAML skills,
-  model-native fallback skills, and provider-native projected skills.
-- Update `markdowns/current-progress.md` only after real implementation and
-  validation.
-- Update `markdowns/things-to-change.md` and `markdowns/R12_P_SPLIT.md` if this
-  is promoted into the active prototype hard bar.
+- Keep this file as the implemented hard-bar spec for the Wave 1
+  provider-native skill bridge.
+- Keep `markdowns/curr/README.md`, `markdowns/current-progress.md`,
+  `markdowns/things-to-change.md`, `markdowns/R12_P_SPLIT.md`,
+  `markdowns/ROADMAP.md`, and the concrete build plan synchronized with the
+  implementation and validation state.
+- Keep `skills/README.md` documenting the distinction between diagnostic YAML
+  skills, model-native fallback skills, and provider-native projected skills.
 - If provider-native bridge options appear in CLI help, update the CLI help
   strings and any operator-facing docs in the same build pass.
 
@@ -596,10 +609,9 @@ Provider docs used for this spec:
 - OpenAI Codex app command docs:
   `https://developers.openai.com/codex/app/commands`
 
-Discovery docs to add before implementation:
+Discovery docs:
 
-- a future `r12-provider-native-skill-bridge_probe_notes.md` file under
-  `markdowns/curr/`
+- `r12-provider-native-skill-bridge_probe_notes.md` under `markdowns/curr/`
   - Burner skill definitions used for each provider.
   - Exact commands and environment overrides.
   - Candidate path and invocation matrix results.
@@ -735,18 +747,31 @@ Hardware checks after no-hardware proof:
   `CODEX_HOME` containing skills and team config under `.codex/skills`.
   Production code must follow Phase 0 local CLI evidence, not this proposal's
   older path assumption.
+- Phase 0 burner probes proved native skill access in the current
+  brain/provider architecture:
+  - Codex CLI uses runtime `.codex/skills` in `codex exec`.
+  - Claude CLI uses runtime `.claude/skills` in `claude --print` when FirmCLI
+    passes `--allowedTools Skill(<skill-id>)`.
+- Implementation added `provider_native_skills.py`, provider capability and
+  prompt-accounting fields, Codex/Claude projection metadata, Claude
+  `--allowedTools` skill allowlist wiring, `--provider-native-skills
+  off|auto|require`, `--provider-native-skill-root`,
+  `skills/provider_native/common/firmcli-firmware-debug`, and
+  `skills/model_native/firmcli-firmware-debug`.
+- Focused non-hardware tests are green:
+  `uv run pytest tests/test_provider_native_skills.py tests/test_r12_turnkey.py -q`
+  -> `78 passed`.
 
 ## Pending Verification
 
-- No product code has been changed by this spec.
-- No tests have been run for this spec.
-- Phase 0 burner-skill discovery has not yet been run.
-- The provider-native skill bridge probe-notes markdown has not yet been
-  created.
-- Provider-native skill folder names and invocation forms are `UNVERIFIED` for
-  the exact local noninteractive CLI modes until probes are implemented.
+- Full Python-change validation and full FirmCLI suite validation are still
+  pending after this implementation pass.
 - Claude `/loop`, Codex `/goal`, subagent, and future workflow behavior are not
   proven safe for FirmCLI hardware runs.
-- Live Claude/Codex native skill projection requires local CLI/auth availability.
+- Native skill projection has no attached-board product run proof yet in this
+  pass; focused no-hardware regression tests prove projection and
+  prompt/artifact behavior.
+- Live Claude/Codex native skill projection requires local CLI/auth availability
+  and should be included in the next full Wave 1 validation run.
 - Exact official `nrf52833dk` hardware proof remains pending until that board is
   attached.

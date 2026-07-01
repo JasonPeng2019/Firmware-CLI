@@ -63,6 +63,14 @@ class ClaudeCLIDecisionProvider:
             remote_strategy="claude-session-resume",
             resume_requires_stable_workdir=True,
             supports_transactional_fork=True,
+            supports_native_skills=True,
+            native_skill_layout=".claude/skills",
+            native_skill_invocation_style="/skill-id with Skill(skill-id) allowed",
+            native_skill_probe_status="phase0_burner_skill_proven",
+            native_skill_probe_details={
+                "evidence": ".claude/skills worked in claude --print --output-format json when Skill(skill-id) was allowed.",
+                "json_schema_mode": "probe_hung_do_not_use",
+            },
         )
 
     async def next_decision(
@@ -165,6 +173,8 @@ class ClaudeCLIDecisionProvider:
                     "resumed_session": resumed_session,
                     "working_directory": str(working_dir),
                     "resume_recovery_action": recovery_action,
+                    "native_skill_projection": prompt_bundle.native_skill_projection,
+                    "native_skill_tool_allowlist": list(prompt_bundle.native_skill_tool_allowlist),
                 },
             )
         ]
@@ -220,6 +230,7 @@ class ClaudeCLIDecisionProvider:
                         instructions=prompt_bundle.system_instructions,
                         resume_session_id=current_resume_session_id,
                         fork_session=current_fork_session,
+                        allowed_tools=prompt_bundle.native_skill_tool_allowlist,
                     ),
                     input=current_prompt,
                     text=True,
@@ -344,6 +355,8 @@ class ClaudeCLIDecisionProvider:
                     ),
                     "resume_recovery_failure": recovery_record,
                     "rendered_prompt": prompt_accounting,
+                    "native_skill_projection": prompt_bundle.native_skill_projection,
+                    "native_skill_tool_allowlist": list(prompt_bundle.native_skill_tool_allowlist),
                 },
             )
             updated_session = (
@@ -472,6 +485,7 @@ def _build_claude_command(
     resume_session_id: str | None = None,
     fork_session: bool = False,
     no_session_persistence: bool = False,
+    allowed_tools: tuple[str, ...] = (),
 ) -> list[str]:
     command = [
         "claude",
@@ -487,6 +501,8 @@ def _build_claude_command(
         command.extend(["--model", model])
     if no_session_persistence:
         command.append("--no-session-persistence")
+    if allowed_tools:
+        command.extend(["--allowedTools", ",".join(allowed_tools)])
     if resume_session_id:
         command.extend(["--resume", resume_session_id])
         if fork_session:

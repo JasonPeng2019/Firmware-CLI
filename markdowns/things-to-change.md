@@ -44,6 +44,14 @@ ONLY INCLUDE for the first capability prototype:
    turnkey path: bootstrap/full turns may carry the large setup context, while
    ordinary later turns receive compact state plus focused loaded details and
    telemetry rather than repeated full schema/memory bundles.
+   Provider-native skill bridge hardening is now part of this Wave 1 bar:
+   CLI providers receive run-local native skill projections
+   (`.codex/skills` for Codex CLI and `.claude/skills` plus
+   `--allowedTools Skill(...)` for Claude CLI), the prompt tells providers to
+   prefer native invocation for listed FirmCLI skills, and API providers or
+   uncertain native behavior must fall back to deterministic
+   `load_skills(skill_ids=[...])`. Product skill source remains FirmCLI-owned;
+   no global user `.codex`, `.claude`, or `.agents` folders are written.
 15. Client-side `codebase_map.md` for Wave 2 model-native code work. On first
    workspace boot the provider authors a codebase map from a deterministic
    inventory skeleton; every provider turn gets the skill index, available-tool
@@ -97,9 +105,17 @@ Prototype acceptance contract:
   validation requirement: bootstrap/full prompt rendering, ordinary compact
   `remote-delta` state, bounded in-run memory, focused detail rendering,
   rendered-vs-available prompt telemetry, and credentials-free API-path
-  simulation must stay green before Wave 1 can be called complete. Live API
-  calls still depend on credentials/credits, and exact official `nrf52833dk`
-  proof remains an external hardware boundary.
+  simulation must stay green before Wave 1 can be called complete. The
+  provider-native skill bridge spec at
+  `markdowns/curr/r12-provider-native-skill-bridge_spec.md` is also a Wave 1
+  validation requirement: `.codex`/`.claude` native projection, Claude
+  `Skill(...)` allowlisting, fallback `load_skills`, projection metadata, and
+  no-global-provider-config behavior must remain green. Attached-board
+  projected-skill proof is green on `nucleo_l476rg + nrf52840dk` with both
+  CLI providers, and the projection layer now refuses to overwrite unmarked
+  pre-existing native skill directories in user workspaces. Live API calls
+  still depend on credentials/credits, and exact official `nrf52833dk` proof
+  remains an external hardware boundary.
 
 # Later MVP / Nice-To-Have Priority
 

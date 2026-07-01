@@ -38,6 +38,7 @@ DEFAULT_SERIAL_READ_SECONDS = 3.0
 DEFAULT_CODEX_TIMEOUT_SECONDS = 180.0
 DEFAULT_CASE_BUILD_TIMEOUT_SECONDS = 1800.0
 DEFAULT_SCORING_PROFILE = "r11_default_v1"
+_RUNTIME_CONTEXT_DIRS = frozenset({".agents", ".claude", ".codex"})
 FULL_MCP_TOOL_SURFACE = (
     "connect",
     "disconnect",
@@ -813,10 +814,16 @@ def _relative_files(root: Path) -> dict[str, bytes]:
         relative = path.relative_to(root)
         if "build" in relative.parts:
             continue
+        if _is_runtime_context_file(relative):
+            continue
         if relative.name.startswith(".r11_"):
             continue
         output[str(relative).replace("\\", "/")] = path.read_bytes()
     return output
+
+
+def _is_runtime_context_file(relative: Path) -> bool:
+    return bool(relative.parts) and relative.parts[0] in _RUNTIME_CONTEXT_DIRS
 
 
 def _changed_files(before_root: Path, after_root: Path) -> tuple[str, ...]:

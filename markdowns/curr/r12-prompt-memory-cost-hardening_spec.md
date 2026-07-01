@@ -405,22 +405,23 @@ Docs expected after implementation:
 
 ## Documentation Plan
 
-Before implementation:
+Current status:
 
-- Keep this file as the proposal spec.
-- Do not make it authority until reconciled and accepted.
-
-During implementation:
-
-- Update `markdowns/current-progress.md` with the actual behavior, test proof, and any remaining hardware/API gaps.
-- Update `markdowns/things-to-change.md` to remove any future-feature framing around cross-invocation session persistence and replace it with bounded prompt/memory hardening if needed.
-- Update `markdowns/R12_P_SPLIT.md` so Wave 1/Wave 2 split reflects:
+- Keep this file as the implemented hard-bar spec for Wave 1 prompt and memory
+  cost hardening.
+- Keep `markdowns/current-progress.md` synchronized with the actual behavior,
+  test proof, and remaining hardware/API gaps.
+- Keep `markdowns/things-to-change.md` free of future-feature framing around
+  cross-invocation session persistence; bounded prompt/memory hardening is the
+  active requirement.
+- Keep `markdowns/R12_P_SPLIT.md` aligned so the Wave 1/Wave 2 split reflects:
   - no cross-invocation session persistence,
   - compact later-turn prompts,
   - tiered bounded memory,
   - rendered-vs-available prompt telemetry,
   - API/CLI provider parity.
-- If provider docstrings or CLI help mention memory behavior, update those docstrings/help strings in the same change.
+- If provider docstrings or CLI help mention memory behavior, update those
+  docstrings/help strings in the same change.
 
 ## Portability
 

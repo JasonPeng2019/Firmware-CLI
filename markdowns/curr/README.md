@@ -23,25 +23,20 @@ active current-step truth, not historical process ledgers or branch proof notes.
   credentials-free API-provider simulation coverage.
 - `r12-prompt-memory-cost-hardening_process.md` - active implementation and
   validation ledger for the prompt/memory cost hardening pass.
-- `wave1-full-suite-claude-restored_spec.md` - implemented validation record for
-  the auth-restored Claude CLI attached-board checks and credentials-free
-  OpenAI/Anthropic API-path simulation checks.
-- `next-codex-handoff-20260630.md` - current final-audit handoff for a fresh
-  Codex session to independently review the pushed R12 scaffold hardening,
-  delta-index prompt work, Wave 1 scope, important code/docs/tests, and live
-  validation plan.
-- `wave1-final-deployment-adversarial-audit_process.md` - active process
-  ledger for the current Wave 1 product-deployment adversarial audit loop.
+- `r12-provider-native-skill-bridge_spec.md` - implemented Wave 1 hard-bar spec
+  for projecting FirmCLI-owned skills into native `.codex/skills` and
+  `.claude/skills` runtime views for CLI providers, with deterministic
+  `load_skills` fallback for API providers and uncertain native-skill handling.
+- `r12-provider-native-skill-bridge_process.md` - active implementation and
+  validation ledger for the provider-native skill bridge pass.
+- `r12-provider-native-skill-bridge_probe_notes.md` - Phase 0 no-hardware proof
+  for the selected Codex and Claude native skill layouts and invocation
+  requirements.
 
 ## Active Future Specs
 
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
-- `r12-provider-native-skill-bridge_spec.md` - proposal spec for projecting
-  FirmCLI-owned provider-native skills into Claude/Codex runtime skill layouts,
-  prompting native skill invocation first, and falling back to FirmCLI
-  `load_skills` when native provider behavior is unavailable or unproven. This
-  is intentionally still in `curr` and is not implemented.
 
 Canonical current status now lives in:
 
@@ -91,6 +86,13 @@ were moved to:
 markdowns/tmp/curr-archive-20260630-wave2-spec-cleanup/
 ```
 
+The superseded June 30 Wave 1 handoff, final-deployment adversarial-audit
+ledger, and Claude-restored full-suite validation record were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260701-provider-native-doc-sync/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -102,24 +104,25 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ## Verified
 
 - `markdowns/curr/` now contains this index, active/implemented R12 Wave 1
-  specs and process ledgers, the active Wave 2 codebase-map spec, the active
-  provider-native skill bridge proposal, the current final-audit handoff, and
-  the active Wave 1 final-deployment audit process ledger.
+  specs and process ledgers, the active Wave 2 codebase-map spec, and the
+  implemented provider-native skill bridge spec/process/probe notes.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
-- R12 scaffold hardening and prompt/memory cost hardening are implemented and
-  validated by Python-change gates, suite ladders, focused fake-provider/API
-  simulation tests, Codex/Claude CLI live smokes, and attached-board hardware
-  runs recorded in the current or archived process ledgers.
+- R12 scaffold hardening, prompt/memory cost hardening, and provider-native
+  skill projection are implemented and validated by Python-change gates, suite
+  ladders, focused fake-provider/API simulation tests, Codex/Claude CLI live
+  smokes, Branch C attached-board runs, and representative code-writing repair
+  benchmarks recorded in the current or archived process ledgers.
 
 ## Pending Verification
 
 - Branch B's free-host-work / governed-decision boundary, R12 scaffold
-  hardening, and R12 prompt/memory cost hardening are implemented and
-  attached-board/API-simulated.
+  hardening, R12 prompt/memory cost hardening, and the provider-native skill
+  bridge are implemented and validated on the attached `nucleo_l476rg` and
+  `nrf52840dk` deployment surface available on this host.
 - Remaining proof gaps are external: live API credentials, exact official-board
-  proof, and fresh-machine deployment.
+  proof beyond the attached board set, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.
 - Wave 2 progress/inspector, checkpoints, scoped green approval, static
   context/cache reuse, codebase-map scaffolding, and cleanup guard work remains

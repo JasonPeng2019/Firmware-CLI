@@ -9,7 +9,12 @@ import shutil
 from typing import Literal, cast
 
 from pyocd_debug_mcp.brain.decision_types import IterationEstimate, TimeoutProposal
+from pyocd_debug_mcp.brain.provider_native_skills import (
+    ProviderNativeSkillMode,
+    cast_provider_native_skill_mode,
+)
 from pyocd_debug_mcp.local_env import load_local_env
+from pyocd_debug_mcp.runtime_resources import resolve_provider_native_skills_root
 from pyocd_debug_mcp.timeouts import (
     PROVIDER_REQUEST_TIMEOUT_SECONDS,
     TurnkeyTimeoutConfig,
@@ -25,6 +30,7 @@ DEFAULT_TURNKEY_NATIVE_SYNC_EVERY = 10
 DEFAULT_TURNKEY_RECENT_TURN_DETAIL_LIMIT = 2
 DEFAULT_TURNKEY_MEMORY_SUMMARY_MAX_CHARS = 2_000
 DEFAULT_TURNKEY_PRELOAD_COMMON_DETAILS = True
+DEFAULT_TURNKEY_PROVIDER_NATIVE_SKILLS: ProviderNativeSkillMode = "auto"
 
 
 class BrainConfigError(RuntimeError):
@@ -53,6 +59,8 @@ class TurnkeyInvocation:
     recent_turn_detail_limit: int
     memory_summary_max_chars: int
     preload_common_details: bool
+    provider_native_skills: ProviderNativeSkillMode
+    provider_native_skill_root: Path
     port: str | None = None
     flash_artifact: Path | None = None
     elf: Path | None = None
@@ -244,6 +252,35 @@ def resolve_preload_common_details(override: bool | None = None) -> bool:
     )
 
 
+def resolve_provider_native_skills(
+    override: str | ProviderNativeSkillMode | None = None,
+) -> ProviderNativeSkillMode:
+    raw_value = override
+    if raw_value is None:
+        raw_value = os.environ.get("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS")
+    if raw_value is None or not str(raw_value).strip():
+        return DEFAULT_TURNKEY_PROVIDER_NATIVE_SKILLS
+    try:
+        return cast_provider_native_skill_mode(str(raw_value))
+    except Exception as exc:
+        raise BrainConfigError(str(exc)) from exc
+
+
+def resolve_provider_native_skill_root(
+    override: str | Path | None = None,
+) -> Path:
+    raw_value = override
+    if raw_value is None:
+        raw_value = (os.environ.get("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT") or "").strip()
+    if raw_value:
+        return _normalize_optional_path(raw_value) or resolve_provider_native_skills_root()
+    try:
+        return resolve_provider_native_skills_root()
+    except Exception:
+        repo_default = Path(__file__).resolve().parents[3] / "skills" / "provider_native"
+        return repo_default.resolve()
+
+
 def build_turnkey_invocation(
     *,
     mode: TurnkeyMode,
@@ -258,6 +295,8 @@ def build_turnkey_invocation(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: str | ProviderNativeSkillMode | None = None,
+    provider_native_skill_root: str | Path | None = None,
     port: str | None = None,
     flash_artifact: str | Path | None = None,
     elf: str | Path | None = None,
@@ -293,6 +332,8 @@ def build_turnkey_invocation(
         recent_turn_detail_limit=resolve_recent_turn_detail_limit(recent_turn_detail_limit),
         memory_summary_max_chars=resolve_memory_summary_max_chars(memory_summary_max_chars),
         preload_common_details=resolve_preload_common_details(preload_common_details),
+        provider_native_skills=resolve_provider_native_skills(provider_native_skills),
+        provider_native_skill_root=resolve_provider_native_skill_root(provider_native_skill_root),
         port=(port or None),
         flash_artifact=_normalize_optional_path(flash_artifact),
         elf=_normalize_optional_path(elf),

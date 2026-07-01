@@ -63,6 +63,13 @@ class CodexCLIDecisionProvider:
             remote_strategy="codex-thread-resume",
             resume_requires_stable_workdir=False,
             supports_transactional_fork=False,
+            supports_native_skills=True,
+            native_skill_layout=".codex/skills",
+            native_skill_invocation_style="$skill-id or explicit skill request",
+            native_skill_probe_status="phase0_burner_skill_proven",
+            native_skill_probe_details={
+                "evidence": ".codex/skills worked in codex exec no-hardware burner probes."
+            },
         )
 
     async def next_decision(
@@ -164,6 +171,7 @@ class CodexCLIDecisionProvider:
                     "resumed_thread": resumed_thread,
                     "working_directory": str(working_dir),
                     "resume_recovery_action": recovery_action,
+                    "native_skill_projection": prompt_bundle.native_skill_projection,
                 },
             )
         ]
@@ -355,6 +363,7 @@ class CodexCLIDecisionProvider:
                     ),
                     "resume_recovery_failure": recovery_record,
                     "rendered_prompt": prompt_accounting,
+                    "native_skill_projection": prompt_bundle.native_skill_projection,
                 },
             )
             updated_session = (

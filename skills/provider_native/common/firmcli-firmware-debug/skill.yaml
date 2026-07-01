@@ -1,0 +1,22 @@
+skill_id: firmcli-firmware-debug
+title: FirmCLI Firmware Debug
+description: Use for FirmCLI firmware diagnosis, host-side code repair planning, and deciding which governed board evidence to request.
+providers:
+  - claude-cli
+  - codex-cli
+native_invocation:
+  claude-cli: /firmcli-firmware-debug
+  codex-cli: $firmcli-firmware-debug
+fallback_skill_ids:
+  - firmcli-firmware-debug
+depends_on: []
+context_files:
+  - SKILL.md
+usable_paths: []
+requires_governed_actions:
+  - connect
+  - flash_firmware
+  - read_serial
+  - read_symbol_u32
+  - run_green_check
+source_status: active

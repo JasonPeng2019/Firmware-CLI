@@ -1,0 +1,8 @@
+skill_id: firmcli-firmware-debug
+title: FirmCLI Firmware Debug
+description: Use for FirmCLI firmware diagnosis, repair planning, and governed evidence requests.
+depends_on: []
+init_scripts: []
+context_files:
+  - SKILL.md
+usable_paths: []

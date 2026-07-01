@@ -130,6 +130,25 @@ request/response handling, prompt render modes, retry/error surfaces, and
 prompt accounting are covered without live API credentials. This feature still
 does not add cross-invocation provider-session persistence.
 
+Provider-native skill bridge update, 2026-07-01: the Wave 1 skill hard bar now
+uses native provider skill behavior where it is proven available. Phase 0
+burner probes proved `codex exec` can read run-local `.codex/skills`, and
+`claude --print --output-format json` can read run-local `.claude/skills` when
+FirmCLI passes `--allowedTools Skill(<skill-id>)`. The implementation projects
+FirmCLI-owned provider-native packages into those runtime layouts, records
+projection hashes in `firmcli-native-skills.json`, prompts CLI providers to
+prefer native skill invocation, and keeps API providers on deterministic
+`load_skills` fallback. It adds `--provider-native-skills off|auto|require`,
+`--provider-native-skill-root`, `PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS`, and
+`PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT`. Focused non-hardware coverage,
+Python-change, the suite ladder, credentials-free API-path simulation, Branch C
+provider/hardware rows, and representative projected-skill hardware repair
+benchmarks are green. The attached-board projected-skill proof used
+`nucleo_l476rg + nrf52840dk` with both `codex-cli` and `claude-cli`; exact
+official `nrf52833dk`, live API credentials, and fresh-machine proof remain
+external boundaries. The detailed matrix is recorded in
+`markdowns/curr/wave1-full-product-suite-provider-native_spec.md`.
+
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,
 and validated. Agents must not use passing subset tests or narrower branch

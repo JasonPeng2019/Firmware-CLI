@@ -42,6 +42,8 @@ from pyocd_debug_mcp.brain.config import (
     resolve_memory_mode,
     resolve_memory_summary_max_chars,
     resolve_native_sync_every,
+    resolve_provider_native_skill_root,
+    resolve_provider_native_skills,
     resolve_preload_common_details,
     resolve_recent_turn_detail_limit,
 )
@@ -1083,6 +1085,7 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     bundle = ProviderPromptBundle(
         system_instructions="sys",
         skill_context_text="skill context",
+        native_skill_context_text="native skill context",
         tool_schema_text="tool schema",
         provider_memory_text="memory block",
         turn_context_text="turn context",
@@ -1090,15 +1093,19 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     )
 
     assert bundle.render_bootstrap_text(include_memory=True) == (
-        "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
+        "skill context\n\nnative skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
-    assert bundle.render_remote_delta_text() == "skill context\n\ntool schema\n\nturn context"
+    assert bundle.render_remote_delta_text() == (
+        "skill context\n\nnative skill context\n\ntool schema\n\nturn context"
+    )
     assert bundle.render_remote_sync_text(include_memory=True) == (
-        "skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
+        "skill context\n\nnative skill context\n\ntool schema\n\nturn context\n\nmemory block\n\ndecision schema"
     )
     assert not hasattr(bundle, "render_native_delta_text")
     assert not hasattr(bundle, "render_native_sync_text")
-    assert bundle.render_retry_text("retry now") == "turn context\n\ndecision schema\n\nretry now"
+    assert bundle.render_retry_text("retry now") == (
+        "native skill context\n\nturn context\n\ndecision schema\n\nretry now"
+    )
     accounting = bundle.prompt_accounting(
         prompt_render_mode="remote-delta",
         rendered_prompt_text=bundle.render_remote_delta_text(),
@@ -1117,6 +1124,9 @@ def test_provider_prompt_bundle_exposes_static_and_dynamic_render_modes() -> Non
     memory_section = require_mapping(sections["provider_memory"])
     assert memory_section["available_length"] == len("memory block")
     assert memory_section["rendered"] is False
+    native_section = require_mapping(sections["native_skill_context"])
+    assert native_section["available_length"] == len("native skill context")
+    assert native_section["rendered"] is True
 
 
 @pytest.mark.anyio
@@ -1567,12 +1577,16 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     monkeypatch.delenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", raising=False)
     monkeypatch.delenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS", raising=False)
+    monkeypatch.delenv("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT", raising=False)
 
     assert resolve_memory_mode() == "deterministic"
     assert resolve_native_sync_every() == 10
     assert resolve_recent_turn_detail_limit() == 2
     assert resolve_memory_summary_max_chars() == 2_000
     assert resolve_preload_common_details() is True
+    assert resolve_provider_native_skills() == "auto"
+    assert resolve_provider_native_skill_root().name == "provider_native"
     assert DEFAULT_NATIVE_SYNC_EVERY == 10
 
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_MODE", "model-summary")
@@ -1580,12 +1594,19 @@ def test_memory_config_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PYOCD_TURNKEY_RECENT_TURN_DETAIL_LIMIT", "3")
     monkeypatch.setenv("PYOCD_TURNKEY_MEMORY_SUMMARY_MAX_CHARS", "2500")
     monkeypatch.setenv("PYOCD_TURNKEY_PRELOAD_COMMON_DETAILS", "false")
+    monkeypatch.setenv("PYOCD_TURNKEY_PROVIDER_NATIVE_SKILLS", "require")
+    monkeypatch.setenv(
+        "PYOCD_TURNKEY_PROVIDER_NATIVE_SKILL_ROOT",
+        str(Path("skills/provider_native")),
+    )
 
     assert resolve_memory_mode() == "model-summary"
     assert resolve_native_sync_every() == 7
     assert resolve_recent_turn_detail_limit() == 3
     assert resolve_memory_summary_max_chars() == 2_500
     assert resolve_preload_common_details() is False
+    assert resolve_provider_native_skills() == "require"
+    assert resolve_provider_native_skill_root() == Path("skills/provider_native").resolve()
 
 
 def test_memory_compaction_triggers_on_recent_memory_char_limit() -> None:
@@ -1783,12 +1804,22 @@ def test_prepare_workspace_session_tracks_diff_without_copy(tmp_path: Path) -> N
         label="unit",
     )
     session.replace_file("src/main.c", "after\n")
+    (workspace_root / ".agents" / "skills").mkdir(parents=True)
+    (workspace_root / ".agents" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
+    (workspace_root / ".claude" / "skills").mkdir(parents=True)
+    (workspace_root / ".claude" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
+    (workspace_root / ".codex" / "skills").mkdir(parents=True)
+    (workspace_root / ".codex" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
     diff_path = tmp_path / "diff.patch"
     session.write_diff(diff_path)
+    diff_text = diff_path.read_text(encoding="utf-8")
 
     assert session.changed_files() == ("src/main.c",)
-    assert "a/src/main.c" in diff_path.read_text(encoding="utf-8")
-    assert "b/src/main.c" in diff_path.read_text(encoding="utf-8")
+    assert "a/src/main.c" in diff_text
+    assert "b/src/main.c" in diff_text
+    assert ".agents" not in diff_text
+    assert ".claude" not in diff_text
+    assert ".codex" not in diff_text
 
 
 def test_prepare_workspace_session_refuses_binary_read(tmp_path: Path) -> None:
@@ -3000,6 +3031,80 @@ def test_stable_workdir_provider_runs_inside_workspace(
     assert provider.working_directories == [str(workspace_root.resolve())]
 
 
+def test_run_turnkey_projects_provider_native_skills_into_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("pyocd_debug_mcp.brain.loop.RUNS_ROOT", tmp_path / "runs")
+    source_root = tmp_path / "skills" / "provider_native"
+    skill_root = source_root / "common" / "firmcli-test-skill"
+    skill_root.mkdir(parents=True)
+    skill_root.joinpath("skill.yaml").write_text(
+        "\n".join(
+            [
+                "skill_id: firmcli-test-skill",
+                "title: Test Native Skill",
+                "description: Use for native projection tests.",
+                "providers:",
+                "  - codex-cli",
+                "native_invocation:",
+                "  codex-cli: $firmcli-test-skill",
+                "fallback_skill_ids:",
+                "  - firmcli-firmware-debug",
+                "context_files:",
+                "  - SKILL.md",
+                "source_status: active",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    skill_root.joinpath("SKILL.md").write_text("# Test Native Skill\n", encoding="utf-8")
+    provider = FakeProvider(
+        [
+            TurnDecision(
+                observation_summary="Native skill index is visible.",
+                classification="healthy",
+                action=FinalizeAction(
+                    final_status="diagnosed_only",
+                    classification="healthy",
+                    root_cause="Projection metadata was available.",
+                    summary="Projection inspected.",
+                ),
+            )
+        ]
+    )
+    invocation = build_turnkey_invocation(
+        mode="freeform",
+        provider="codex-cli",
+        board_id="nrf52833dk",
+        task="Check provider-native skill projection.",
+        model=None,
+        max_iters=1,
+        serial_read_seconds=0.1,
+        provider_native_skill_root=source_root,
+    )
+
+    execution = anyio.run(
+        lambda: run_turnkey(
+            invocation,
+            provider=provider,
+            client_factory=cast(Any, lambda: FakeClient({})),
+        )
+    )
+
+    projection = require_mapping(execution.request_payload["provider_native_skills"])
+    projection_root = Path(require_str(projection["projection_root"]))
+    assert execution.result.final_status == "diagnosed_only"
+    assert projection["status"] == "available"
+    assert projection["layout"] == ".codex/skills"
+    assert (projection_root / "firmcli-test-skill" / "SKILL.md").exists()
+    assert "Provider-native FirmCLI skills available" in execution.prompt_text
+    assert "$firmcli-test-skill" in execution.prompt_text
+    assert 'load_skills(skill_ids=["firmcli-firmware-debug"])' in execution.prompt_text
+    assert "firmcli-test-skill" not in execution.state.model_native_skills.loaded_skills
+
+
 def test_run_turnkey_allows_green_check_after_first_failed_fix_verification(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -3985,12 +4090,35 @@ def test_turnkey_cli_uses_higher_default_iteration_budget_for_benchmarks() -> No
     assert args.max_iters == 18
 
 
+def test_turnkey_cli_accepts_provider_native_skill_arguments() -> None:
+    args = build_turnkey_cli_parser().parse_args(
+        [
+            "run",
+            "--board-id",
+            "nrf52833dk",
+            "--task",
+            "Inspect native skills.",
+            "--provider-native-skills",
+            "require",
+            "--provider-native-skill-root",
+            "skills/provider_native",
+        ]
+    )
+
+    assert args.provider_native_skills == "require"
+    assert args.provider_native_skill_root == "skills/provider_native"
+
+
 def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
     args = r12_benchmark.build_parser().parse_args(
         [
             "case",
             "--case-id",
             "nrf52833dk__k001_reference_green",
+            "--provider-native-skills",
+            "off",
+            "--provider-native-skill-root",
+            "skills/provider_native",
             "--timeout-config-json",
             '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
@@ -4003,6 +4131,8 @@ def test_module_benchmark_cli_accepts_planning_hook_arguments() -> None:
     assert args.timeout_config_json == '{"default_tool_seconds": 19.0}'
     assert args.timeout_proposal_json == '{"provider_seconds": 120.0}'
     assert args.iteration_estimate_json == '{"requested_max_iterations": 6}'
+    assert args.provider_native_skills == "off"
+    assert args.provider_native_skill_root == "skills/provider_native"
 
 
 def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4031,6 +4161,10 @@ def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyP
             "case",
             "--case-id",
             "nrf52833dk__k001_reference_green",
+            "--provider-native-skills",
+            "require",
+            "--provider-native-skill-root",
+            "skills/provider_native",
             "--timeout-config-json",
             '{"default_tool_seconds": 19.0}',
             "--timeout-proposal-json",
@@ -4047,6 +4181,8 @@ def test_module_benchmark_cli_threads_planning_hooks(monkeypatch: pytest.MonkeyP
     assert timeout_config.default_tool_seconds == 19.0
     assert captured["timeout_proposal"] == TimeoutProposal(provider_seconds=120.0)
     assert captured["iteration_estimate"] == IterationEstimate(requested_max_iterations=6)
+    assert captured["provider_native_skills"] == "require"
+    assert captured["provider_native_skill_root"] == "skills/provider_native"
 
 
 def test_codex_cli_command_uses_output_schema_and_temp_workspace(tmp_path: Path) -> None:
@@ -4068,11 +4204,14 @@ def test_claude_cli_command_supports_optional_model() -> None:
     command = _build_claude_command(
         model="claude-sonnet-4-20250514",
         instructions="system",
+        allowed_tools=("Skill(firmcli-firmware-debug)",),
     )
     assert command[:4] == ["claude", "--print", "--output-format", "json"]
     assert "--permission-mode" in command
     assert "bypassPermissions" in command
     assert "--append-system-prompt" in command
+    assert "--allowedTools" in command
+    assert "Skill(firmcli-firmware-debug)" in command
     assert "--model" in command
     assert "claude-sonnet-4-20250514" in command
     assert "prompt" not in command

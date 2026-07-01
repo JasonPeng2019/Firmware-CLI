@@ -654,6 +654,12 @@ def test_changed_files_ignores_runner_temp_artifacts(tmp_path: Path) -> None:
     (after_root / "src" / "main.c").write_text("same\n", encoding="utf-8")
     (after_root / ".r11_codex_result.json").write_text("{}", encoding="utf-8")
     (after_root / ".r11_prompt.txt").write_text("prompt", encoding="utf-8")
+    (after_root / ".agents" / "skills").mkdir(parents=True)
+    (after_root / ".agents" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
+    (after_root / ".claude" / "skills").mkdir(parents=True)
+    (after_root / ".claude" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
+    (after_root / ".codex" / "skills").mkdir(parents=True)
+    (after_root / ".codex" / "skills" / "runtime.md").write_text("skill", encoding="utf-8")
 
     changed = r11._changed_files(before_root, after_root)
 

@@ -51,6 +51,24 @@
 > decision is specified and the coding is left to build time. Trying to settle both the plan and the
 > code at once is where errors creep in, so this stays at the plan level.
 >
+> **R12 provider-native skill bridge amendment (2026-07-01, implemented and
+> attached-board validated):** host-side workflow skill support now uses native provider
+> skill behavior where it is proven instead of reimplementing every skill
+> primitive inside the FirmCLI brain. FirmCLI owns source packages under
+> `skills/provider_native/` and `skills/model_native/`; CLI providers receive
+> run-local generated views (`.codex/skills` for Codex CLI and
+> `.claude/skills` for Claude CLI), and Claude noninteractive calls pass
+> `--allowedTools Skill(...)`. API providers and uncertain native behavior stay
+> on deterministic `load_skills(skill_ids=[...])` fallback. Native skills are
+> host-reasoning accelerators only and cannot bypass `TurnDecision`,
+> loaded-detail, recover, cleanup, board, or evidence gates. The bridge never
+> writes global user `.codex`, `.claude`, or `.agents` folders. Focused tests,
+> Python-change, the suite ladder, credentials-free API-path simulation, Branch C
+> provider/hardware harness rows, and representative projected-skill hardware
+> repair benchmarks are green on the attached `nucleo_l476rg + nrf52840dk`
+> boards. Live API-provider parity, exact official `nrf52833dk` proof, and
+> fresh-machine proof remain pending.
+>
 > **Hardware — TWO co-primary boards (build and prove the loop on both):**
 > - **Nordic nRF52833 DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
 >   USB. Radio-relevant (BLE/802.15.4). *Wrinkle to plan around:* J-Link's native protocol isn't
@@ -872,7 +890,10 @@ in `markdowns/things-to-change.md`, not a narrower agent-selected definition.
     safety lines in the cached prefix, let the model pull large bodies on
     demand where applicable, require those bodies before governed execution, and
     use content hashes for rendered tool/skill blocks and deterministic setup
-    artifacts.
+    artifacts. For CLI providers, project FirmCLI-owned provider-native
+    workflow skill packages into run-local `.codex/skills` or `.claude/skills`
+    views where native behavior is proven; keep `load_skills` as the
+    deterministic API and fallback path.
 12. **Add the client-side codebase map for Wave 2 model-native code work.** On
     first workspace boot, create `codebase_map.md` from deterministic inventory
     plus provider-authored descriptions. Prompt every provider turn with the
@@ -902,6 +923,17 @@ Codex CLI proof is green on the attached `nucleo_l476rg + nrf52840dk` pair, but
 Claude/API proof, exact official `nrf52833dk` proof, and fresh-machine proof
 remain pending. Wave 2 visibility/proof/static-context/checkpoint/cleanup items
 remain prototype requirements, not optional polish.
+
+Current status correction, 2026-07-01: provider-native skill projection is now
+part of the Wave 1 Stage 5 bar. Codex CLI must receive run-local
+`.codex/skills`, Claude CLI must receive run-local `.claude/skills` plus
+`--allowedTools Skill(...)`, and API providers must exercise the deterministic
+`load_skills` fallback path. This requirement is now validated through focused
+non-hardware tests, the suite ladder, simulated OpenAI/Anthropic API-provider
+paths, Branch C real provider/hardware rows, and representative projected-skill
+hardware repair benchmarks on the attached `nucleo_l476rg + nrf52840dk` boards.
+Live API credentials, exact official `nrf52833dk` proof, and fresh-machine proof
+remain pending gates.
 
 ---
 
@@ -1112,6 +1144,11 @@ Verified:
 - The repo now contains the tracked R12 contract doc, native Python brain
   package, board-aware skills tree, `pyocd-debug-brain` CLI, and sibling
   turnkey benchmark path over the same frozen 12-case corpus.
+- The repo now contains the provider-native skill bridge implementation,
+  FirmCLI-owned `skills/provider_native/` and `skills/model_native/` packages,
+  CLI/env controls, run-local provider projections, Claude `Skill(...)`
+  allowlisting, API/fallback `load_skills` behavior, focused tests, and green
+  Python-change/suite-ladder validation for that non-hardware surface.
 
 Pending verification:
 
@@ -1127,3 +1164,7 @@ Pending verification:
   proof exists for `nucleo_l476rg + nrf52840dk`; API-provider parity
   (`openai-api`, `anthropic-api`) and exact official-pair second-provider proof
   remain pending.
+- Full attached-board product proof that projected provider-native skills are
+  used inside real Codex/Claude CLI hardware repair loops is green on the
+  attached `nucleo_l476rg + nrf52840dk` pair; exact official `nrf52833dk`
+  replacement proof remains pending.

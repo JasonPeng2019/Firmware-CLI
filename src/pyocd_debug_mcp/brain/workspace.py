@@ -15,6 +15,7 @@ from pyocd_debug_mcp.timeouts import TURNKEY_BUILD_TIMEOUT_SECONDS
 
 SNAPSHOT_ROOT = RUNS_ROOT / "_r12_snapshots"  # PROJECT-DEFINED (turnkey scratch area)
 DEFAULT_BUILD_TIMEOUT_SECONDS = TURNKEY_BUILD_TIMEOUT_SECONDS
+_RUNTIME_CONTEXT_DIRS = frozenset({".agents", ".claude", ".codex"})
 
 
 class WorkspaceError(RuntimeError):
@@ -146,10 +147,16 @@ class WorkspaceSession:
             relative = path.relative_to(root)
             if "build" in relative.parts:
                 continue
+            if _is_runtime_context_file(relative):
+                continue
             if relative.name.startswith(".r12_"):
                 continue
             output[str(relative).replace("\\", "/")] = path.read_bytes()
         return output
+
+
+def _is_runtime_context_file(relative: Path) -> bool:
+    return bool(relative.parts) and relative.parts[0] in _RUNTIME_CONTEXT_DIRS
 
 
 def _decode_diff_text(data: bytes) -> tuple[list[str], bool]:

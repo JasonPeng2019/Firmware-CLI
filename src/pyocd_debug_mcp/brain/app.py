@@ -8,10 +8,10 @@ from pyocd_debug_mcp import benchmark_support as benchmark_support
 from pyocd_debug_mcp.brain import benchmark as r12_benchmark
 from pyocd_debug_mcp.brain.config import (
     BrainConfigError,
-    TurnkeyMemoryMode,
-    TurnkeyProviderKind,
     build_turnkey_invocation,
     load_provider_config,
+    TurnkeyMemoryMode,
+    TurnkeyProviderKind,
 )
 from pyocd_debug_mcp.brain.client_actions import (
     ClientActionLoadError,
@@ -24,6 +24,7 @@ from pyocd_debug_mcp.brain.loop import (
     TurnkeyExecution,
     run_turnkey_with_provider,
 )
+from pyocd_debug_mcp.brain.provider_native_skills import ProviderNativeSkillMode
 from pyocd_debug_mcp.timeouts import TurnkeyTimeoutConfig
 
 
@@ -43,6 +44,8 @@ async def run_freeform_task(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     workspace_root: str | None = None,
     build_command: str | None = None,
     event_sink: EventSink | None = None,
@@ -73,6 +76,8 @@ async def run_freeform_task(
         recent_turn_detail_limit=recent_turn_detail_limit,
         memory_summary_max_chars=memory_summary_max_chars,
         preload_common_details=preload_common_details,
+        provider_native_skills=provider_native_skills,
+        provider_native_skill_root=provider_native_skill_root,
         port=port,
         flash_artifact=flash_artifact,
         elf=elf,
@@ -113,6 +118,8 @@ def run_benchmark_case(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -137,6 +144,8 @@ def run_benchmark_case(
         recent_turn_detail_limit=recent_turn_detail_limit,
         memory_summary_max_chars=memory_summary_max_chars,
         preload_common_details=preload_common_details,
+        provider_native_skills=provider_native_skills,
+        provider_native_skill_root=provider_native_skill_root,
         event_sink=event_sink,
         timeout_config=timeout_config,
         timeout_proposal=timeout_proposal,
@@ -156,6 +165,8 @@ def run_benchmark_suite(
     recent_turn_detail_limit: int | None = None,
     memory_summary_max_chars: int | None = None,
     preload_common_details: bool | None = None,
+    provider_native_skills: ProviderNativeSkillMode | str | None = None,
+    provider_native_skill_root: str | None = None,
     event_sink: EventSink | None = None,
     timeout_config: TurnkeyTimeoutConfig | None = None,
     timeout_proposal: TimeoutProposal | None = None,
@@ -183,6 +194,8 @@ def run_benchmark_suite(
                 recent_turn_detail_limit=recent_turn_detail_limit,
                 memory_summary_max_chars=memory_summary_max_chars,
                 preload_common_details=preload_common_details,
+                provider_native_skills=provider_native_skills,
+                provider_native_skill_root=provider_native_skill_root,
                 event_sink=event_sink,
                 timeout_config=timeout_config,
                 timeout_proposal=timeout_proposal,
