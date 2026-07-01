@@ -41,6 +41,10 @@ active current-step truth, not historical process ledgers or branch proof notes.
 
 ## Active Future Specs
 
+- `wave1-5-interactive-session-hardening_spec.md` - active proposal spec for
+  making the `pyocd-debug` operator shell keep one parent agent session across
+  consecutive user prompts, with provider handle/memory carryover, prompt-scoped
+  child runs, explicit reset/fork controls, and no silent fresh-session fallback.
 - `wave2-codebase-map_spec.md` - active Wave 2 Module G spec for first-boot
   `codebase_map.md`, workflow-skill map injection, and map-maintenance turns.
 - `wave2-midtool-checkpoints_spec.md` - active Wave 2 Module E spec for a
@@ -201,6 +205,10 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - Remaining proof gaps are external: live API credentials, exact official-board
   proof beyond the attached board set, and fresh-machine deployment.
 - Exact official `nrf52833dk` proof remains pending.
+- Cross-prompt interactive provider continuity remains planning-only: the
+  current shell preserves settings/history, but not provider handles or compact
+  memory across separate user prompts. The proposed Wave 1.5 fix is
+  `wave1-5-interactive-session-hardening_spec.md`.
 - Wave 2 progress/inspector, mid-tool checkpoint buffers, scoped green approval,
   static context/cache reuse, codebase-map scaffolding, and cleanup guard work
   remains hard prototype scope.
