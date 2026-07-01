@@ -116,7 +116,10 @@ run-local `.claude/skills` plus `--allowedTools Skill(...)`, and API providers
 use deterministic `load_skills` fallback. Wave 2 Module G should consume this
 native projection/fallback split instead of reimplementing provider skill
 behavior inside the brain or reverting product skill source to global
-`.codex`/`.claude` folders.
+`.codex`/`.claude` folders. Wave 1 validation must also run the focused
+`tests/harness/provider_native_skill_usage.py` proof: each CLI provider must
+consume a run-local projected proof skill, return the hidden token through a
+valid `TurnDecision`, and avoid `load_skills` fallback.
 
 ## Wave 0 Clean Slate / P0.0 Validation - Serial First
 
@@ -767,7 +770,9 @@ into the other branch, or into final integration.
 - Wave 1 validation must also include provider-native skill bridge checks:
   projection to `.codex/skills` and `.claude/skills`, Claude
   `--allowedTools Skill(...)`, fallback `load_skills`, prompt accounting,
-  projection metadata, and no writes to global provider folders.
+  projection metadata, no writes to global provider folders, and focused live
+  Codex/Claude CLI invocation proof through
+  `tests/harness/provider_native_skill_usage.py`.
 - Branch B now explicitly preserves the closed-server boundary: model-native
   host work stays outside governed actions, board/server-native work stays
   gated, and UART write is treated as hardware-stack work.

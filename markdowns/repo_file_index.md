@@ -132,6 +132,7 @@ a glance before relying on detail.
 | `harness/stage1_smoke.py` | Stage 1 end-to-end smoke harness (config → artifacts → serial → session → flash → reset/halt → PC → symbol → memory readback → UART `boot ok`); passes on both scoped boards. |
 | `harness/r11_benchmark.py` | R11 Codex-driven benchmark runner (single-case + suite). |
 | `harness/r12_turnkey_benchmark.py` | Thin CLI wrapper for the R12 turnkey benchmark path. |
+| `harness/provider_native_skill_usage.py` | Focused live-provider proof that Codex CLI and Claude CLI consume run-local provider-native skills instead of falling back to FirmCLI `load_skills`. |
 | `test_board_configs.py` | Board-config loader/schema tests. `(by name)` |
 | `test_serial_resolver.py` | Serial resolution tests. `(by name)` |
 | `test_probe_inventory.py` | Probe parsing/selection tests. `(by name)` |
@@ -201,13 +202,12 @@ a glance before relying on detail.
 | Path | What it is / does |
 |---|---|
 | `README.md` | Short index for the reduced current-doc set and the current archive location. |
+| `next-codex-handoff-20260701-wave1-final-audit.md` | Current handoff for an independent Codex double-check of the Wave 1 product surface, docs, tests, provider behavior, API simulation, and attached-board validation. |
 | `r12-context-scaffold-hardening_spec.md` | Active R12 scaffold-hardening contract and verification record for product/client-owned model-native skills, runtime-copy recovery, tool-detail loading, strict details-before-execution guardrails, prompt ordering/dedupe, and future bug-reporting docs. |
 | `r12-delta-compact-indexes_spec.md` | Active implemented task spec for compact skill/tool indexes in ordinary remote-primary `remote-delta` provider turns without changing memory cadence or full-schema cadence. |
 | `r12-prompt-memory-cost-hardening_spec.md` | Implemented Wave 1 hard-bar spec for compact later-turn prompts, bounded in-run provider memory, focused detail rendering, schema cadence, and API-provider simulation coverage. |
-| `r12-prompt-memory-cost-hardening_process.md` | Active process ledger for prompt/memory cost hardening implementation and validation status. |
 | `r12-provider-native-skill-bridge_spec.md` | Implemented Wave 1 hard-bar spec for projecting FirmCLI-owned workflow skills into run-local provider-native CLI views with deterministic `load_skills` fallback for API providers. |
-| `r12-provider-native-skill-bridge_process.md` | Active process ledger for provider-native skill bridge implementation and validation status. |
-| `r12-provider-native-skill-bridge_probe_notes.md` | Phase 0 no-hardware proof notes for Codex `.codex/skills` and Claude `.claude/skills` plus `Skill(...)` allowance behavior. |
+| `r12-provider-native-skill-invocation-proof_spec.md` | Focused test design and verification record proving live Codex CLI and Claude CLI can read a run-local provider-native skill body and return evidence through a normal `TurnDecision`. |
 | `r12_turnkey_spec.md` | Implementation source of truth for the active R12 turnkey-brain slice and current prototype amendment. |
 | `wave2-codebase-map_spec.md` | Active Wave 2 Module G proposal for first-boot `codebase_map.md`, workflow-skill map injection, and map-maintenance turns. |
 
@@ -218,6 +218,7 @@ a glance before relying on detail.
 | `audit_and_validation_plan.md` | The audit + nRF52840 validation + Mac re-proof execution plan (Phase 0 complete). |
 | `build_plan_spec_gaps.md` | Pre-implementation gap analysis; mostly resolved. |
 | `mcp_tools.md` | Forward-looking reference on per-user dynamic tool listing over HTTP/OAuth (future hosted tier; not current architecture). |
+| `curr-archive-20260701-wave1-final-audit-handoff/` | Completed prompt/memory hardening process ledger, provider-native process/probe notes, Wave 1 adversarial-audit process ledger, and provider-native validation record archived from `curr` after the handoff was created. |
 | `p0-0-src-audit_review.md` | Completed independent review of the earlier `src/` audit/fix pass. |
 | `p0-foundation_review.md` | Historical independent review for the serial P0 foundation landing from the mainline branch. |
 | `p0_foundation_process.md` | Historical process ledger for the serial P0 foundation landing from the mainline branch. |

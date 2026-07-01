@@ -51,7 +51,11 @@ ONLY INCLUDE for the first capability prototype:
    prefer native invocation for listed FirmCLI skills, and API providers or
    uncertain native behavior must fall back to deterministic
    `load_skills(skill_ids=[...])`. Product skill source remains FirmCLI-owned;
-   no global user `.codex`, `.claude`, or `.agents` folders are written.
+   no global user `.codex`, `.claude`, or `.agents` folders are written. Wave
+   1 validation must include the focused live-provider invocation proof in
+   `tests/harness/provider_native_skill_usage.py`: Codex CLI and Claude CLI
+   must read a temporary run-local projected proof skill, return the hidden
+   token through a valid `TurnDecision`, and avoid `load_skills` fallback.
 15. Client-side `codebase_map.md` for Wave 2 model-native code work. On first
    workspace boot the provider authors a codebase map from a deterministic
    inventory skeleton; every provider turn gets the skill index, available-tool
@@ -113,9 +117,15 @@ Prototype acceptance contract:
   no-global-provider-config behavior must remain green. Attached-board
   projected-skill proof is green on `nucleo_l476rg + nrf52840dk` with both
   CLI providers, and the projection layer now refuses to overwrite unmarked
-  pre-existing native skill directories in user workspaces. Live API calls
-  still depend on credentials/credits, and exact official `nrf52833dk` proof
-  remains an external hardware boundary.
+  pre-existing native skill directories in user workspaces. Focused live
+  provider-native invocation proof is also green for Codex CLI and Claude CLI:
+  each provider consumed a run-local projected proof skill and returned a hidden
+  token from the skill body without `load_skills` fallback. The proof is
+  recorded in `markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md`
+  and report files under `runs/provider-native-skill-usage/`; the suite ladder
+  report is `runs/r12-provider-native-skill-invocation-proof-suite.txt`. Live
+  API calls still depend on credentials/credits, and exact official
+  `nrf52833dk` proof remains an external hardware boundary.
 
 # Later MVP / Nice-To-Have Priority
 

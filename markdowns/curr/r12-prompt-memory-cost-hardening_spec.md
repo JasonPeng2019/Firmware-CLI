@@ -518,10 +518,10 @@ Hardware/live checks after implementation:
   `test_openai_api_provider_factory_turnkey_loop_smoke` and
   `test_anthropic_api_provider_factory_turnkey_loop_smoke`.
 - Validation recorded in
-  `markdowns/curr/r12-prompt-memory-cost-hardening_process.md`: Python-change
-  gate green with full pytest `363 passed`, Pyright `0` diagnostics, suite
-  ladder green, attached-board Branch C Claude runs green, and representative
-  CLI code-writing repair proof green on the attached boards.
+  `markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/r12-prompt-memory-cost-hardening_process.md`:
+  Python-change gate green with full pytest `363 passed`, Pyright `0`
+  diagnostics, suite ladder green, attached-board Branch C Claude runs green,
+  and representative CLI code-writing repair proof green on the attached boards.
 
 ## Pending Verification
 

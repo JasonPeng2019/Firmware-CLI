@@ -147,7 +147,14 @@ benchmarks are green. The attached-board projected-skill proof used
 `nucleo_l476rg + nrf52840dk` with both `codex-cli` and `claude-cli`; exact
 official `nrf52833dk`, live API credentials, and fresh-machine proof remain
 external boundaries. The detailed matrix is recorded in
-`markdowns/curr/wave1-full-product-suite-provider-native_spec.md`.
+`markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/wave1-full-product-suite-provider-native_spec.md`.
+Focused live-provider native-skill invocation proof is also green: Codex CLI
+and Claude CLI each consumed a temporary run-local projected proof skill,
+returned a valid `finalize` `TurnDecision`, included a hidden proof token that
+appeared only in the skill body, and did not fall back to `load_skills`. Reports:
+`runs/provider-native-skill-usage/codex-cli-provider-native-skill-usage.json`
+and
+`runs/provider-native-skill-usage/claude-cli-provider-native-skill-usage.json`.
 
 The first capability prototype is complete only when every Prototype Priority
 item in `markdowns/things-to-change.md` is implemented, mapped to code/tests,

@@ -63,11 +63,12 @@
 > host-reasoning accelerators only and cannot bypass `TurnDecision`,
 > loaded-detail, recover, cleanup, board, or evidence gates. The bridge never
 > writes global user `.codex`, `.claude`, or `.agents` folders. Focused tests,
-> Python-change, the suite ladder, credentials-free API-path simulation, Branch C
-> provider/hardware harness rows, and representative projected-skill hardware
-> repair benchmarks are green on the attached `nucleo_l476rg + nrf52840dk`
-> boards. Live API-provider parity, exact official `nrf52833dk` proof, and
-> fresh-machine proof remain pending.
+> live Codex/Claude CLI native-skill invocation proof, Python-change, the suite
+> ladder, credentials-free API-path simulation, Branch C provider/hardware
+> harness rows, and representative projected-skill hardware repair benchmarks
+> are green on the attached `nucleo_l476rg + nrf52840dk` boards. Live
+> API-provider parity, exact official `nrf52833dk` proof, and fresh-machine proof
+> remain pending.
 >
 > **Hardware — TWO co-primary boards (build and prove the loop on both):**
 > - **Nordic nRF52833 DK** — onboard **SEGGER J-Link**; UART → virtual COM port; SWD + UART on one
@@ -929,11 +930,12 @@ part of the Wave 1 Stage 5 bar. Codex CLI must receive run-local
 `.codex/skills`, Claude CLI must receive run-local `.claude/skills` plus
 `--allowedTools Skill(...)`, and API providers must exercise the deterministic
 `load_skills` fallback path. This requirement is now validated through focused
-non-hardware tests, the suite ladder, simulated OpenAI/Anthropic API-provider
-paths, Branch C real provider/hardware rows, and representative projected-skill
-hardware repair benchmarks on the attached `nucleo_l476rg + nrf52840dk` boards.
-Live API credentials, exact official `nrf52833dk` proof, and fresh-machine proof
-remain pending gates.
+non-hardware tests, focused live Codex/Claude CLI native-skill invocation proof,
+the suite ladder, simulated OpenAI/Anthropic API-provider paths, Branch C real
+provider/hardware rows, and representative projected-skill hardware repair
+benchmarks on the attached `nucleo_l476rg + nrf52840dk` boards. Live API
+credentials, exact official `nrf52833dk` proof, and fresh-machine proof remain
+pending gates.
 
 ---
 
@@ -1164,7 +1166,9 @@ Pending verification:
   proof exists for `nucleo_l476rg + nrf52840dk`; API-provider parity
   (`openai-api`, `anthropic-api`) and exact official-pair second-provider proof
   remain pending.
-- Full attached-board product proof that projected provider-native skills are
-  used inside real Codex/Claude CLI hardware repair loops is green on the
-  attached `nucleo_l476rg + nrf52840dk` pair; exact official `nrf52833dk`
-  replacement proof remains pending.
+- Focused live-provider proof that Codex CLI and Claude CLI can consume a
+  run-local projected provider-native skill and return a hidden token from its
+  skill body is green. The hardware repair runs prove projected-skill
+  availability and successful board repair with provider-native skills required
+  on the attached `nucleo_l476rg + nrf52840dk` pair; exact official
+  `nrf52833dk` replacement proof remains pending.

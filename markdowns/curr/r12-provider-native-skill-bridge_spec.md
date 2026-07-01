@@ -611,7 +611,8 @@ Provider docs used for this spec:
 
 Discovery docs:
 
-- `r12-provider-native-skill-bridge_probe_notes.md` under `markdowns/curr/`
+- `r12-provider-native-skill-bridge_probe_notes.md` under
+  `markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/`
   - Burner skill definitions used for each provider.
   - Exact commands and environment overrides.
   - Candidate path and invocation matrix results.
@@ -761,16 +762,24 @@ Hardware checks after no-hardware proof:
 - Focused non-hardware tests are green:
   `uv run pytest tests/test_provider_native_skills.py tests/test_r12_turnkey.py -q`
   -> `78 passed`.
+- Focused live-provider native-skill invocation proof is green for both
+  `codex-cli` and `claude-cli`:
+  `tests/harness/provider_native_skill_usage.py` projected a temporary
+  FirmCLI-owned proof skill into run-local `.codex/skills` and
+  `.claude/skills`, the providers returned valid `finalize` `TurnDecision`
+  objects containing hidden tokens from the skill body, and neither provider
+  used `load_skills` fallback.
+- Final validation for the focused proof pass is green: Python-change gate
+  passed with Pyright `0` and `376 passed`; FirmCLI suite ladder passed and
+  wrote `runs/r12-provider-native-skill-invocation-proof-suite.txt`.
 
 ## Pending Verification
 
-- Full Python-change validation and full FirmCLI suite validation are still
-  pending after this implementation pass.
 - Claude `/loop`, Codex `/goal`, subagent, and future workflow behavior are not
   proven safe for FirmCLI hardware runs.
-- Native skill projection has no attached-board product run proof yet in this
-  pass; focused no-hardware regression tests prove projection and
-  prompt/artifact behavior.
+- The focused proof verifies native skill reading/decision behavior, not
+  provider-native execution of board actions; FirmCLI still owns all board
+  actions through governed brain decisions.
 - Live Claude/Codex native skill projection requires local CLI/auth availability
   and should be included in the next full Wave 1 validation run.
 - Exact official `nrf52833dk` hardware proof remains pending until that board is

@@ -214,7 +214,8 @@ Firmware-CLI/
 |   `-- harness/
 |       |-- stage1_smoke.py
 |       |-- r11_benchmark.py
-|       `-- r12_turnkey_benchmark.py
+|       |-- r12_turnkey_benchmark.py
+|       `-- provider_native_skill_usage.py
 |-- src/
 |   `-- pyocd_debug_mcp/
 |       |-- adapters/
@@ -285,10 +286,11 @@ Firmware-CLI/
     |-- repo_file_index.md
     |-- curr/                 # step-scoped docs for the current/active step (graduate to tmp/ when done)
     |   |-- README.md
+    |   |-- next-codex-handoff-20260701-wave1-final-audit.md
     |   |-- r12_turnkey_spec.md
     |   |-- r12-prompt-memory-cost-hardening_spec.md
-    |   |-- r12-prompt-memory-cost-hardening_process.md
     |   |-- r12-provider-native-skill-bridge_spec.md
+    |   |-- r12-provider-native-skill-invocation-proof_spec.md
     |   `-- wave2-codebase-map_spec.md
     `-- tmp/                  # step-scoped / throwaway docs no longer needed after their step
 ```
@@ -678,6 +680,7 @@ Current limitation:
 - `R12` turnkey contract: [markdowns/curr/r12_turnkey_spec.md](./markdowns/curr/r12_turnkey_spec.md)
 - R12 prompt/memory cost hardening hard bar: [markdowns/curr/r12-prompt-memory-cost-hardening_spec.md](./markdowns/curr/r12-prompt-memory-cost-hardening_spec.md)
 - R12 provider-native skill bridge hard bar: [markdowns/curr/r12-provider-native-skill-bridge_spec.md](./markdowns/curr/r12-provider-native-skill-bridge_spec.md)
+- R12 provider-native skill invocation proof: [markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md](./markdowns/curr/r12-provider-native-skill-invocation-proof_spec.md)
 - Wave 2 codebase-map spec: [markdowns/curr/wave2-codebase-map_spec.md](./markdowns/curr/wave2-codebase-map_spec.md)
 - Archived `P0.0` layered validation plan: [markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md](./markdowns/tmp/curr-archive-20260628/p0_0_layered_validation_plan.md)
 - Archived `P0.0` validation report: [markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md](./markdowns/tmp/curr-archive-20260628/p0_0_validation_report.md)

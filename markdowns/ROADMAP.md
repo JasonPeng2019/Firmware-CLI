@@ -27,12 +27,12 @@
 > now part of the Wave 1 hard bar: CLI providers receive run-local native
 > `.codex/skills` / `.claude/skills` views, Claude CLI receives
 > `--allowedTools Skill(...)`, and API providers fall back to deterministic
-> `load_skills`. Credentials-free OpenAI/Anthropic
-> API-path simulation is green through the real provider factory/turnkey-loop
-> code paths, but live API-provider proof still requires credentials/credits.
-> Full closure still requires live API proof, exact official `nrf52833dk` proof,
-> fresh-machine proof, and the remaining Wave 2
-> prototype-required modules. See
+> `load_skills`. Focused live-provider native-skill invocation proof is green
+> for Codex CLI and Claude CLI. Credentials-free OpenAI/Anthropic API-path
+> simulation is green through the real provider factory/turnkey-loop code paths,
+> but live API-provider proof still requires credentials/credits. Full closure
+> still requires live API proof, exact official `nrf52833dk` proof,
+> fresh-machine proof, and the remaining Wave 2 prototype-required modules. See
 > `current-progress.md` and `things-to-change.md`.
 >
 > **Prototype execution note:** the Prototype Priority list in
@@ -1510,7 +1510,8 @@ Corrected schedule:
   - Wave 1 substrate addendum: provider-native skill projection is implemented
     for CLI providers through run-local `.codex/skills` and `.claude/skills`
     views, with deterministic `load_skills` fallback for API providers and
-    uncertain native-skill behavior
+    uncertain native-skill behavior. Focused live-provider native-skill
+    invocation proof is green for Codex CLI and Claude CLI.
 - serial merge-back: A, corrected B, and C merge into Wave 0 one at a time
 - Wave 2 hard-bar modules, not current git branches:
   - Module D: progress UI + inspector

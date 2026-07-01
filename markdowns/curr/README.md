@@ -21,17 +21,17 @@ active current-step truth, not historical process ledgers or branch proof notes.
   for compact later-turn prompts, bounded tiered in-run provider memory,
   rendered-vs-available prompt accounting, focused detail rendering, and
   credentials-free API-provider simulation coverage.
-- `r12-prompt-memory-cost-hardening_process.md` - active implementation and
-  validation ledger for the prompt/memory cost hardening pass.
 - `r12-provider-native-skill-bridge_spec.md` - implemented Wave 1 hard-bar spec
   for projecting FirmCLI-owned skills into native `.codex/skills` and
   `.claude/skills` runtime views for CLI providers, with deterministic
   `load_skills` fallback for API providers and uncertain native-skill handling.
-- `r12-provider-native-skill-bridge_process.md` - active implementation and
-  validation ledger for the provider-native skill bridge pass.
-- `r12-provider-native-skill-bridge_probe_notes.md` - Phase 0 no-hardware proof
-  for the selected Codex and Claude native skill layouts and invocation
-  requirements.
+- `r12-provider-native-skill-invocation-proof_spec.md` - active proof spec and
+  validation record for the focused live Codex/Claude CLI native-skill
+  invocation test that closes the remaining provider-native skill evidence gap.
+- `next-codex-handoff-20260701-wave1-final-audit.md` - handoff for a fresh
+  Codex session to independently double-check the Wave 1 product surface,
+  provider-native bridge, prompt/memory hardening, docs, tests, and attached
+  hardware behavior.
 
 ## Active Future Specs
 
@@ -44,9 +44,10 @@ Canonical current status now lives in:
 - `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
   free-host/governed-decision code boundary and the R12 scaffold-hardening
   follow-up are implemented. Prompt/memory cost hardening and credentials-free
-  API simulation are now part of the Wave 1 hard bar. Live API credentials,
-  exact official-board proof, fresh-machine proof, and Wave 2 modules remain
-  pending.
+  API simulation are now part of the Wave 1 hard bar. Provider-native
+  projection and focused live Codex/Claude CLI native-skill invocation proof
+  are also Wave 1 validation requirements. Live API credentials, exact
+  official-board proof, fresh-machine proof, and Wave 2 modules remain pending.
 - `markdowns/current-progress.md` - current implementation/proof status.
 
 ## Archive
@@ -93,6 +94,14 @@ ledger, and Claude-restored full-suite validation record were moved to:
 markdowns/tmp/curr-archive-20260701-provider-native-doc-sync/
 ```
 
+The completed July 1 prompt/memory hardening process ledger, provider-native
+skill bridge process/probe notes, Wave 1 adversarial-audit process ledger, and
+provider-native full-suite validation record were moved to:
+
+```text
+markdowns/tmp/curr-archive-20260701-wave1-final-audit-handoff/
+```
+
 Older completed or superseded current-work docs remain in:
 
 ```text
@@ -104,8 +113,8 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 ## Verified
 
 - `markdowns/curr/` now contains this index, active/implemented R12 Wave 1
-  specs and process ledgers, the active Wave 2 codebase-map spec, and the
-  implemented provider-native skill bridge spec/process/probe notes.
+  specs, the active Wave 2 codebase-map spec, and the current final-audit
+  handoff.
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
@@ -113,7 +122,9 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   skill projection are implemented and validated by Python-change gates, suite
   ladders, focused fake-provider/API simulation tests, Codex/Claude CLI live
   smokes, Branch C attached-board runs, and representative code-writing repair
-  benchmarks recorded in the current or archived process ledgers.
+  benchmarks recorded in the current or archived process ledgers. A focused
+  live-provider native-skill invocation proof is also green for both Codex CLI
+  and Claude CLI.
 
 ## Pending Verification
 
