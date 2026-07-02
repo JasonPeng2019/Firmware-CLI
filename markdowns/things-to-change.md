@@ -1,5 +1,7 @@
 ﻿# Things To Change
 
+need - ACTUAL MASTER FILE OF ALL CHANGES SO FAR SINCE END OF r12 original version, with all intended changes clearly spec'd and defined as well. this is not it / not comprehensive enough to serve as one.
+
 This backlog is ordered by implementation priority: earliest prototype-enabling
 changes first, later MVP/product polish last. The old entry numbers are preserved
 so existing cross-references like "entry #7" still point to the same change.
