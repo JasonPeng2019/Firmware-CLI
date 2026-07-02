@@ -26,9 +26,15 @@ active current-step truth, not historical process ledgers or branch proof notes.
   record for the brain-authored Tier 2 mid-history lane between recent Tier 1
   facts and the hard-limited Tier 3 rolling summary.
 - `r12-provider-native-skill-bridge_spec.md` - implemented Wave 1 hard-bar spec
-  for projecting FirmCLI-owned skills into native `.codex/skills` and
-  `.claude/skills` runtime views for CLI providers, with deterministic
-  `load_skills` fallback for API providers and uncertain native-skill handling.
+  for projecting FirmCLI-owned actual skills into provider-visible projected
+  preloaded `.codex/skills` and `.claude/skills` runtime views for CLI
+  providers, with deterministic `load_skills` fallback for API providers and
+  uncertain native-skill handling.
+- `r12-skill-surface-ownership_spec.md` - active vocabulary cleanup doc for
+  distinguishing projected preloaded skills, actual skills to preload, and
+  user-owned skills. This doc is the terminology bridge for
+  `things-to-change.md` entry 14, the build-plan R12 skill amendments, the
+  provider-native bridge, and Wave 1.6-B native skill sync.
 - `r12-provider-native-skill-invocation-proof_spec.md` - active proof spec and
   validation record for the focused live Codex/Claude CLI native-skill
   invocation test that closes the remaining provider-native skill evidence gap.
@@ -41,6 +47,9 @@ active current-step truth, not historical process ledgers or branch proof notes.
 - `wave1-post-abc-addons-inventory.md` - current audit inventory of the R12 /
   Wave 1 add-ons, archived fixes, validation/proof additions, and active
   Wave 1 gap specs discovered across `curr/` and `markdowns/tmp/`.
+- `wave1-tmp-cleaned-inventory.md` - cleaned aggregation of non-superseded
+  archived tmp feature/spec behavior that still describes current product/code
+  behavior or intended behavior.
 
 ## Active Future Specs
 
@@ -49,10 +58,11 @@ active current-step truth, not historical process ledgers or branch proof notes.
   provider session, with provider handle/memory carryover across prompts,
   `/session`, `/new`, `/forget`, and no silent fresh-session fallback.
 - `wave1-6-B-actions-spec.md` - active proposal spec for the Branch B
-  client-action/native-skill-sync implementation gap: repo-local `.codex` /
-  `.claude` skill authoring surfaces, `sync_skills`, `skill_ok`, deterministic
-  validation, canonical client-owned registry sync, API fallback, and native
-  client-action script registration without script bodies in `TurnDecision`.
+  client-action/native-skill-sync implementation gap. It now uses the
+  `r12-skill-surface-ownership_spec.md` vocabulary: providers can see
+  projected preloaded skills and user-owned skills, can natively edit only
+  user-owned skills in skill-authoring/sync mode, and must sync validated
+  user-owned skills into a client-owned registry so API fallback succeeds.
 - `wave1-7-UX-dev-provider-visible-status_spec.md` - active proposal spec for a
   narrow Wave 1 developer-only bridge that exposes provider-visible
   status/reasoning text and brain heartbeats during provider turns, while
@@ -70,7 +80,10 @@ active current-step truth, not historical process ledgers or branch proof notes.
 
 Canonical current status now lives in:
 
-- `markdowns/things-to-change.md` - hard prototype acceptance bar.
+- `markdowns/things-to-change.md` - hard prototype acceptance bar. Entry 14's
+  skill-index / on-demand skill body language is refined by
+  `r12-skill-surface-ownership_spec.md` and `wave1-6-B-actions-spec.md` until
+  the large backlog file is directly reconciled.
 - `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
   free-host/governed-decision code boundary and the R12 scaffold-hardening
   follow-up are implemented. Prompt/memory cost hardening and credentials-free
@@ -176,6 +189,11 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - Completed process/review/spec ledgers are historical evidence only; they no
   longer compete with `current-progress.md`, `things-to-change.md`, or this
   index as current-step truth.
+- The R12 skill surface vocabulary now distinguishes projected preloaded skills,
+  actual skills to preload, and user-owned skills. That distinction prevents the
+  provider-native bridge from confusing generated runtime projections with
+  user-owned native skill folders that Wave 1.6-B will sync into the
+  client-owned fallback registry.
 - R12 scaffold hardening, prompt/memory cost hardening, and provider-native
   skill projection are implemented and validated by Python-change gates, suite
   ladders, focused fake-provider/API simulation tests, Codex/Claude CLI live
@@ -198,8 +216,8 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
 - A July 1 repeat adversarial audit found and closed one metadata gap: OpenAI
   periodic native memory safety-sync turns now keep remote-primary
   `remote-resume` metadata while still passing `previous_response_id`.
-- A July 1 second repeat adversarial audit after that metadata fix found no
-  new valid spec or product gaps. The full non-hardware suite ladder, focused
+- A July 1 second repeat adversarial audit after that metadata fix found no new
+  valid spec or product gaps. The full non-hardware suite ladder, focused
   Wave 1 tests, provider-native projection tests, operator shell smoke, and
   live no-hardware Codex/Claude hidden-token native-skill proof were green.
 - Completed Wave 1 specs remain in `curr/` as regression contracts until the
@@ -223,8 +241,9 @@ markdowns/tmp/markdown-audit-20260630-abc-cleanup/
   memory across separate user prompts. The proposed Wave 1.5-A fix is
   `wave1-5-A-interactive-session-hardening_spec.md`.
 - `wave1-6-B-actions-spec.md` records the Branch B implementation gap where
-  pre-registered `run_script` works but native provider-created skills/scripts
-  are not yet synced, validated, registered, and exposed through API fallback.
+  pre-registered `run_script` works but native provider-created user-owned
+  skills/scripts are not yet synced, validated, registered, and exposed through
+  API fallback.
 - `wave1-7-UX-dev-provider-visible-status_spec.md` records the proposed Wave 1.7
   developer trace bridge for provider-visible status/reasoning text; it is not
   implemented and does not replace the broader Wave 2 Module D/H stream,
