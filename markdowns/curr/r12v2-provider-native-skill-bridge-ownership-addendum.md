@@ -1,8 +1,13 @@
-# R12 Provider-Native Skill Bridge Ownership Addendum
+# R12v2 Provider-Native Skill Bridge Ownership Addendum
 
-> STATUS: ACTIVE ADDENDUM - applies directly to `r12-provider-native-skill-bridge_spec.md`.
+> STATUS: ACTIVE ADDENDUM - source of truth for ownership and terminology
+> corrections to `r12-provider-native-skill-bridge_spec.md` until that spec is
+> directly reconciled.
+>
+> If this addendum conflicts with the bridge spec, read this addendum as the
+> authoritative correction for the implemented projection feature.
 
-The bridge spec's implemented projection feature should be read with the vocabulary in `r12-skill-surface-ownership_spec.md`.
+The bridge spec's implemented projection feature should be read with the vocabulary in `r12-skill-surface-ownership_spec.md` and the corrected ground truth in `wave1-6-B2-skill-terminology-and-user-native-sync-gap.md`.
 
 ## Correction
 
@@ -23,7 +28,7 @@ Do not interpret it as:
 - Projected preloaded skills are generated runtime views under provider-native layouts.
 - User-owned skills live in the target workspace and are visible to the user.
 - Providers can see projected preloaded skills and user-owned skills.
-- Providers can natively edit only user-owned skills in the appropriate skill-authoring/sync mode.
+- Providers can natively edit user-owned workspace skill files as ordinary file edits. The gated step is validation, repair prompting, acceptance, registry sync, and use.
 - API fallback is successful only after user-owned skills sync into the client-owned registry used by `load_skills` or the registry-backed equivalent.
 
 ## Diff rule
