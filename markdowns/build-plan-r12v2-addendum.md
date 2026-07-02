@@ -7,7 +7,7 @@
 > If this addendum conflicts with older build-plan R12 wording, read this addendum
 > as the authoritative correction.
 
-Use `markdowns/curr/r12-skill-surface-ownership_spec.md` and `markdowns/curr/wave1-6-B2-skill-terminology-and-user-native-sync-gap.md` for corrected skill wording.
+Use `markdowns/curr/r12v2-skill-surface-ownership_spec.md` and `markdowns/curr/wave1-6-B2-skill-terminology-and-user-native-sync-gap.md` for corrected skill wording.
 
 Actual skills to preload are source packages or validated registry entries.
 Projected preloaded skills are generated runtime views for CLI providers.
