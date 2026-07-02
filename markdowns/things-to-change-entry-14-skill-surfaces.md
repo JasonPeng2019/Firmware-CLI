@@ -16,7 +16,7 @@ ownership clarification:
 > are three different surfaces. They must not all be called `.codex` or
 > `.claude` skills without qualification.
 
-Use `markdowns/curr/r12-skill-surface-ownership_spec.md` and
+Use `markdowns/curr/r12v2-skill-surface-ownership_spec.md` and
 `markdowns/curr/wave1-6-B2-skill-terminology-and-user-native-sync-gap.md` as the
 vocabulary source for this entry.
 
@@ -42,7 +42,7 @@ Prototype Priority item 14 now means:
 
 ## Links
 
-- Vocabulary: `markdowns/curr/r12-skill-surface-ownership_spec.md`
+- Vocabulary: `markdowns/curr/r12v2-skill-surface-ownership_spec.md`
 - Ground truth gap record: `markdowns/curr/wave1-6-B2-skill-terminology-and-user-native-sync-gap.md`
 - Provider-native projection: `markdowns/curr/r12-provider-native-skill-bridge_spec.md`
 - Bridge addendum: `markdowns/curr/r12v2-provider-native-skill-bridge-ownership-addendum.md`
