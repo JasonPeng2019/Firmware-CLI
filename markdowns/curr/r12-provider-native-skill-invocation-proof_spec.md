@@ -13,6 +13,18 @@ This spec closes only the native-skill invocation evidence gap. It does not
 attempt live OpenAI/Anthropic API proof, exact physical `nrf52833dk` proof, or
 fresh-machine deployment proof.
 
+## Ownership boundary
+
+This proof should be read with `r12-skill-surface-ownership_spec.md`:
+
+- the generated proof source is an actual skill to preload;
+- the run-local `.codex/skills` and `.claude/skills` copies are projected
+  preloaded skills;
+- the provider can see and use those projections;
+- the provider must not edit projected preloaded skills as the deliverable;
+- user-owned skill authoring, `sync_skills`, `skill_ok`, registry import, and
+  API fallback for provider-created skills remain Wave 1.6-B work.
+
 ## Scope
 
 - Add a focused non-hardware live-provider smoke harness that:
@@ -42,6 +54,9 @@ fresh-machine deployment proof.
 - No change to the runtime board-control policy.
 - No provider-native skill execution of pyOCD, serial, flash, or other board
   actions.
+- No provider-native editing of projected preloaded skills.
+- No proof of user-owned `.codex` / `.claude` skill creation, sync, or API
+  fallback registry import.
 - No claim that every historical hardware repair benchmark visibly invoked the
   native skill.
 
@@ -112,6 +127,8 @@ python .codex\skills\firmcli-workflow-core\scripts\run_check_ladder.py --preset 
 - The provider proof report contains the projected skill ID, provider-native
   layout, Claude allowed-tools entry where applicable, the secret token, and a
   valid `TurnDecision` from the provider.
+- The proof report is labeled as projected-preloaded-skill consumption, not
+  user-owned skill authoring/sync.
 - The full local suite ladder is green after any code changes.
 - The handoff tells the next Codex session that native skill invocation proof is
   available, with the command and report path.
