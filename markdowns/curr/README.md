@@ -30,6 +30,10 @@ active current-step truth, not historical process ledgers or branch proof notes.
   preloaded `.codex/skills` and `.claude/skills` runtime views for CLI
   providers, with deterministic `load_skills` fallback for API providers and
   uncertain native-skill handling.
+- `r12-provider-native-skill-bridge-ownership-addendum.md` - active addendum that
+  applies the three-surface vocabulary directly to the provider-native bridge
+  spec: actual skills to preload, projected preloaded skills, and user-owned
+  skills.
 - `r12-skill-surface-ownership_spec.md` - active vocabulary cleanup doc for
   distinguishing projected preloaded skills, actual skills to preload, and
   user-owned skills. This doc is the terminology bridge for
@@ -37,7 +41,8 @@ active current-step truth, not historical process ledgers or branch proof notes.
   provider-native bridge, and Wave 1.6-B native skill sync.
 - `r12-provider-native-skill-invocation-proof_spec.md` - active proof spec and
   validation record for the focused live Codex/Claude CLI native-skill
-  invocation test that closes the remaining provider-native skill evidence gap.
+  invocation test. It now explicitly frames that proof as projected-preloaded
+  skill consumption, not user-owned skill authoring/sync.
 - `r12-provider-native-ux-cli-controls_spec.md` - implemented narrow gap spec
   and validation record for exposing provider-native skill mode/root controls
   through the public `pyocd-debug` UX CLI and rerun path.
@@ -82,8 +87,10 @@ Canonical current status now lives in:
 
 - `markdowns/things-to-change.md` - hard prototype acceptance bar. Entry 14's
   skill-index / on-demand skill body language is refined by
-  `r12-skill-surface-ownership_spec.md` and `wave1-6-B-actions-spec.md` until
-  the large backlog file is directly reconciled.
+  `r12-skill-surface-ownership_spec.md`,
+  `r12-provider-native-skill-bridge-ownership-addendum.md`, and
+  `wave1-6-B-actions-spec.md` until the large backlog file is directly
+  reconciled.
 - `markdowns/R12_P_SPLIT.md` - corrected schedule/status note: Branch B's
   free-host/governed-decision code boundary and the R12 scaffold-hardening
   follow-up are implemented. Prompt/memory cost hardening and credentials-free
