@@ -1,6 +1,6 @@
 # Current Working Docs
 
-See `r12-skill-surface-ownership_spec.md` for the active vocabulary that distinguishes projected preloaded skills, actual skills to preload, and user-owned skills.
+See `r12v2-skill-surface-ownership_spec.md` for the active vocabulary that distinguishes projected preloaded skills, actual skills to preload, and user-owned skills.
 
 See `r12v2-provider-native-skill-bridge-ownership-addendum.md` for the direct provider-native bridge wording cleanup.
 
